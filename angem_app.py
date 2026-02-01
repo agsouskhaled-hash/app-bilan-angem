@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 import io
 import os
 from datetime import datetime
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM PRO - Gestion Réseau", layout="wide", page_icon="🇩🇿")
+st.set_page_config(page_title="ANGEM PRO - Cloud", layout="wide", page_icon="🇩🇿")
 
 # --- STYLE ---
 st.markdown("""
@@ -13,15 +14,33 @@ st.markdown("""
     .main { background-color: #f4f4f4; }
     .stButton>button { background-color: #006233; color: white; border-radius: 5px; font-weight: bold;}
     h1, h2, h3 { color: #006233; }
-    div[data-testid="stMetricValue"] { font-size: 1.2rem; border-left: 5px solid #006233; padding-left: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- GESTION DU FICHIER ---
-dossier_actuel = os.path.dirname(os.path.abspath(__file__))
-DB_FILE = os.path.join(dossier_actuel, "base_donnees_angem.csv")
+# --- CONNEXION GOOGLE SHEETS (Sauvegarde permanente) ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- LISTE DES ACCOMPAGNATEURS ---
+def load_db():
+    try:
+        # On lit la base de données en temps réel
+        return conn.read(ttl=0)
+    except:
+        return pd.DataFrame()
+
+def save_data(new_entry):
+    df_existing = load_db()
+    if not df_existing.empty:
+        # On évite les doublons (même agent, même mois, même année)
+        mask = (df_existing["Accompagnateur"] == new_entry["Accompagnateur"]) & \
+               (df_existing["Mois"] == new_entry["Mois"]) & \
+               (df_existing["Annee"] == int(new_entry["Annee"]))
+        df_existing = df_existing[~mask]
+    
+    df_final = pd.concat([df_existing, pd.DataFrame([new_entry])], ignore_index=True)
+    # On met à jour la Google Sheet
+    conn.update(data=df_final)
+
+# --- LISTE DES UTILISATEURS & MOTS DE PASSE ---
 LISTE_NOMS = [
     "Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH",
     "Mme BEN SAHNOUN LILA", "Mme NASRI RIM", "Mme MECHALIKHE FATMA",
@@ -34,35 +53,13 @@ LISTE_NOMS = [
     "Mme MAASSOUM EPS LAKHDARI SAIDA", "M. TALAMALI IMAD", "Mme BOUCHAREB MOUNIA"
 ]
 
-# --- GÉNÉRATION DES MOTS DE PASSE ---
 USERS = {"admin": "admin123"}
 base_code = 1234
 for i, nom in enumerate(LISTE_NOMS):
     USERS[nom] = str(base_code + (i * 4444))
 
-# --- FONCTIONS SYSTÈME ---
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            return pd.read_csv(DB_FILE, dtype={'Annee': int})
-        except:
-            return pd.read_csv(DB_FILE)
-    return pd.DataFrame()
-
-def save_data(new_entry):
-    df = load_db()
-    if not df.empty:
-        # On filtre pour ne pas avoir de doublons
-        mask = (df["Accompagnateur"] == new_entry["Accompagnateur"]) & \
-               (df["Mois"] == new_entry["Mois"]) & \
-               (df["Annee"] == int(new_entry["Annee"]))
-        df = df[~mask]
-    df_final = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-    df_final.to_csv(DB_FILE, index=False)
-
-# --- LOGIQUE DE CONNEXION ---
-if 'auth' not in st.session_state:
-    st.session_state.auth = False
+# --- AUTHENTIFICATION ---
+if 'auth' not in st.session_state: st.session_state.auth = False
 
 if not st.session_state.auth:
     st.title("🔐 Connexion Réseau ANGEM")
@@ -70,14 +67,12 @@ if not st.session_state.auth:
     pwd = st.text_input("Mot de passe", type="password")
     if st.button("Se connecter"):
         if USERS.get(user) == pwd:
-            st.session_state.auth = True
-            st.session_state.user = user
+            st.session_state.auth, st.session_state.user = True, user
             st.rerun()
-        else:
-            st.error("Mot de passe incorrect")
+        else: st.error("Mot de passe incorrect")
     st.stop()
 
-# --- MENU LATÉRAL ---
+# --- MENU ---
 with st.sidebar:
     st.write(f"Connecté : **{st.session_state.user}**")
     menu = ["📝 Saisie Mensuelle"]
@@ -98,19 +93,18 @@ if choix == "📝 Saisie Mensuelle":
     mois = c2.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
     annee = c3.number_input("Année", 2026, step=1)
 
-    df = load_db()
+    df_gs = load_db()
     existing = None
-    if not df.empty:
-        res = df[(df["Accompagnateur"] == agent) & (df["Mois"] == mois) & (df["Annee"] == int(annee))]
-        if not res.empty:
-            existing = res.iloc[-1].to_dict()
+    if not df_gs.empty:
+        res = df_gs[(df_gs["Accompagnateur"] == agent) & (df_gs["Mois"] == mois) & (df_gs["Annee"] == int(annee))]
+        if not res.empty: existing = res.iloc[-1].to_dict()
 
     def val(k): return int(float(existing[k])) if existing and k in existing else 0
     def val_f(k): return float(existing[k]) if existing and k in existing else 0.0
 
     data = {"Agence": agence, "Accompagnateur": agent, "Mois": mois, "Annee": annee, "Last_Update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
     
-    tabs = st.tabs(["1. Mat. Première", "2. Triangulaire", "3. Appels", "4. Accueil CAM", "5. Alg. Télécom", "6. Recyclage", "7. Tricycle", "8. Auto-Ent.", "9. NESDA", "10. Rappels"])
+    tabs = st.tabs(["1. Mat. Première", "2. Triangulaire", "4. Accueil CAM", "8. Auto-Ent.", "10. Rappels"])
 
     def render_full_section(prefix, title):
         st.subheader(title)
@@ -135,62 +129,22 @@ if choix == "📝 Saisie Mensuelle":
 
     with tabs[0]: render_full_section("MP", "1. Achat de matière premières")
     with tabs[1]: render_full_section("Tri", "2. Formule Triangulaire")
-    with tabs[4]: render_full_section("AT", "5. Algérie Télécom")
-    with tabs[5]: render_full_section("Recyc", "6. Recyclage")
-    with tabs[6]: render_full_section("TriC", "7. Tricycle")
-    with tabs[7]: render_full_section("AE", "8. Auto-Entrepreneur")
-
-    with tabs[2]: # Appels
-        st.subheader("3. Liste Nominative (Appels)")
-        df_appels = pd.DataFrame([{"N°": i+1, "Nom": "", "Prénom": "", "Activité": "", "Tél": ""} for i in range(15)])
-        st.data_editor(df_appels, num_rows="dynamic", use_container_width=True, key="app_ed")
-    
-    with tabs[3]: # CAM
-        st.subheader("4. Accueil des citoyens")
-        data["CAM_Total"] = st.number_input("Total Citoyens Reçus", value=val("CAM_Total"))
-        motifs = ["Information", "Dépôt", "Accompagnement", "Remboursement", "Autres"]
-        cols = st.columns(5)
-        for i, m in enumerate(motifs):
-            data[f"CAM_{m}"] = cols[i].number_input(m, value=val(f"CAM_{m}"), key=f"cam_{i}")
-
-    with tabs[8]: # NESDA
-        st.subheader("9. NESDA")
-        df_nesda = pd.DataFrame([{"N°": i+1, "Nom": "", "Activité": ""} for i in range(5)])
-        st.data_editor(df_nesda, num_rows="dynamic", use_container_width=True, key="nes_ed")
-
-    with tabs[9]: # Rappels
-        st.subheader("10. Lettres de rappel")
-        montants = ["27000", "40000", "100000", "400000", "1000000"]
-        for m in montants:
-            c_l, c_s = st.columns(2)
-            data[f"Rappel_{m}"] = c_l.number_input(f"L/R {m} DA", value=val(f"Rappel_{m}"), key=f"r_{m}")
-            data[f"Sortie_{m}"] = c_s.number_input(f"Sortie {m} DA", value=val(f"Sortie_{m}"), key=f"s_{m}")
+    with tabs[3]: render_full_section("AE", "8. Auto-Entrepreneur")
 
     st.markdown("---")
-    if st.button("💾 ENREGISTRER LES DONNÉES", type="primary", use_container_width=True):
+    if st.button("💾 ENREGISTRER DANS LE CLOUD", type="primary", use_container_width=True):
         save_data(data)
-        st.success("✅ Données enregistrées avec succès !")
+        st.success("✅ Données sauvegardées sur Google Sheets !")
         st.balloons()
 
 # --- ESPACE ADMIN ---
 elif choix == "📊 Stats & Cumuls":
-    st.title("📊 Statistiques Globales")
+    st.title("📊 Statistiques")
     df = load_db()
-    if df.empty:
-        st.warning("La base est vide.")
+    if df.empty: st.warning("Base vide")
     else:
-        # On affiche le cumul par agent
         df_stats = df.groupby("Accompagnateur").sum(numeric_only=True).drop(columns=["Annee"])
         st.dataframe(df_stats, use_container_width=True)
-
-elif choix == "🛠️ Gestion de la Base":
-    st.title("🛠️ Gestion (Suppression / Correction)")
-    df = load_db()
-    if not df.empty:
-        df_ed = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-        if st.button("Sauvegarder les modifications"):
-            df_ed.to_csv(DB_FILE, index=False)
-            st.success("Base de données mise à jour !")
 
 elif choix == "📋 Liste des Accès":
     st.title("📋 Codes d'accès")
