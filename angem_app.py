@@ -1,37 +1,68 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from gspread_dataframe import set_with_dataframe
 from datetime import datetime
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="ANGEM PRO - Cloud Intégral", layout="wide", page_icon="🇩🇿")
+st.set_page_config(page_title="ANGEM PRO - Cloud Fix", layout="wide", page_icon="🇩🇿")
 
-# --- STYLE ---
-st.markdown("""
-    <style>
-    .main { background-color: #f4f4f4; }
-    .stButton>button { background-color: #006233; color: white; border-radius: 5px; font-weight: bold;}
-    h1, h2, h3 { color: #006233; }
-    div[data-testid="stMetricValue"] { font-size: 1.1rem; border-left: 5px solid #006233; padding-left: 10px; background: white; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- CONNEXION SÉCURISÉE ---
+# Cette fonction utilise les Secrets TOML de Streamlit
+def get_gsheet_client():
+    credentials = {
+        "type": st.secrets["type"],
+        "project_id": st.secrets["project_id"],
+        "private_key_id": st.secrets["private_key_id"],
+        "private_key": st.secrets["private_key"],
+        "client_email": st.secrets["client_email"],
+        "client_id": st.secrets["client_id"],
+        "auth_uri": st.secrets["auth_uri"],
+        "token_uri": st.secrets["token_uri"],
+        "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
+        "client_x509_cert_url": st.secrets["client_x509_cert_url"]
+    }
+    gc = gspread.service_account_from_dict(credentials)
+    return gc
 
-# --- CONNEXION GOOGLE SHEETS ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+def load_data_from_gs():
+    try:
+        gc = get_gsheet_client()
+        # Remplace par l'ID de ta feuille (le texte entre /d/ et /edit dans ton lien)
+        sh = gc.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+        worksheet = sh.get_worksheet(0)
+        return pd.DataFrame(worksheet.get_all_records())
+    except Exception as e:
+        return pd.DataFrame()
 
-def load_db():
-    try: return conn.read(ttl=0)
-    except: return pd.DataFrame()
-
-def save_data(new_entry):
-    df_existing = load_db()
-    if not df_existing.empty:
-        mask = (df_existing["Accompagnateur"] == new_entry["Accompagnateur"]) & \
-               (df_existing["Mois"] == new_entry["Mois"]) & \
-               (df_existing["Annee"] == int(new_entry["Annee"]))
-        df_existing = df_existing[~mask]
-    df_final = pd.concat([df_existing, pd.DataFrame([new_entry])], ignore_index=True)
-    conn.update(data=df_final)
+def save_data_to_gs(new_entry):
+    try:
+        gc = get_gsheet_client()
+        sh = gc.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+        worksheet = sh.get_worksheet(0)
+        
+        df_existing = load_data_from_gs()
+        new_row = pd.DataFrame([new_entry])
+        
+        if not df_existing.empty:
+            # Nettoyage pour éviter les erreurs de type
+            df_existing = df_existing.astype(str)
+            new_row = new_row.astype(str)
+            # Suppression doublon
+            mask = (df_existing["Accompagnateur"] == new_entry["Accompagnateur"]) & \
+                   (df_existing["Mois"] == new_entry["Mois"]) & \
+                   (df_existing["Annee"] == str(new_entry["Annee"]))
+            df_existing = df_existing[~mask]
+            df_final = pd.concat([df_existing, new_row], ignore_index=True)
+        else:
+            df_final = new_row
+            
+        # Écriture complète
+        set_with_dataframe(worksheet, df_final)
+        return True
+    except Exception as e:
+        st.error(f"Erreur technique : {e}")
+        return False
 
 # --- LISTE DES ACCOMPAGNATEURS ---
 LISTE_NOMS = [
@@ -52,6 +83,7 @@ for i, nom in enumerate(LISTE_NOMS):
 
 # --- AUTHENTIFICATION ---
 if 'auth' not in st.session_state: st.session_state.auth = False
+
 if not st.session_state.auth:
     st.title("🔐 Connexion Réseau ANGEM")
     u = st.selectbox("Utilisateur", list(USERS.keys()))
@@ -60,130 +92,58 @@ if not st.session_state.auth:
         if USERS.get(u) == p:
             st.session_state.auth, st.session_state.user = True, u
             st.rerun()
-        else: st.error("Erreur de mot de passe")
+        else: st.error("Code incorrect")
     st.stop()
 
-# --- MENU ---
+# --- NAVIGATION ---
 with st.sidebar:
-    st.write(f"Connecté : **{st.session_state.user}**")
-    if st.session_state.user == "admin":
-        st.link_button("📂 Ouvrir Google Sheets", "https://docs.google.com/spreadsheets/d/1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM/edit")
-    
-    menu = ["📝 Ma Saisie Mensuelle"]
-    if st.session_state.user == "admin":
-        menu = ["📝 Saisie (Mode Admin)", "📊 Suivi & Bilan Général", "📋 Liste des Accès"]
-    choix = st.radio("Navigation", menu)
+    st.write(f"Utilisateur : **{st.session_state.user}**")
+    menu = ["📝 Saisie Mensuelle", "📊 Suivi Admin", "📋 Liste des Accès"]
+    if st.session_state.user != "admin": menu = ["📝 Saisie Mensuelle"]
+    choix = st.radio("Menu", menu)
     if st.button("Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
-# --- ESPACE SAISIE ---
-if "Saisie" in choix:
-    st.title("📝 Bilan Mensuel Approfondi")
+# --- SAISIE ---
+if choix == "📝 Saisie Mensuelle":
+    st.title("📝 Saisie du Bilan")
     agent = st.session_state.user if st.session_state.user != "admin" else st.selectbox("Agent", LISTE_NOMS)
     
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     mois = c1.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
     annee = c2.number_input("Année", 2025, 2030, 2026)
-    agence = c3.text_input("Agence", "Alger Ouest")
 
-    df_gs = load_db()
-    existing = None
-    if not df_gs.empty:
-        res = df_gs[(df_gs["Accompagnateur"]==agent) & (df_gs["Mois"]==mois) & (df_gs["Annee"]==int(annee))]
-        if not res.empty: existing = res.iloc[-1].to_dict()
+    # Récupération des rubriques
+    st.subheader("1. Matière Première")
+    colA, colB = st.columns(2)
+    mp_dep = colA.number_input("Dossiers Déposés", 0)
+    mp_fin = colB.number_input("Dossiers Financés", 0)
 
-    def v(k): return int(float(existing[k])) if existing and k in existing else 0
-    def vf(k): return float(existing[k]) if existing and k in existing else 0.0
+    st.subheader("Remboursements")
+    colR1, colR2 = st.columns(2)
+    r_nbr = colR1.number_input("Nombre de reçus", 0)
+    r_mnt = colR2.number_input("Montant (DA)", 0.0)
 
-    data = {"Accompagnateur": agent, "Mois": mois, "Annee": annee, "Agence": agence, "Last_Update": datetime.now().strftime("%d/%m/%Y %H:%M")}
-    
-    tabs = st.tabs(["1-2. MP & Tri", "3. Appels", "4. CAM", "5-7. Dispositifs Spéciaux", "8. Auto-Ent.", "10. Rappels"])
+    if st.button("💾 ENREGISTRER SUR LE CLOUD", type="primary", use_container_width=True):
+        data = {
+            "Accompagnateur": agent, "Mois": mois, "Annee": annee,
+            "MP_Dep": mp_dep, "MP_Fin": mp_fin, "R_Nbr": r_nbr, "R_Mnt": r_mnt,
+            "Last_Update": datetime.now().strftime("%d/%m/%Y %H:%M")
+        }
+        if save_data_to_gs(data):
+            st.success("✅ Enregistré avec succès dans Google Sheets !")
+            st.balloons()
 
-    # --- FONCTION DE RENDU COMPLÈTE AVEC REMBOURSEMENTS ---
-    def render_full_v2(prefix, titre):
-        st.subheader(titre)
-        # Ligne 1 : Processus de validation
-        col1, col2, col3, col4, col5 = st.columns(5)
-        data[f"{prefix}_Dep"] = col1.number_input(f"Dossiers Déposés", value=v(f"{prefix}_Dep"), key=f"{prefix}1")
-        data[f"{prefix}_Trt"] = col2.number_input("Traités CEF", value=v(f"{prefix}_Trt"), key=f"{prefix}2")
-        data[f"{prefix}_Val"] = col3.number_input("Validés CEF", value=v(f"{prefix}_Val"), key=f"{prefix}3")
-        data[f"{prefix}_Tms"] = col4.number_input("Transmis Banque", value=v(f"{prefix}_Tms"), key=f"{prefix}4")
-        data[f"{prefix}_Fin"] = col5.number_input("Financés", value=v(f"{prefix}_Fin"), key=f"{prefix}5")
-        
-        # Ligne 2 : Ordres et PV
-        st.markdown("---")
-        colA, colB, colC, colD = st.columns(4)
-        data[f"{prefix}_O10"] = colA.number_input("Ordre 10%", value=v(f"{prefix}_O10"), key=f"{prefix}6")
-        data[f"{prefix}_O90"] = colB.number_input("Ordre 90%", value=v(f"{prefix}_O90"), key=f"{prefix}7")
-        data[f"{prefix}_PVE"] = colC.number_input("PV Existence", value=v(f"{prefix}_PVE"), key=f"{prefix}8")
-        data[f"{prefix}_PVD"] = colD.number_input("PV Démarrage", value=v(f"{prefix}_PVD"), key=f"{prefix}9")
-        
-        # Ligne 3 : REMBOURSEMENTS (Les rubriques manquantes)
-        st.markdown("---")
-        colR1, colR2 = st.columns(2)
-        data[f"{prefix}_R_Nbr"] = colR1.number_input("Nombre de reçus remboursement", value=v(f"{prefix}_R_Nbr"), key=f"{prefix}10")
-        data[f"{prefix}_R_Mnt"] = colR2.number_input("Montant Remboursé (DA)", value=vf(f"{prefix}_R_Mnt"), key=f"{prefix}11", format="%.2f")
-
-    with tabs[0]: 
-        render_full_v2("MP", "1. Matière Première")
-        st.markdown("###")
-        render_full_v2("Tri", "2. Triangulaire")
-
-    with tabs[1]: # Appels
-        st.subheader("3. Liste Nominative Appels")
-        df_app = pd.DataFrame([{"N°": i+1, "Nom": "", "Prénom": "", "Activité": "", "Tél": ""} for i in range(10)])
-        st.data_editor(df_app, num_rows="dynamic", use_container_width=True, key="appels_ed")
-
-    with tabs[2]: # CAM
-        st.subheader("4. Accueil CAM")
-        data["CAM_Total"] = st.number_input("Citoyens reçus", value=v("CAM_Total"))
-
-    with tabs[3]: # 5, 6, 7
-        render_full_v2("AT", "5. Algérie Télécom")
-        render_full_v2("Rec", "6. Recyclage")
-        render_full_v2("Tc", "7. Tricycle")
-
-    with tabs[4]: 
-        render_full_v2("AE", "8. Auto-Entrepreneur")
-
-    with tabs[5]: # RAPPELS
-        st.subheader("10. Lettres de rappel")
-        for m in ["27000", "40000", "100000", "400000", "1000000"]:
-            ca, cb = st.columns(2)
-            data[f"R_{m}"] = ca.number_input(f"L/R {m} DA", value=v(f"R_{m}"), key=f"r{m}")
-            data[f"S_{m}"] = cb.number_input(f"Sortie {m} DA", value=v(f"S_{m}"), key=f"s{m}")
-
-    st.markdown("---")
-    if st.button("💾 ENREGISTRER LE BILAN COMPLET", type="primary", use_container_width=True):
-        save_data(data)
-        st.success("✅ Données sauvegardées sur Google Sheets !")
-        st.balloons()
-
-# --- ESPACE ADMIN : SUIVI & BILAN ---
-elif choix == "📊 Suivi & Bilan Général":
-    st.title("📊 Contrôle Administrateur")
-    df = load_db()
-    if df.empty: st.info("Aucune donnée.")
+# --- ADMIN ---
+elif choix == "📊 Suivi Admin":
+    st.title("📊 Suivi Global")
+    df = load_data_from_gs()
+    if not df.empty:
+        st.dataframe(df)
+        st.link_button("📂 Voir la Google Sheet en direct", f"https://docs.google.com/spreadsheets/d/1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM/edit")
     else:
-        f1, f2 = st.columns(2)
-        m_f = f1.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
-        a_f = f2.number_input("Année", 2025, 2030, 2026)
-        df_m = df[(df["Mois"]==m_f) & (df["Annee"]==a_f)]
-        
-        st.subheader("🚀 État d'avancement")
-        fait = df_m["Accompagnateur"].unique()
-        pas_fait = [a for a in LISTE_NOMS if a not in fait]
-        c_a, c_b = st.columns(2)
-        c_a.success(f"✅ Reçus ({len(fait)})")
-        c_b.error(f"❌ En attente ({len(pas_fait)})")
-        
-        st.markdown("---")
-        st.subheader(f"🌍 Cumul Financier {m_f} {a_f}")
-        total_remb = df_m["MP_R_Mnt"].sum() + df_m["Tri_R_Mnt"].sum() + df_m["AE_R_Mnt"].sum()
-        st.metric("Total Remboursé (Toutes rubriques)", f"{total_remb:,.2f} DA")
-        st.dataframe(df_m, use_container_width=True)
+        st.info("Aucune donnée disponible.")
 
 elif choix == "📋 Liste des Accès":
-    st.title("📋 Codes d'accès")
     st.table([{"Nom": k, "Code": v} for k, v in USERS.items()])
