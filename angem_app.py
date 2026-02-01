@@ -1,28 +1,16 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-import io
-import os
 from datetime import datetime
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM PRO - Cloud", layout="wide", page_icon="🇩🇿")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="ANGEM PRO - Suivi Global", layout="wide", page_icon="🇩🇿")
 
-# --- STYLE ---
-st.markdown("""
-    <style>
-    .main { background-color: #f4f4f4; }
-    .stButton>button { background-color: #006233; color: white; border-radius: 5px; font-weight: bold;}
-    h1, h2, h3 { color: #006233; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- CONNEXION GOOGLE SHEETS (Sauvegarde permanente) ---
+# --- CONNEXION GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_db():
     try:
-        # On lit la base de données en temps réel
         return conn.read(ttl=0)
     except:
         return pd.DataFrame()
@@ -30,17 +18,14 @@ def load_db():
 def save_data(new_entry):
     df_existing = load_db()
     if not df_existing.empty:
-        # On évite les doublons (même agent, même mois, même année)
         mask = (df_existing["Accompagnateur"] == new_entry["Accompagnateur"]) & \
                (df_existing["Mois"] == new_entry["Mois"]) & \
                (df_existing["Annee"] == int(new_entry["Annee"]))
         df_existing = df_existing[~mask]
-    
     df_final = pd.concat([df_existing, pd.DataFrame([new_entry])], ignore_index=True)
-    # On met à jour la Google Sheet
     conn.update(data=df_final)
 
-# --- LISTE DES UTILISATEURS & MOTS DE PASSE ---
+# --- LISTE OFFICIELLE ---
 LISTE_NOMS = [
     "Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH",
     "Mme BEN SAHNOUN LILA", "Mme NASRI RIM", "Mme MECHALIKHE FATMA",
@@ -54,9 +39,8 @@ LISTE_NOMS = [
 ]
 
 USERS = {"admin": "admin123"}
-base_code = 1234
 for i, nom in enumerate(LISTE_NOMS):
-    USERS[nom] = str(base_code + (i * 4444))
+    USERS[nom] = str(1234 + (i * 4444))
 
 # --- AUTHENTIFICATION ---
 if 'auth' not in st.session_state: st.session_state.auth = False
@@ -72,26 +56,33 @@ if not st.session_state.auth:
         else: st.error("Mot de passe incorrect")
     st.stop()
 
-# --- MENU ---
+# --- MENU LATÉRAL ---
 with st.sidebar:
     st.write(f"Connecté : **{st.session_state.user}**")
-    menu = ["📝 Saisie Mensuelle"]
     if st.session_state.user == "admin":
-        menu += ["📊 Stats & Cumuls", "🛠️ Gestion de la Base", "📋 Liste des Accès"]
+        st.markdown("---")
+        st.link_button("📂 Ouvrir Google Sheets", "https://docs.google.com/spreadsheets/d/1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM/edit?usp=sharing")
+        st.markdown("---")
+    
+    menu = ["📝 Ma Saisie"]
+    if st.session_state.user == "admin":
+        menu = ["📝 Saisie (Admin)", "📊 Suivi & Bilan Général", "📋 Liste des Accès"]
+    
     choix = st.radio("Navigation", menu)
+    
     if st.button("Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
 # --- ESPACE SAISIE ---
-if choix == "📝 Saisie Mensuelle":
-    st.title("Espace Accompagnateur")
-    agent = st.session_state.user if st.session_state.user != "admin" else st.selectbox("Agent (Admin)", LISTE_NOMS)
+if "Saisie" in choix:
+    st.title("📝 Formulaire de Bilan Mensuel")
+    agent = st.session_state.user if st.session_state.user != "admin" else st.selectbox("Sélectionner l'agent", LISTE_NOMS)
     
     c1, c2, c3 = st.columns(3)
-    agence = c1.text_input("Agence", "Alger Ouest")
-    mois = c2.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
-    annee = c3.number_input("Année", 2026, step=1)
+    mois = c1.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
+    annee = c2.number_input("Année", 2025, 2030, 2026)
+    agence = c3.text_input("Agence", "Alger Ouest")
 
     df_gs = load_db()
     existing = None
@@ -100,53 +91,77 @@ if choix == "📝 Saisie Mensuelle":
         if not res.empty: existing = res.iloc[-1].to_dict()
 
     def val(k): return int(float(existing[k])) if existing and k in existing else 0
-    def val_f(k): return float(existing[k]) if existing and k in existing else 0.0
 
-    data = {"Agence": agence, "Accompagnateur": agent, "Mois": mois, "Annee": annee, "Last_Update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    data = {"Accompagnateur": agent, "Mois": mois, "Annee": annee, "Agence": agence, "Last_Update": datetime.now().strftime("%d/%m/%Y %H:%M")}
     
-    tabs = st.tabs(["1. Mat. Première", "2. Triangulaire", "4. Accueil CAM", "8. Auto-Ent.", "10. Rappels"])
+    tabs = st.tabs(["Matière Première", "Triangulaire"])
+    with tabs[0]:
+        st.subheader("1. Achat de Matière Première")
+        colA, colB = st.columns(2)
+        data["MP_Deposes"] = colA.number_input("Dossiers Déposés", value=val("MP_Deposes"), key="mp1")
+        data["MP_Finances"] = colB.number_input("Dossiers Financés", value=val("MP_Finances"), key="mp2")
+    with tabs[1]:
+        st.subheader("2. Formule Triangulaire")
+        colA, colB = st.columns(2)
+        data["Tri_Deposes"] = colA.number_input("Déposés (Tri)", value=val("Tri_Deposes"), key="tr1")
+        data["Tri_Finances"] = colB.number_input("Financés (Tri)", value=val("Tri_Finances"), key="tr2")
 
-    def render_full_section(prefix, title):
-        st.subheader(title)
-        c1, c2, c3, c4, c5 = st.columns(5)
-        data[f"{prefix}_Deposes"] = c1.number_input("Dossiers déposés", value=val(f"{prefix}_Deposes"), key=f"{prefix}1")
-        data[f"{prefix}_Traites_CEF"] = c2.number_input("Traités par CEF", value=val(f"{prefix}_Traites_CEF"), key=f"{prefix}2")
-        data[f"{prefix}_Valides_CEF"] = c3.number_input("Validés par CEF", value=val(f"{prefix}_Valides_CEF"), key=f"{prefix}3")
-        data[f"{prefix}_Transmis_Banque"] = c4.number_input("Transmis Banque/AR", value=val(f"{prefix}_Transmis_Banque"), key=f"{prefix}4")
-        data[f"{prefix}_Notif_Bancaire"] = c5.number_input("Notif./Financés", value=val(f"{prefix}_Notif_Bancaire"), key=f"{prefix}5")
-        st.markdown("---")
-        c6, c7, c8, c9 = st.columns(4)
-        data[f"{prefix}_Transmis_AR"] = c6.number_input("Transmis à l'AR", value=val(f"{prefix}_Transmis_AR"), key=f"{prefix}6")
-        data[f"{prefix}_Finances"] = c7.number_input("Dossiers financés", value=val(f"{prefix}_Finances"), key=f"{prefix}7")
-        data[f"{prefix}_Ordre_10"] = c8.number_input("Ordre 10%", value=val(f"{prefix}_Ordre_10"), key=f"{prefix}8")
-        data[f"{prefix}_Ordre_90"] = c9.number_input("Ordre 90%", value=val(f"{prefix}_Ordre_90"), key=f"{prefix}9")
-        st.markdown("---")
-        c10, c11, c12, c13 = st.columns(4)
-        data[f"{prefix}_PV_Exist"] = c10.number_input("PV Existence", value=val(f"{prefix}_PV_Exist"), key=f"{prefix}10")
-        data[f"{prefix}_PV_Demarr"] = c11.number_input("PV Démarrage", value=val(f"{prefix}_PV_Demarr"), key=f"{prefix}11")
-        data[f"{prefix}_Remb_Recus"] = c12.number_input("Reçus Remb.", value=val(f"{prefix}_Remb_Recus"), key=f"{prefix}12")
-        data[f"{prefix}_Remb_Montant"] = c13.number_input("Montant Remb. (DA)", value=val_f(f"{prefix}_Remb_Montant"), key=f"{prefix}13")
-
-    with tabs[0]: render_full_section("MP", "1. Achat de matière premières")
-    with tabs[1]: render_full_section("Tri", "2. Formule Triangulaire")
-    with tabs[3]: render_full_section("AE", "8. Auto-Entrepreneur")
-
-    st.markdown("---")
-    if st.button("💾 ENREGISTRER DANS LE CLOUD", type="primary", use_container_width=True):
+    if st.button("💾 ENREGISTRER LE BILAN", type="primary", use_container_width=True):
         save_data(data)
-        st.success("✅ Données sauvegardées sur Google Sheets !")
-        st.balloons()
+        st.success("✅ Enregistré avec succès dans le Cloud !")
 
-# --- ESPACE ADMIN ---
-elif choix == "📊 Stats & Cumuls":
-    st.title("📊 Statistiques")
+# --- ESPACE ADMIN : SUIVI & BILAN GÉNÉRAL ---
+elif choix == "📊 Suivi & Bilan Général":
+    st.title("📊 Tableau de Bord Administrateur")
     df = load_db()
-    if df.empty: st.warning("Base vide")
+    
+    if df.empty:
+        st.info("Aucune donnée disponible pour le moment.")
     else:
-        df_stats = df.groupby("Accompagnateur").sum(numeric_only=True).drop(columns=["Annee"])
-        st.dataframe(df_stats, use_container_width=True)
+        # 1. FILTRE PAR MOIS/ANNÉE
+        st.subheader("Filtre de recherche")
+        f1, f2 = st.columns(2)
+        m_filtre = f1.selectbox("Mois à surveiller", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
+        a_filtre = f2.number_input("Année", 2025, 2030, 2026, key="filtre_annee")
+
+        # Données du mois sélectionné
+        df_mois = df[(df["Mois"] == m_filtre) & (df["Annee"] == a_filtre)]
+        agents_ayant_saisi = df_mois["Accompagnateur"].unique()
+
+        # 2. SUIVI DES PRÉSENCES (QUI A FAIT / QUI N'A PAS FAIT)
+        st.subheader(f"📈 État des saisies pour {m_filtre} {a_filtre}")
+        c_fait, c_pas_fait = st.columns(2)
+        
+        with c_fait:
+            st.success(f"✅ Ont envoyé leur bilan ({len(agents_ayant_saisi)})")
+            st.write(", ".join(agents_ayant_saisi) if len(agents_ayant_saisi)>0 else "Aucun")
+
+        with c_pas_fait:
+            pas_fait = [a for a in LISTE_NOMS if a not in agents_ayant_saisi]
+            st.error(f"❌ N'ont pas encore saisi ({len(pas_fait)})")
+            st.write(", ".join(pas_fait))
+
+        # 3. BILAN GÉNÉRAL (CUMUL DU RÉSEAU)
+        st.markdown("---")
+        st.subheader(f"🌍 Bilan Général du Réseau ({m_filtre} {a_filtre})")
+        
+        if not df_mois.empty:
+            total_mp_dep = df_mois["MP_Deposes"].sum()
+            total_mp_fin = df_mois["MP_Finances"].sum()
+            total_tri_dep = df_mois["Tri_Deposes"].sum()
+            total_tri_fin = df_mois["Tri_Finances"].sum()
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total MP Déposés", int(total_mp_dep))
+            m2.metric("Total MP Financés", int(total_mp_fin))
+            m3.metric("Total Tri Déposés", int(total_tri_dep))
+            m4.metric("Total Tri Financés", int(total_tri_fin))
+            
+            st.write("### Détail par accompagnateur")
+            st.dataframe(df_mois[["Accompagnateur", "MP_Deposes", "MP_Finances", "Tri_Deposes", "Tri_Finances", "Last_Update"]], use_container_width=True)
+        else:
+            st.warning("Aucun chiffre cumulé pour ce mois.")
 
 elif choix == "📋 Liste des Accès":
-    st.title("📋 Codes d'accès")
-    data_acces = [{"Nom": k, "Code": v} for k, v in USERS.items()]
-    st.table(pd.DataFrame(data_acces))
+    st.title("📋 Codes d'accès confidentiels")
+    st.table([{"Nom": k, "Code": v} for k, v in USERS.items()])
