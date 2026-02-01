@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-import io
 from datetime import datetime
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="ANGEM PRO - Système Intégral", layout="wide", page_icon="🇩🇿")
+st.set_page_config(page_title="ANGEM PRO - Cloud Intégral", layout="wide", page_icon="🇩🇿")
 
 # --- STYLE ---
 st.markdown("""
@@ -78,7 +77,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- ESPACE SAISIE COMPLET ---
+# --- ESPACE SAISIE ---
 if "Saisie" in choix:
     st.title("📝 Bilan Mensuel Approfondi")
     agent = st.session_state.user if st.session_state.user != "admin" else st.selectbox("Agent", LISTE_NOMS)
@@ -99,28 +98,39 @@ if "Saisie" in choix:
 
     data = {"Accompagnateur": agent, "Mois": mois, "Annee": annee, "Agence": agence, "Last_Update": datetime.now().strftime("%d/%m/%Y %H:%M")}
     
-    tabs = st.tabs(["1-2. MP & Tri", "3. Appels", "4. CAM", "5-7. Dispositifs Spéciaux", "8. Auto-Ent.", "9. NESDA", "10. Rappels"])
+    tabs = st.tabs(["1-2. MP & Tri", "3. Appels", "4. CAM", "5-7. Dispositifs Spéciaux", "8. Auto-Ent.", "10. Rappels"])
 
-    with tabs[0]: # MP & TRIANGULAIRE
-        def render_full(prefix, titre):
-            st.subheader(titre)
-            col1, col2, col3, col4, col5 = st.columns(5)
-            data[f"{prefix}_Dep"] = col1.number_input(f"{titre} - Déposés", value=v(f"{prefix}_Dep"), key=f"{prefix}1")
-            data[f"{prefix}_Trt"] = col2.number_input("Traités CEF", value=v(f"{prefix}_Trt"), key=f"{prefix}2")
-            data[f"{prefix}_Val"] = col3.number_input("Validés CEF", value=v(f"{prefix}_Val"), key=f"{prefix}3")
-            data[f"{prefix}_Tms"] = col4.number_input("Transmis Bq", value=v(f"{prefix}_Tms"), key=f"{prefix}4")
-            data[f"{prefix}_Fin"] = col5.number_input("Financés", value=v(f"{prefix}_Fin"), key=f"{prefix}5")
-            st.markdown("---")
-            colA, colB, colC, colD = st.columns(4)
-            data[f"{prefix}_O10"] = colA.number_input("Ordre 10%", value=v(f"{prefix}_O10"), key=f"{prefix}6")
-            data[f"{prefix}_O90"] = colB.number_input("Ordre 90%", value=v(f"{prefix}_O90"), key=f"{prefix}7")
-            data[f"{prefix}_PVE"] = colC.number_input("PV Exist", value=v(f"{prefix}_PVE"), key=f"{prefix}8")
-            data[f"{prefix}_PVD"] = colD.number_input("PV Démarr", value=v(f"{prefix}_PVD"), key=f"{prefix}9")
+    # --- FONCTION DE RENDU COMPLÈTE AVEC REMBOURSEMENTS ---
+    def render_full_v2(prefix, titre):
+        st.subheader(titre)
+        # Ligne 1 : Processus de validation
+        col1, col2, col3, col4, col5 = st.columns(5)
+        data[f"{prefix}_Dep"] = col1.number_input(f"Dossiers Déposés", value=v(f"{prefix}_Dep"), key=f"{prefix}1")
+        data[f"{prefix}_Trt"] = col2.number_input("Traités CEF", value=v(f"{prefix}_Trt"), key=f"{prefix}2")
+        data[f"{prefix}_Val"] = col3.number_input("Validés CEF", value=v(f"{prefix}_Val"), key=f"{prefix}3")
+        data[f"{prefix}_Tms"] = col4.number_input("Transmis Banque", value=v(f"{prefix}_Tms"), key=f"{prefix}4")
+        data[f"{prefix}_Fin"] = col5.number_input("Financés", value=v(f"{prefix}_Fin"), key=f"{prefix}5")
+        
+        # Ligne 2 : Ordres et PV
+        st.markdown("---")
+        colA, colB, colC, colD = st.columns(4)
+        data[f"{prefix}_O10"] = colA.number_input("Ordre 10%", value=v(f"{prefix}_O10"), key=f"{prefix}6")
+        data[f"{prefix}_O90"] = colB.number_input("Ordre 90%", value=v(f"{prefix}_O90"), key=f"{prefix}7")
+        data[f"{prefix}_PVE"] = colC.number_input("PV Existence", value=v(f"{prefix}_PVE"), key=f"{prefix}8")
+        data[f"{prefix}_PVD"] = colD.number_input("PV Démarrage", value=v(f"{prefix}_PVD"), key=f"{prefix}9")
+        
+        # Ligne 3 : REMBOURSEMENTS (Les rubriques manquantes)
+        st.markdown("---")
+        colR1, colR2 = st.columns(2)
+        data[f"{prefix}_R_Nbr"] = colR1.number_input("Nombre de reçus remboursement", value=v(f"{prefix}_R_Nbr"), key=f"{prefix}10")
+        data[f"{prefix}_R_Mnt"] = colR2.number_input("Montant Remboursé (DA)", value=vf(f"{prefix}_R_Mnt"), key=f"{prefix}11", format="%.2f")
 
-        render_full("MP", "1. Matière Première")
-        render_full("Tri", "2. Triangulaire")
+    with tabs[0]: 
+        render_full_v2("MP", "1. Matière Première")
+        st.markdown("###")
+        render_full_v2("Tri", "2. Triangulaire")
 
-    with tabs[1]: # APPELS
+    with tabs[1]: # Appels
         st.subheader("3. Liste Nominative Appels")
         df_app = pd.DataFrame([{"N°": i+1, "Nom": "", "Prénom": "", "Activité": "", "Tél": ""} for i in range(10)])
         st.data_editor(df_app, num_rows="dynamic", use_container_width=True, key="appels_ed")
@@ -130,18 +140,14 @@ if "Saisie" in choix:
         data["CAM_Total"] = st.number_input("Citoyens reçus", value=v("CAM_Total"))
 
     with tabs[3]: # 5, 6, 7
-        render_full("AT", "5. Algérie Télécom")
-        render_full("Rec", "6. Recyclage")
-        render_full("Tc", "7. Tricycle")
+        render_full_v2("AT", "5. Algérie Télécom")
+        render_full_v2("Rec", "6. Recyclage")
+        render_full_v2("Tc", "7. Tricycle")
 
-    with tabs[4]: render_full("AE", "8. Auto-Entrepreneur")
+    with tabs[4]: 
+        render_full_v2("AE", "8. Auto-Entrepreneur")
 
-    with tabs[5]: # NESDA
-        st.subheader("9. Liste NESDA")
-        df_nes = pd.DataFrame([{"N°": i+1, "Nom": "", "Activité": ""} for i in range(5)])
-        st.data_editor(df_nes, num_rows="dynamic", use_container_width=True, key="nesda_ed")
-
-    with tabs[6]: # RAPPELS
+    with tabs[5]: # RAPPELS
         st.subheader("10. Lettres de rappel")
         for m in ["27000", "40000", "100000", "400000", "1000000"]:
             ca, cb = st.columns(2)
@@ -149,7 +155,7 @@ if "Saisie" in choix:
             data[f"S_{m}"] = cb.number_input(f"Sortie {m} DA", value=v(f"S_{m}"), key=f"s{m}")
 
     st.markdown("---")
-    if st.button("💾 ENREGISTRER TOUT DANS LE CLOUD", type="primary", use_container_width=True):
+    if st.button("💾 ENREGISTRER LE BILAN COMPLET", type="primary", use_container_width=True):
         save_data(data)
         st.success("✅ Données sauvegardées sur Google Sheets !")
         st.balloons()
@@ -160,22 +166,22 @@ elif choix == "📊 Suivi & Bilan Général":
     df = load_db()
     if df.empty: st.info("Aucune donnée.")
     else:
-        f1, f2 = st.columns(2); m_f = f1.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]); a_f = f2.number_input("Année", 2025, 2030, 2026)
+        f1, f2 = st.columns(2)
+        m_f = f1.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
+        a_f = f2.number_input("Année", 2025, 2030, 2026)
         df_m = df[(df["Mois"]==m_f) & (df["Annee"]==a_f)]
         
         st.subheader("🚀 État d'avancement")
         fait = df_m["Accompagnateur"].unique()
         pas_fait = [a for a in LISTE_NOMS if a not in fait]
         c_a, c_b = st.columns(2)
-        c_a.success(f"✅ Reçus ({len(fait)}) : " + ", ".join(fait))
-        c_b.error(f"❌ En attente ({len(pas_fait)}) : " + ", ".join(pas_fait))
+        c_a.success(f"✅ Reçus ({len(fait)})")
+        c_b.error(f"❌ En attente ({len(pas_fait)})")
         
         st.markdown("---")
-        st.subheader(f"🌍 Cumul Réseau {m_f}")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total MP Déposés", int(df_m["MP_Dep"].sum()) if "MP_Dep" in df_m else 0)
-        m2.metric("Total Tri Déposés", int(df_m["Tri_Dep"].sum()) if "Tri_Dep" in df_m else 0)
-        m3.metric("Total AE Déposés", int(df_m["AE_Dep"].sum()) if "AE_Dep" in df_m else 0)
+        st.subheader(f"🌍 Cumul Financier {m_f} {a_f}")
+        total_remb = df_m["MP_R_Mnt"].sum() + df_m["Tri_R_Mnt"].sum() + df_m["AE_R_Mnt"].sum()
+        st.metric("Total Remboursé (Toutes rubriques)", f"{total_remb:,.2f} DA")
         st.dataframe(df_m, use_container_width=True)
 
 elif choix == "📋 Liste des Accès":
