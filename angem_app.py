@@ -93,8 +93,61 @@ if choix == "📝 Saisie Mensuelle":
     data = {"Accompagnateur": agent, "Mois": mois, "Annee": annee, "Agence": agence, "Derniere_MAJ": datetime.now().strftime("%d/%m/%Y %H:%M")}
 
     # --- LES 10 ONGLETS ---
-    tabs = st.tabs(["1. MP", "2. Tri", "3. Appels", "4. CAM", "5. AT", "6. Recyclage", "7. Tricycle", "8. Auto-Ent.", "9. NESDA", "10. Rappels"])
+    tabs = st.tabs(["1. MP", "2. Tri", "3. Appels", "4. CAM", "5. AT", "6. Rec", "7. Tc", "8. AE", "9. NESDA", "10. Rappels"])
 
     def render_full_rubrique(prefix, title):
         st.subheader(title)
-        col1, col2, col3, col4, col5 = st.columns(5
+        col1, col2, col3, col4, col5 = st.columns(5)
+        data[f"{prefix}_Dep"] = col1.number_input("Déposés", key=f"{prefix}_1")
+        data[f"{prefix}_Trt"] = col2.number_input("Traités CEF", key=f"{prefix}_2")
+        data[f"{prefix}_Val"] = col3.number_input("Validés CEF", key=f"{prefix}_3")
+        data[f"{prefix}_Tms"] = col4.number_input("Transmis Bq", key=f"{prefix}_4")
+        data[f"{prefix}_Fin"] = col5.number_input("Financés", key=f"{prefix}_5")
+        
+        colA, colB, colC, colD = st.columns(4)
+        data[f"{prefix}_O10"] = colA.number_input("Ordre 10%", key=f"{prefix}_6")
+        data[f"{prefix}_O90"] = colB.number_input("Ordre 90%", key=f"{prefix}_7")
+        data[f"{prefix}_PVE"] = colC.number_input("PV Existence", key=f"{prefix}_8")
+        data[f"{prefix}_PVD"] = colD.number_input("PV Démarrage", key=f"{prefix}_9")
+        
+        colR1, colR2 = st.columns(2)
+        data[f"{prefix}_RNbr"] = colR1.number_input("Nombre Reçus Remb.", key=f"{prefix}_10")
+        data[f"{prefix}_RMnt"] = colR2.number_input("Montant Remboursé (DA)", key=f"{prefix}_11")
+
+    with tabs[0]: render_full_rubrique("MP", "1. Achat de Matière Première")
+    with tabs[1]: render_full_rubrique("Tri", "2. Formule Triangulaire")
+    with tabs[2]:
+        st.subheader("3. Appels Téléphoniques")
+        data["Appels_Total"] = st.number_input("Total Appels Effectués", 0)
+    with tabs[3]:
+        st.subheader("4. Accueil CAM")
+        data["CAM_Recus"] = st.number_input("Total Citoyens reçus", 0)
+    with tabs[4]: render_full_rubrique("AT", "5. Algérie Télécom")
+    with tabs[5]: render_full_rubrique("Rec", "6. Recyclage")
+    with tabs[6]: render_full_rubrique("Tc", "7. Tricycle")
+    with tabs[7]: render_full_rubrique("AE", "8. Auto-Entrepreneur")
+    with tabs[8]:
+        st.subheader("9. NESDA")
+        data["NESDA_Doss"] = st.number_input("Nombre de dossiers NESDA", 0)
+    with tabs[9]:
+        st.subheader("10. Rappels & Visites")
+        for m in ["27k", "40k", "100k", "400k", "1M"]:
+            cl, cv = st.columns(2)
+            data[f"R_Let_{m}"] = cl.number_input(f"Lettres de Rappel ({m} DA)", key=f"l_{m}")
+            data[f"R_Vis_{m}"] = cv.number_input(f"Visites de terrain ({m} DA)", key=f"v_{m}")
+
+    st.markdown("---")
+    if st.button("💾 ENREGISTRER LE BILAN DÉFINITIF", type="primary"):
+        if save_data_to_gs(data):
+            st.success("Bilan sauvegardé avec succès !")
+            st.balloons()
+
+elif choix == "📊 Suivi Admin":
+    st.title("📊 Suivi Global du Réseau")
+    df = load_data_from_gs()
+    if not df.empty:
+        st.dataframe(df)
+    else: st.info("Aucune donnée enregistrée.")
+
+elif choix == "📋 Liste des Accès":
+    st.table([{"Nom": k, "Code": v} for k, v in USERS.items()])
