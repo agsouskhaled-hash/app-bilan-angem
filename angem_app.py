@@ -29,29 +29,24 @@ def load_data_from_gs():
         sh = gc.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
         worksheet = sh.get_worksheet(0)
         return pd.DataFrame(worksheet.get_all_records())
-    except: return pd.DataFrame()
+    except:
+        return pd.DataFrame()
 
 def save_data_to_gs(new_entry):
     try:
         gc = get_gsheet_client()
         sh = gc.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
         worksheet = sh.get_worksheet(0)
-        df_existing = load_data_from_gs()
-        new_row = pd.DataFrame([new_entry])
-        if not df_existing.empty:
-            df_existing = df_existing.astype(str)
-            new_row = new_row.astype(str)
-            mask = (df_existing["Accompagnateur"] == new_entry["Accompagnateur"]) & \
-                   (df_existing["Mois"] == new_entry["Mois"]) & \
-                   (df_existing["Annee"] == str(new_entry["Annee"]))
-            df_existing = df_existing[~mask]
-            df_final = pd.concat([df_existing, new_row], ignore_index=True)
-        else: df_final = new_row
-        worksheet.clear()
-        set_with_dataframe(worksheet, df_final)
+        
+        # Préparation de la ligne (conversion de toutes les valeurs en texte)
+        # On s'assure que l'ordre des colonnes est fixe
+        row_to_add = list(new_entry.values())
+        
+        # Ajout direct à la fin de la feuille
+        worksheet.append_row(row_to_add)
         return True
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Erreur lors de l'enregistrement : {e}")
         return False
 
 # --- LISTE DES UTILISATEURS ---
@@ -74,8 +69,6 @@ if not st.session_state.auth:
 # --- INTERFACE PRINCIPALE ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user}")
-    if st.session_state.user == "admin":
-        st.link_button("📂 Ouvrir Google Sheets", "https://docs.google.com/spreadsheets/d/1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM/edit")
     menu = ["📝 Saisie Mensuelle", "📊 Suivi Admin", "📋 Liste des Accès"]
     if st.session_state.user != "admin": menu = ["📝 Saisie Mensuelle"]
     choix = st.radio("Navigation", menu)
@@ -90,6 +83,7 @@ if choix == "📝 Saisie Mensuelle":
     annee = c2.number_input("Année", 2025, 2030, 2026)
     agence = c3.text_input("Agence", "Alger Ouest")
 
+    # Initialisation du dictionnaire de données
     data = {"Accompagnateur": agent, "Mois": mois, "Annee": annee, "Agence": agence, "Derniere_MAJ": datetime.now().strftime("%d/%m/%Y %H:%M")}
 
     # --- LES 10 ONGLETS ---
@@ -98,56 +92,56 @@ if choix == "📝 Saisie Mensuelle":
     def render_full_rubrique(prefix, title):
         st.subheader(title)
         col1, col2, col3, col4, col5 = st.columns(5)
-        data[f"{prefix}_Dep"] = col1.number_input("Déposés", key=f"{prefix}_1")
-        data[f"{prefix}_Trt"] = col2.number_input("Traités CEF", key=f"{prefix}_2")
-        data[f"{prefix}_Val"] = col3.number_input("Validés CEF", key=f"{prefix}_3")
-        data[f"{prefix}_Tms"] = col4.number_input("Transmis Bq", key=f"{prefix}_4")
-        data[f"{prefix}_Fin"] = col5.number_input("Financés", key=f"{prefix}_5")
+        data[f"{prefix}_Dep"] = col1.number_input("Déposés", key=f"{prefix}_1", value=0)
+        data[f"{prefix}_Trt"] = col2.number_input("Traités CEF", key=f"{prefix}_2", value=0)
+        data[f"{prefix}_Val"] = col3.number_input("Validés CEF", key=f"{prefix}_3", value=0)
+        data[f"{prefix}_Tms"] = col4.number_input("Transmis Bq", key=f"{prefix}_4", value=0)
+        data[f"{prefix}_Fin"] = col5.number_input("Financés", key=f"{prefix}_5", value=0)
         
         colA, colB, colC, colD = st.columns(4)
-        data[f"{prefix}_O10"] = colA.number_input("Ordre 10%", key=f"{prefix}_6")
-        data[f"{prefix}_O90"] = colB.number_input("Ordre 90%", key=f"{prefix}_7")
-        data[f"{prefix}_PVE"] = colC.number_input("PV Existence", key=f"{prefix}_8")
-        data[f"{prefix}_PVD"] = colD.number_input("PV Démarrage", key=f"{prefix}_9")
+        data[f"{prefix}_O10"] = colA.number_input("Ordre 10%", key=f"{prefix}_6", value=0)
+        data[f"{prefix}_O90"] = colB.number_input("Ordre 90%", key=f"{prefix}_7", value=0)
+        data[f"{prefix}_PVE"] = colC.number_input("PV Existence", key=f"{prefix}_8", value=0)
+        data[f"{prefix}_PVD"] = colD.number_input("PV Démarrage", key=f"{prefix}_9", value=0)
         
         colR1, colR2 = st.columns(2)
-        data[f"{prefix}_RNbr"] = colR1.number_input("Nombre Reçus Remb.", key=f"{prefix}_10")
-        data[f"{prefix}_RMnt"] = colR2.number_input("Montant Remboursé (DA)", key=f"{prefix}_11")
+        data[f"{prefix}_RNbr"] = colR1.number_input("Nb Reçus Remb.", key=f"{prefix}_10", value=0)
+        data[f"{prefix}_RMnt"] = colR2.number_input("Montant Remb. (DA)", key=f"{prefix}_11", value=0.0)
 
     with tabs[0]: render_full_rubrique("MP", "1. Achat de Matière Première")
     with tabs[1]: render_full_rubrique("Tri", "2. Formule Triangulaire")
     with tabs[2]:
         st.subheader("3. Appels Téléphoniques")
-        data["Appels_Total"] = st.number_input("Total Appels Effectués", 0)
+        data["Appels_Total"] = st.number_input("Total Appels Effectués", value=0)
     with tabs[3]:
         st.subheader("4. Accueil CAM")
-        data["CAM_Recus"] = st.number_input("Total Citoyens reçus", 0)
+        data["CAM_Recus"] = st.number_input("Total Citoyens reçus", value=0)
     with tabs[4]: render_full_rubrique("AT", "5. Algérie Télécom")
     with tabs[5]: render_full_rubrique("Rec", "6. Recyclage")
     with tabs[6]: render_full_rubrique("Tc", "7. Tricycle")
     with tabs[7]: render_full_rubrique("AE", "8. Auto-Entrepreneur")
     with tabs[8]:
         st.subheader("9. NESDA")
-        data["NESDA_Doss"] = st.number_input("Nombre de dossiers NESDA", 0)
+        data["NESDA_Doss"] = st.number_input("Nombre de dossiers NESDA", value=0)
     with tabs[9]:
         st.subheader("10. Rappels & Visites")
         for m in ["27k", "40k", "100k", "400k", "1M"]:
             cl, cv = st.columns(2)
-            data[f"R_Let_{m}"] = cl.number_input(f"Lettres de Rappel ({m} DA)", key=f"l_{m}")
-            data[f"R_Vis_{m}"] = cv.number_input(f"Visites de terrain ({m} DA)", key=f"v_{m}")
+            data[f"R_Let_{m}"] = cl.number_input(f"Lettres ({m} DA)", key=f"l_{m}", value=0)
+            data[f"R_Vis_{m}"] = cv.number_input(f"Visites ({m} DA)", key=f"v_{m}", value=0)
 
     st.markdown("---")
-    if st.button("💾 ENREGISTRER LE BILAN DÉFINITIF", type="primary"):
+    if st.button("💾 ENREGISTRER LE BILAN DÉFINITIF", type="primary", use_container_width=True):
         if save_data_to_gs(data):
-            st.success("Bilan sauvegardé avec succès !")
+            st.success("✅ Félicitations ! Les données ont été enregistrées dans Google Sheets.")
             st.balloons()
 
 elif choix == "📊 Suivi Admin":
-    st.title("📊 Suivi Global du Réseau")
+    st.title("📊 Suivi Global")
     df = load_data_from_gs()
     if not df.empty:
         st.dataframe(df)
-    else: st.info("Aucune donnée enregistrée.")
+    else: st.info("Aucune donnée enregistrée pour le moment.")
 
 elif choix == "📋 Liste des Accès":
     st.table([{"Nom": k, "Code": v} for k, v in USERS.items()])
