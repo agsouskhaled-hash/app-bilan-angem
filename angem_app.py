@@ -3,10 +3,10 @@ import pandas as pd
 import gspread
 from datetime import datetime
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="ANGEM PRO - Système Intégral", layout="wide", page_icon="🇩🇿")
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(page_title="ANGEM PRO - Bilans Individuels", layout="wide", page_icon="🇩🇿")
 
-# --- CONNEXION SÉCURISÉE ---
+# --- CONNEXION SÉCURISÉE GOOGLE SHEETS ---
 def get_gsheet_client():
     creds = {
         "type": st.secrets["type"],
@@ -22,26 +22,34 @@ def get_gsheet_client():
     }
     return gspread.service_account_from_dict(creds)
 
-def load_all_data():
+def save_to_gsheet(data_dict, user_name):
     try:
         client = get_gsheet_client()
         sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-        worksheet = sh.get_worksheet(0)
-        return pd.DataFrame(worksheet.get_all_records())
-    except:
-        return pd.DataFrame()
-
-def save_to_gsheet(data_dict):
-    try:
-        client = get_gsheet_client()
-        sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-        worksheet = sh.get_worksheet(0) 
-        # On envoie les valeurs dans l'ordre du dictionnaire
+        
+        # --- LOGIQUE DE SÉPARATION PAR ONGLET ---
+        try:
+            worksheet = sh.worksheet(user_name)
+        except gspread.exceptions.WorksheetNotFound:
+            # Création automatique de l'onglet si inexistant
+            worksheet = sh.add_worksheet(title=user_name, rows="1000", cols="100")
+            headers = list(data_dict.keys())
+            worksheet.append_row(headers)
+        
         worksheet.append_row(list(data_dict.values()))
         return True
     except Exception as e:
         st.error(f"Erreur d'enregistrement : {e}")
         return False
+
+def load_data_from_sheet(sheet_name):
+    try:
+        client = get_gsheet_client()
+        sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+        worksheet = sh.worksheet(sheet_name)
+        return pd.DataFrame(worksheet.get_all_records())
+    except:
+        return pd.DataFrame()
 
 # --- BASE DE DONNÉES UTILISATEURS ---
 LISTE_NOMS = [
@@ -64,13 +72,15 @@ for i, nom in enumerate(LISTE_NOMS):
 if 'auth' not in st.session_state: st.session_state.auth = False
 
 if not st.session_state.auth:
-    st.title("🔐 Système ANGEM PRO")
-    u_select = st.selectbox("Utilisateur", [""] + list(USERS_DB.keys()))
+    st.title("🔐 Système de Bilans ANGEM PRO")
+    u_select = st.selectbox("Sélectionnez votre nom", [""] + list(USERS_DB.keys()))
     p_input = st.text_input("Code d'accès", type="password")
     if st.button("Connexion"):
         if u_select in USERS_DB and USERS_DB[u_select] == p_input:
             st.session_state.auth, st.session_state.user = True, u_select
             st.rerun()
+        else:
+            st.error("Code incorrect.")
     st.stop()
 
 # --- BARRE LATÉRALE ---
@@ -82,107 +92,94 @@ with st.sidebar:
     if st.session_state.user == "admin":
         menu += ["📊 Suivi des Saisies", "🔑 Liste des Codes"]
     
-    choix = st.radio("Menu", menu)
+    choix = st.radio("Navigation", menu)
     if st.button("🚪 Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
 # --- ESPACE SAISIE ---
 if choix == "📝 Saisie du Bilan":
-    st.title(f"Saisie Mensuelle - {st.session_state.user}")
+    st.title(f"Bilan Mensuel : {st.session_state.user}")
     
     c1, c2, c3 = st.columns(3)
-    mois = c1.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
+    mois = c1.selectbox("Mois du Bilan", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
     annee = c2.number_input("Année", 2025, 2030, 2026)
     agence = c3.text_input("Agence", "Alger Ouest")
 
-    # Dictionnaire de données initialisé
     data = {
-        "Accompagnateur": st.session_state.user,
-        "Mois": mois,
-        "Annee": annee,
-        "Agence": agence,
-        "Derniere_MAJ": datetime.now().strftime("%d/%m/%Y %H:%M")
+        "Accompagnateur": st.session_state.user, "Mois": mois, "Annee": annee, "Agence": agence,
+        "Date_Saisie": datetime.now().strftime("%d/%m/%Y %H:%M")
     }
 
     tabs = st.tabs([
-        "1. Matière Première", "2. Triangulaire", "3. Appels", "4. CAM", 
+        "1. Matière Première", "2. Formule Triangulaire", "3. Appels", "4. CAM", 
         "5. Algérie Télécom", "6. Recyclage", "7. Tricycle", 
         "8. Auto-Entrepreneur", "9. NESDA", "10. Rappels"
     ])
 
-    def render_rubrique(prefix, title, data_dict):
+    def render_rubrique(prefix, title, d):
         st.subheader(title)
         col1, col2, col3, col4, col5 = st.columns(5)
-        data_dict[f"{prefix}_Dep"] = col1.number_input("Déposés", key=f"{prefix}_d", value=0)
-        data_dict[f"{prefix}_Trt"] = col2.number_input("Traités CEF", key=f"{prefix}_t", value=0)
-        data_dict[f"{prefix}_Val"] = col3.number_input("Validés CEF", key=f"{prefix}_v", value=0)
-        data_dict[f"{prefix}_Tms"] = col4.number_input("Transmis Banque", key=f"{prefix}_m", value=0)
-        data_dict[f"{prefix}_Fin"] = col5.number_input("Financés", key=f"{prefix}_f", value=0)
+        d[f"{prefix}_Deposes"] = col1.number_input("Déposés", key=f"{prefix}d", value=0)
+        d[f"{prefix}_Traites_CEF"] = col2.number_input("Traités CEF", key=f"{prefix}t", value=0)
+        d[f"{prefix}_Valides_CEF"] = col3.number_input("Validés CEF", key=f"{prefix}v", value=0)
+        d[f"{prefix}_Transmis_Bq"] = col4.number_input("Transmis Banque", key=f"{prefix}m", value=0)
+        d[f"{prefix}_Finances"] = col5.number_input("Financés", key=f"{prefix}f", value=0)
         
         colA, colB, colC, colD = st.columns(4)
-        data_dict[f"{prefix}_O10"] = colA.number_input("BC 10%", key=f"{prefix}_o1", value=0)
-        data_dict[f"{prefix}_O90"] = colB.number_input("BC 90%", key=f"{prefix}_o9", value=0)
-        data_dict[f"{prefix}_PVE"] = colC.number_input("PV Existence", key=f"{prefix}_pe", value=0)
-        data_dict[f"{prefix}_PVD"] = colD.number_input("PV Démarrage", key=f"{prefix}_pd", value=0)
+        d[f"{prefix}_BC_10%"] = colA.number_input("BC 10%", key=f"{prefix}o1", value=0)
+        d[f"{prefix}_BC_90%"] = colB.number_input("BC 90%", key=f"{prefix}o9", value=0)
+        d[f"{prefix}_PV_Existence"] = colC.number_input("PV Existence", key=f"{prefix}pe", value=0)
+        d[f"{prefix}_PV_Demarrage"] = colD.number_input("PV Démarrage", key=f"{prefix}pd", value=0)
         
         st.write("**💰 Remboursements**")
         colR1, colR2 = st.columns(2)
-        data_dict[f"{prefix}_RNbr"] = colR1.number_input("Nombre de reçus", key=f"{prefix}_rn", value=0)
-        data_dict[f"{prefix}_RMnt"] = colR2.number_input("Montant (DA)", key=f"{prefix}_rm", value=0.0)
+        d[f"{prefix}_Nb_Recus"] = colR1.number_input("Nb Reçus", key=f"{prefix}rn", value=0)
+        d[f"{prefix}_Montant_DA"] = colR2.number_input("Montant (DA)", key=f"{prefix}rm", value=0.0)
 
     with tabs[0]: render_rubrique("MP", "1. Achat de Matière Première", data)
     with tabs[1]: render_rubrique("Tri", "2. Formule Triangulaire", data)
-    
-    with tabs[2]:
-        st.subheader("3. Appels Téléphoniques")
-        data["Appels_Total"] = st.number_input("Total Appels Nominatifs", value=0)
-        
-    with tabs[3]:
-        st.subheader("4. Accueil CAM")
-        data["CAM_Total"] = st.number_input("Citoyens reçus au CAM", value=0)
-
+    with tabs[2]: data["Appels_Total"] = st.number_input("3. Liste nominative des appels", value=0)
+    with tabs[3]: data["CAM_Total"] = st.number_input("4. Citoyens reçus au CAM", value=0)
     with tabs[4]: render_rubrique("AT", "5. Dispositif Algérie Télécom", data)
     with tabs[5]: render_rubrique("Rec", "6. Dispositif Recyclage", data)
     with tabs[6]: render_rubrique("Tc", "7. Dispositif Tricycle", data)
     with tabs[7]: render_rubrique("AE", "8. Statut Auto-Entrepreneur", data)
-
-    with tabs[8]:
-        st.subheader("9. NESDA")
-        data["NESDA_Total"] = st.number_input("Dossiers via NESDA", value=0)
-
+    with tabs[8]: data["NESDA_Total"] = st.number_input("9. Dossiers NESDA", value=0)
     with tabs[9]:
         st.subheader("10. Lettres de Rappel & Visites")
         for m in ["27k", "40k", "100k", "400k", "1M"]:
             cl, cv = st.columns(2)
-            data[f"Let_{m}"] = cl.number_input(f"Lettres ({m})", key=f"l_{m}", value=0)
-            data[f"Vis_{m}"] = cv.number_input(f"Visites ({m})", key=f"v_{m}", value=0)
+            data[f"Let_Rappel_{m}"] = cl.number_input(f"Lettres ({m})", key=f"l{m}", value=0)
+            data[f"Vis_Terrain_{m}"] = cv.number_input(f"Visites ({m})", key=f"v{m}", value=0)
 
     st.markdown("---")
-    if st.button("💾 ENREGISTRER LE BILAN COMPLET", type="primary", use_container_width=True):
-        if save_to_gsheet(data):
-            st.success("✅ Félicitations ! Vos données sont enregistrées dans Google Sheets.")
+    if st.button("💾 ENREGISTRER MON BILAN", type="primary", use_container_width=True):
+        if save_to_gsheet(data, st.session_state.user):
+            st.success(f"✅ Bilan enregistré avec succès dans l'onglet '{st.session_state.user}' !")
             st.balloons()
 
+# --- GESTION ADMIN ---
 elif choix == "📊 Suivi des Saisies":
-    st.title("📊 État d'avancement des bilans")
-    df = load_all_data()
-    col_m, col_a = st.columns(2)
-    m_filtre = col_m.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
-    a_filtre = col_a.number_input("Année", 2025, 2030, 2026)
-
-    if not df.empty:
-        saisies = df[(df['Mois'] == m_filtre) & (df['Annee'] == a_filtre)]['Accompagnateur'].unique()
-        c_ok, c_no = st.columns(2)
-        with c_ok:
-            st.success(f"✅ Reçus ({len(saisies)})")
-            for n in saisies: st.write(f"- {n}")
-        with c_no:
-            en_attente = [n for n in LISTE_NOMS if n not in saisies]
-            st.error(f"❌ En attente ({len(en_attente)})")
-            for n in en_attente: st.write(f"- {n}")
-    else: st.warning("Le fichier Excel est vide.")
+    st.title("📊 État de remplissage des bilans")
+    m_check = st.selectbox("Mois à vérifier", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
+    a_check = st.number_input("Année à vérifier", 2025, 2030, 2026)
+    
+    # Pour l'admin, on vérifie l'onglet de chaque personne
+    reçus, en_attente = [], []
+    for nom in LISTE_NOMS:
+        df_temp = load_data_from_sheet(nom)
+        if not df_temp.empty and not df_temp[(df_temp['Mois'] == m_check) & (df_temp['Annee'] == a_check)].empty:
+            reçus.append(nom)
+        else:
+            en_attente.append(nom)
+    
+    c1, c2 = st.columns(2)
+    c1.success(f"✅ Reçus ({len(reçus)})")
+    for r in reçus: c1.write(f"- {r}")
+    c2.error(f"❌ En attente ({len(en_attente)})")
+    for e in en_attente: c2.write(f"- {e}")
 
 elif choix == "🔑 Liste des Codes":
     st.title("🔑 Codes d'accès")
-    st.table([{"Nom": k, "Code": v} for k, v in USERS_DB.items()])
+    st.table([{"Accompagnateur": k, "Code": v} for k, v in USERS_DB.items()])
