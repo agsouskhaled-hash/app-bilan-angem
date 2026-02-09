@@ -2,5 +2,4 @@ streamlit
 pandas
 gspread
 oauth2client
-gspread-dataframe
 xhtml2pdf
