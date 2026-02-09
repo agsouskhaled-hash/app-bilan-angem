@@ -35,7 +35,7 @@ def save_to_gsheet(data_dict):
         st.error(f"Erreur Sheets : {e}")
         return False
 
-# --- GÉNÉRATEUR PDF (MODÈLE FIDÈLE À L'IMAGE) ---
+# --- GÉNÉRATEUR PDF (MODÈLE FIDÈLE) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -47,8 +47,6 @@ class ANGEM_PDF(FPDF):
 def generate_pdf_bytes(data):
     pdf = ANGEM_PDF()
     pdf.add_page()
-    
-    # Titre Rapport
     pdf.set_font('Arial', 'B', 14)
     pdf.cell(190, 10, "Rapport d'activites mensuel", 0, 1, 'C')
     pdf.set_font('Arial', 'B', 10)
@@ -56,38 +54,52 @@ def generate_pdf_bytes(data):
     pdf.ln(5)
 
     def draw_section(title, prefix, headers):
-        pdf.set_fill_color(255, 230, 204) # Couleur beige du modèle
-        pdf.set_font('Arial', 'B', 9)
-        # CORRECTION ICI : Parenthèse bien fermée
+        pdf.set_fill_color(255, 230, 204)
+        pdf.set_font('Arial', 'B', 10)
         pdf.cell(190, 8, title, 1, 1, 'L', True)
         pdf.set_font('Arial', 'B', 7)
         w = 190 / len(headers)
-        for h in headers:
-            pdf.cell(w, 7, h, 1, 0, 'C')
+        for h in headers: pdf.cell(w, 7, h, 1, 0, 'C')
         pdf.ln()
-        pdf.set_font('Arial', '', 7)
+        pdf.set_font('Arial', '', 8)
         for h in headers:
             key = f"{prefix}_{h.replace(' ', '_')}"
             val = data.get(key, 0)
             pdf.cell(w, 7, str(val), 1, 0, 'C')
-        pdf.ln(8)
+        pdf.ln(10)
 
-    # Reconstruction des tableaux
-    cols_std = ["Deposes", "Traites", "Valides", "Transmis", "Finances", "Remb_Nb", "Remb_Mnt"]
+    cols_std = ["Deposes", "Valides_CEF", "Transmis_AR", "Finances", "Remb_Nb", "Remb_Mnt"]
     draw_section("1. Formule : Achat de matiere premieres", "MP", cols_std)
-    
-    cols_tri = ["Deposes", "Valides", "Transmis_Bq", "Finances", "BC_10", "BC_90", "PV_Exist", "PV_Dem", "Remb_Mnt"]
+    cols_tri = ["Deposes", "Valides_CEF", "Transmis_Bq", "Finances", "BC_10", "BC_90", "PV_Exist", "PV_Dem", "Remb_Mnt"]
     draw_section("2. Formule : Triangulaire", "TRI", cols_tri)
 
     pdf.ln(10)
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(190, 10, f"L'accompagnateur (trice) : {data['Accompagnateur']}", 0, 1, 'R')
-    
     return pdf.output()
 
-# --- UTILISATEURS & AUTHENTIFICATION ---
-LISTE_NOMS = ["Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH", "Mme BEN SAHNOUN LILA", "Mme NASRI RIM", "Mme MECHALIKHE FATMA", "Mlle SALMI NOUR EL HOUDA", "M. BERRABEH DOUADI", "Mme BELAID FAZIA", "M. METMAR OMAR", "Mme AIT OUARAB AMINA", "Mme MILOUDI AMEL", "Mme BERROUANE SAMIRA", "M. MAHREZ MOHAMED", "Mlle FELFOUL SAMIRA", "Mlle MEDJHOUM RAOUIA", "Mme SAHNOUNE IMENE", "Mme KHERIF FADILA", "Mme MERAKEB FAIZA", "Mme MEDJDOUB AMEL", "Mme BEN AICHE MOUNIRA", "Mme SEKAT MANEL FATIMA", "Mme KADRI SIHEM", "Mme TOUAKNI SARAH", "Mme MAASSOUM EPS LAKHDARI SAIDA", "M. TALAMALI IMAD", "Mme BOUCHAREB MOUNIA"]
+# --- UTILISATEURS ---
+LISTE_NOMS = [
+    "Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH",
+    "Mme BEN SAHNOUN LILA", "Mme NASRI RIM", "Mme MECHALIKHE FATMA",
+    "Mlle SALMI NOUR EL HOUDA", "M. BERRABEH DOUADI", "Mme BELAID FAZIA",
+    "M. METMAR OMAR", "Mme AIT OUARAB AMINA", "Mme MILOUDI AMEL",
+    "Mme BERROUANE SAMIRA", "M. MAHREZ MOHAMED", "Mlle FELFOUL SAMIRA",
+    "Mlle MEDJHOUM RAOUIA", "Mme SAHNOUNE IMENE", "Mme KHERIF FADILA",
+    "Mme MERAKEB FAIZA", "Mme MEDJDOUB AMEL", "Mme BEN AICHE MOUNIRA",
+    "Mme SEKAT MANEL FATIMA", "Mme KADRI SIHEM", "Mme TOUAKNI SARAH",
+    "Mme MAASSOUM EPS LAKHDARI SAIDA", "M. TALAMALI IMAD", "Mme BOUCHAREB MOUNIA"
+]
 USERS_DB = {"admin": "admin123"}
 for i, nom in enumerate(LISTE_NOMS): USERS_DB[nom] = str(1234 + (i * 11))
 
-if 'auth' not in st.session_state: st
+# --- AUTHENTIFICATION ---
+if 'auth' not in st.session_state:
+    st.session_state.auth = False
+
+if not st.session_state.auth:
+    st.title("🔐 ANGEM PRO - Accès")
+    u = st.selectbox("Nom", [""] + list(USERS_DB.keys()))
+    p = st.text_input("Code", type="password")
+    if st.button("Connexion"):
+        if u in USERS_DB
