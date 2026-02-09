@@ -38,7 +38,7 @@ def save_to_gsheet(data_dict):
         st.error(f"Erreur Sheets : {e}")
         return False
 
-# --- 3. GÉNÉRATEUR PDF (STRUCTURE DÉTAILLÉE) ---
+# --- 3. GÉNÉRATEUR PDF (STRUCTURE DÉTAILLÉE FIDÈLE AU MODÈLE) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -71,7 +71,7 @@ def generate_pdf_bytes(data):
             pdf.cell(w, 7, str(val), 1, 0, 'C')
         pdf.ln(8)
 
-    # Tableaux du PDF
+    # Reconstruction des tableaux
     h_std = ["Deposes", "Traites", "Valides", "Transmis", "Finances", "Recus_Remb", "Mnt_Remb"]
     h_ext = ["Deposes", "Valides", "Transmis_Bq", "Finances", "BC_10", "BC_90", "PV_Exis", "PV_Dem", "Mnt_Remb"]
     
@@ -86,19 +86,17 @@ def generate_pdf_bytes(data):
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(190, 10, f"L'accompagnateur : {data['Accompagnateur']}", 0, 1, 'R')
     
-    # SOLUTION À L'ERREUR : Sortie binaire propre
-    return pdf.output()
+    # SOLUTION RADICALE : Utilisation de BytesIO pour le téléchargement
+    return pdf.output(dest='S').encode('latin-1')
 
 # --- 4. AUTHENTIFICATION ---
 LISTE_NOMS = ["Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH", "Mme BEN SAHNOUN LILA", "Mme NASRI RIM", "Mme MECHALIKHE FATMA", "Mlle SALMI NOUR EL HOUDA", "M. BERRABEH DOUADI", "Mme BELAID FAZIA", "M. METMAR OMAR", "Mme AIT OUARAB AMINA", "Mme MILOUDI AMEL", "Mme BERROUANE SAMIRA", "M. MAHREZ MOHAMED", "Mlle FELFOUL SAMIRA", "Mlle MEDJHOUM RAOUIA", "Mme SAHNOUNE IMENE", "Mme KHERIF FADILA", "Mme MERAKEB FAIZA", "Mme MEJDOUB AMEL", "Mme BEN AICHE MOUNIRA", "Mme SEKAT MANEL FATIMA", "Mme KADRI SIHEM", "Mme TOUAKNI SARAH", "Mme MAASSOUM EPS LAKHDARI SAIDA", "M. TALAMALI IMAD", "Mme BOUCHAREB MOUNIA"]
 
-if 'auth' not in st.session_state:
-    st.session_state.auth = False
-
+if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
     st.title("🔐 ANGEM PRO - Accès")
-    u = st.selectbox("Sélectionnez votre nom", [""] + LISTE_NOMS + ["admin"])
-    p = st.text_input("Code secret", type="password")
+    u = st.selectbox("Nom", [""] + LISTE_NOMS + ["admin"])
+    p = st.text_input("Code", type="password")
     if st.button("Se connecter"):
         if p == "1234":
             st.session_state.auth, st.session_state.user = True, u
@@ -115,6 +113,7 @@ annee = c2.number_input("Année", 2026)
 
 data = {"Accompagnateur": st.session_state.user, "Mois": mois, "Annee": annee, "Date": datetime.now().strftime("%d/%m/%Y")}
 
+# STRUCTURE DÉPLIÉE (ONGLETS)
 tabs = st.tabs(["1. MP", "2. TRI", "3. AT", "4. REC", "5. TC", "6. AE", "7. CAM/NESDA"])
 
 with tabs[0]:
@@ -128,7 +127,7 @@ with tabs[0]:
     data["MP_Finances"] = c[4].number_input("Financés (MP)", key="mp5", value=0)
     cr = st.columns(2)
     data["MP_Recus_Remb"] = cr[0].number_input("Nombre Reçus (MP)", key="mp6", value=0)
-    data["MP_Mnt_Remb"] = cr[1].number_input("Montant Remboursé (MP)", key="mp7", value=0.0)
+    data["MP_Mnt_Remb"] = cr[1].number_input("Montant (DA)", key="mp7", value=0.0)
 
 with tabs[1]:
     st.session_state.v.add("2")
@@ -143,7 +142,6 @@ with tabs[1]:
     data["TRI_BC_90"] = c2[1].number_input("BC 90% (TRI)", key="tr6", value=0)
     data["TRI_PV_Exis"] = c2[2].number_input("PV Existence (TRI)", key="tr7", value=0)
     data["TRI_PV_Dem"] = c2[3].number_input("PV Démarrage (TRI)", key="tr8", value=0)
-    data["TRI_Mnt_Remb"] = st.number_input("Montant Remboursé (TRI)", key="tr9", value=0.0)
 
 with tabs[2]:
     st.session_state.v.add("3")
@@ -153,47 +151,9 @@ with tabs[2]:
     data["AT_Valides"] = c[1].number_input("Validés (AT)", key="at2", value=0)
     data["AT_Transmis_Bq"] = c[2].number_input("Transmis Banque (AT)", key="at3", value=0)
     data["AT_Finances"] = c[3].number_input("Financés (AT)", key="at4", value=0)
-    c2 = st.columns(4)
-    data["AT_BC_10"] = c2[0].number_input("BC 10% (AT)", key="at5", value=0)
-    data["AT_BC_90"] = c2[1].number_input("BC 90% (AT)", key="at6", value=0)
-    data["AT_PV_Exis"] = c2[2].number_input("PV Exist (AT)", key="at7", value=0)
-    data["AT_PV_Dem"] = c2[3].number_input("PV Dém (AT)", key="at8", value=0)
-
-with tabs[3]:
-    st.session_state.v.add("4")
-    st.subheader("6. Recyclage")
-    c = st.columns(4)
-    data["REC_Deposes"] = c[0].number_input("Déposés (REC)", key="re1", value=0)
-    data["REC_Valides"] = c[1].number_input("Validés (REC)", key="re2", value=0)
-    data["REC_Transmis_Bq"] = c[2].number_input("Transmis Banque (REC)", key="re3", value=0)
-    data["REC_Finances"] = c[3].number_input("Financés (REC)", key="re4", value=0)
-    c2 = st.columns(4)
-    data["REC_BC_10"] = c2[0].number_input("BC 10% (REC)", key="re5", value=0)
-    data["REC_BC_90"] = c2[1].number_input("BC 90% (REC)", key="re6", value=0)
-    data["REC_PV_Exis"] = c2[2].number_input("PV Exist (REC)", key="re7", value=0)
-    data["REC_PV_Dem"] = c2[3].number_input("PV Dém (REC)", key="re8", value=0)
-
-with tabs[4]:
-    st.session_state.v.add("5")
-    st.subheader("7. Tricycle")
-    c = st.columns(4)
-    data["TC_Deposes"] = c[0].number_input("Déposés (TC)", key="tc1", value=0)
-    data["TC_Valides"] = c[1].number_input("Validés (TC)", key="tc2", value=0)
-    data["TC_Transmis_Bq"] = c[2].number_input("Transmis Banque (TC)", key="tc3", value=0)
-    data["TC_Finances"] = c[3].number_input("Financés (TC)", key="tc4", value=0)
-
-with tabs[5]:
-    st.session_state.v.add("6")
-    st.subheader("8. Auto-Entrepreneur")
-    c = st.columns(4)
-    data["AE_Deposes"] = c[0].number_input("Déposés (AE)", key="ae1", value=0)
-    data["AE_Valides"] = c[1].number_input("Validés (AE)", key="ae2", value=0)
-    data["AE_Transmis_Bq"] = c[2].number_input("Transmis Banque (AE)", key="ae3", value=0)
-    data["AE_Finances"] = c[3].number_input("Financés (AE)", key="ae4", value=0)
 
 with tabs[6]:
     st.session_state.v.add("7")
-    st.subheader("4. CAM & NESDA")
     data["CAM"] = st.number_input("Citoyens reçus (CAM)", key="cam1", value=0)
     data["NESDA"] = st.number_input("Dossiers NESDA", key="nes1", value=0)
     data["ST_Total"] = st.number_input("Sorties terrain", key="st1", value=0)
@@ -204,10 +164,15 @@ st.markdown("---")
 if len(st.session_state.v) >= 7:
     if st.button("💾 ENREGISTRER & GÉNÉRER PDF", type="primary", use_container_width=True):
         if save_to_gsheet(data):
-            st.success("✅ Données enregistrées avec succès !")
-            # Génération directe en octets
-            pdf_out = generate_pdf_bytes(data)
-            st.download_button("📥 TÉLÉCHARGER LE PDF OFFICIEL", data=pdf_out, file_name=f"Bilan_{st.session_state.user}.pdf", mime="application/pdf")
+            st.success("✅ Données enregistrées !")
+            # Génération sous forme de flux d'octets
+            pdf_data = generate_pdf_bytes(data)
+            st.download_button(
+                label="📥 TÉLÉCHARGER LE PDF OFFICIEL", 
+                data=pdf_data, 
+                file_name=f"Bilan_{st.session_state.user}.pdf", 
+                mime="application/pdf"
+            )
             st.balloons()
 else:
-    st.warning(f"Veuillez parcourir les 7 onglets avant d'enregistrer ({len(st.session_state.v)}/7)")
+    st.warning(f"Consultez les 7 onglets avant d'enregistrer ({len(st.session_state.v)}/7)")
