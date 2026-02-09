@@ -5,7 +5,7 @@ from fpdf import FPDF
 import io
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="ANGEM PRO - Système Officiel", layout="wide", page_icon="🇩🇿")
+st.set_page_config(page_title="ANGEM PRO - Rapport Officiel", layout="wide", page_icon="🇩🇿")
 
 # --- 2. CONNEXION SÉCURISÉE ---
 def get_gsheet_client():
@@ -38,7 +38,7 @@ def save_to_gsheet(data_dict):
         st.error(f"Erreur Sheets : {e}")
         return False
 
-# --- 3. GÉNÉRATEUR PDF (MODÈLE FIDÈLE À VOTRE IMAGE) ---
+# --- 3. GÉNÉRATEUR PDF (STRUCTURE DÉTAILLÉE) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -71,6 +71,7 @@ def generate_pdf_bytes(data):
             pdf.cell(w, 7, str(val), 1, 0, 'C')
         pdf.ln(8)
 
+    # Tableaux du PDF
     h_std = ["Deposes", "Traites", "Valides", "Transmis", "Finances", "Recus_Remb", "Mnt_Remb"]
     h_ext = ["Deposes", "Valides", "Transmis_Bq", "Finances", "BC_10", "BC_90", "PV_Exis", "PV_Dem", "Mnt_Remb"]
     
@@ -85,6 +86,7 @@ def generate_pdf_bytes(data):
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(190, 10, f"L'accompagnateur : {data['Accompagnateur']}", 0, 1, 'R')
     
+    # SOLUTION À L'ERREUR : Sortie binaire propre
     return pdf.output()
 
 # --- 4. AUTHENTIFICATION ---
@@ -95,8 +97,8 @@ if 'auth' not in st.session_state:
 
 if not st.session_state.auth:
     st.title("🔐 ANGEM PRO - Accès")
-    u = st.selectbox("Nom", [""] + LISTE_NOMS + ["admin"])
-    p = st.text_input("Code", type="password")
+    u = st.selectbox("Sélectionnez votre nom", [""] + LISTE_NOMS + ["admin"])
+    p = st.text_input("Code secret", type="password")
     if st.button("Se connecter"):
         if p == "1234":
             st.session_state.auth, st.session_state.user = True, u
@@ -113,7 +115,6 @@ annee = c2.number_input("Année", 2026)
 
 data = {"Accompagnateur": st.session_state.user, "Mois": mois, "Annee": annee, "Date": datetime.now().strftime("%d/%m/%Y")}
 
-# STRUCTURE DÉPLIÉE (ONGLETS)
 tabs = st.tabs(["1. MP", "2. TRI", "3. AT", "4. REC", "5. TC", "6. AE", "7. CAM/NESDA"])
 
 with tabs[0]:
@@ -204,8 +205,9 @@ if len(st.session_state.v) >= 7:
     if st.button("💾 ENREGISTRER & GÉNÉRER PDF", type="primary", use_container_width=True):
         if save_to_gsheet(data):
             st.success("✅ Données enregistrées avec succès !")
-            pdf_data = generate_pdf_bytes(data)
-            st.download_button("📥 TÉLÉCHARGER LE PDF OFFICIEL", data=pdf_data, file_name=f"Bilan_{st.session_state.user}.pdf", mime="application/pdf")
+            # Génération directe en octets
+            pdf_out = generate_pdf_bytes(data)
+            st.download_button("📥 TÉLÉCHARGER LE PDF OFFICIEL", data=pdf_out, file_name=f"Bilan_{st.session_state.user}.pdf", mime="application/pdf")
             st.balloons()
 else:
     st.warning(f"Veuillez parcourir les 7 onglets avant d'enregistrer ({len(st.session_state.v)}/7)")
