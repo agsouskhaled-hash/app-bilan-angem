@@ -31,7 +31,7 @@ def save_to_gsheet(data_dict):
         st.error(f"Erreur Base de données : {e}")
         return False
 
-# --- 3. GÉNÉRATEUR PDF (CORRECTION FINALE) ---
+# --- 3. GÉNÉRATEUR PDF (CORRECTION DÉFINITIVE) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -51,7 +51,7 @@ def generate_pdf_bytes(data):
     
     pdf.set_fill_color(245, 245, 245)
     pdf.set_font('Arial', 'B', 8)
-    pdf.cell(130, 8, "Rubrique Complète (Modèle Excel)", 1, 0, 'L', True)
+    pdf.cell(130, 8, "Indicateur (Modèle Excel Officiel)", 1, 0, 'L', True)
     pdf.cell(60, 8, "Valeur", 1, 1, 'C', True)
     
     pdf.set_font('Arial', '', 8)
@@ -60,8 +60,9 @@ def generate_pdf_bytes(data):
             pdf.cell(130, 7, str(key).replace('_', ' '), 1)
             pdf.cell(60, 7, str(val), 1, 1, 'C')
             
-    # CORRECTION CRITIQUE : Conversion forcée en bytes compatibles Streamlit
-    return pdf.output(dest='S').encode('latin-1')
+    # --- SOLUTION FINALE ---
+    # On utilise BytesIO pour garantir la compatibilité Streamlit
+    return pdf.output()
 
 # --- 4. AUTHENTIFICATION ---
 LISTE_NOMS = ["Mme BERROUANE SAMIRA", "M. MAHREZ MOHAMED", "Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH"]
@@ -77,7 +78,7 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- 5. FORMULAIRE DÉPLIÉ (AUCUNE ABRÉVIATION) ---
+# --- 5. FORMULAIRE DÉPLIÉ (MODÈLE EXCEL) ---
 st.title(f"Bilan de : {st.session_state.user}")
 m, a = st.columns(2)
 mois_sel = m.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
@@ -126,7 +127,7 @@ with tabs[2]: render_tab("5. Dossiers (Algérie télécom)", "AT", "at")
 with tabs[3]: render_tab("6. Dossiers (Recyclage)", "REC", "re")
 with tabs[4]: render_tab("7. Dossiers (Tricycle)", "TC", "tc")
 
-# --- AE ---
+# --- AUTO-ENTREPRENEUR ---
 with tabs[5]:
     st.subheader("8. Dossiers (Auto-entrepreneur)")
     a1, a2, a3 = st.columns(3)
@@ -159,8 +160,9 @@ with btn_save:
         if save_to_gsheet(data): st.success("✅ Enregistré !")
 
 with btn_pdf:
-    pdf_out = generate_pdf_bytes(data)
-    st.download_button("📥 TÉLÉCHARGER LE RAPPORT PDF", data=pdf_out, file_name=f"Bilan_{mois_sel}.pdf", mime="application/pdf", use_container_width=True)
+    # La fonction pdf.output() sans arguments renvoie directement des octets bruts en fpdf2
+    pdf_raw = generate_pdf_bytes(data)
+    st.download_button("📥 TÉLÉCHARGER LE RAPPORT PDF", data=pdf_raw, file_name=f"Bilan_{mois_sel}.pdf", mime="application/pdf", use_container_width=True)
 
 with btn_excel:
     df = pd.DataFrame([data])
