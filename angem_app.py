@@ -31,7 +31,7 @@ def save_to_gsheet(data_dict):
         st.error(f"Erreur Base de données : {e}")
         return False
 
-# --- 3. GÉNÉRATEUR PDF (MODÈLE FIDÈLE) ---
+# --- 3. GÉNÉRATEUR PDF (CORRIGÉ) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -49,16 +49,16 @@ def generate_pdf_bytes(data):
     pdf.cell(190, 8, f"Mois : {data.get('Mois', '').upper()} {data.get('Annee', '')}", 0, 1, 'R')
     pdf.ln(5)
     
-    # Structure simple pour le test PDF
     pdf.set_fill_color(255, 230, 204)
     pdf.cell(190, 8, "Résumé des activités", 1, 1, 'L', True)
-    pdf.set_font('Arial', '', 9)
+    pdf.set_font('Arial', '', 8)
     for key, val in data.items():
         if isinstance(val, (int, float)) and val > 0:
-            pdf.cell(100, 7, f"{key}:", 1)
-            pdf.cell(90, 7, str(val), 1, 1, 'C')
+            pdf.cell(110, 6, f"{key}:", 1)
+            pdf.cell(80, 6, str(val), 1, 1, 'C')
             
-    return pdf.output(dest='S').encode('latin-1')
+    # CORRECTION ICI : output() renvoie déjà des bytes en fpdf2
+    return pdf.output()
 
 # --- 4. AUTHENTIFICATION ---
 LISTE_NOMS = ["Mme BERROUANE SAMIRA", "M. MAHREZ MOHAMED", "Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH"]
@@ -74,7 +74,7 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- 5. FORMULAIRE DÉTAILLÉ (10 RUBRIQUES - NOMS ENTIERS) ---
+# --- 5. FORMULAIRE DÉPLIÉ (10 RUBRIQUES - NOMS ENTIERS) ---
 st.title(f"Bilan mensuel : {st.session_state.user}")
 c_m, c_a = st.columns(2)
 mois_sel = c_m.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
@@ -82,7 +82,7 @@ annee_sel = c_a.number_input("Année", 2026)
 
 data = {"Accompagnateur": st.session_state.user, "Mois": mois_sel, "Annee": annee_sel, "Date": datetime.now().strftime("%d/%m/%Y")}
 
-tabs = st.tabs(["1. Matière Première", "2. Triangulaire", "3. Algérie Télécom", "4. Recyclage", "5. Tricycle", "6. Auto-Entrepreneur", "7. NESDA / Terrain"])
+tabs = st.tabs(["1. Matière Première", "2. Triangulaire", "3. Télécom", "4. Recyclage", "5. Tricycle", "6. Auto-Entrepreneur", "7. NESDA / Terrain"])
 
 # --- 1. MATIERE PREMIERE ---
 with tabs[0]:
@@ -91,11 +91,11 @@ with tabs[0]:
     data["MP_Dossiers_déposés"] = c1.number_input("Nombre de dossiers déposés (MP)", key="mp1")
     data["MP_Dossiers_traités_CEF"] = c2.number_input("Nombre de dossiers traités par la CEF (MP)", key="mp2")
     data["MP_Dossiers_validés_CEF"] = c3.number_input("Nombre de dossiers validés par la CEF (MP)", key="mp3")
-    c4, c5, c6 = st.columns(3)
+    c4, c5, c6, c7 = st.columns(4)
     data["MP_Dossiers_transmis_AR"] = c4.number_input("Nombre de dossiers transmis à l'AR (MP)", key="mp4")
     data["MP_Dossiers_financés"] = c5.number_input("Nombre de dossiers financés (MP)", key="mp5")
     data["MP_Recus_remboursement"] = c6.number_input("Nombre de reçus de remboursement (MP)", key="mp6")
-    data["MP_Montant_remboursé"] = st.number_input("Montant total remboursé (DA) (MP)", key="mp7")
+    data["MP_Montant_remboursé"] = c7.number_input("Montant total remboursé (DA) (MP)", key="mp7")
 
 # --- 2. TRIANGULAIRE ---
 with tabs[1]:
@@ -115,38 +115,37 @@ with tabs[1]:
     data["TRI_PV_Existence"] = t10.number_input("Nbrs. PV d'Existence (TRI)", key="tri10")
     data["TRI_PV_Démarrage"] = t11.number_input("Nbrs. PV Démarrage (TRI)", key="tri11")
 
-# --- 3. ALGERIE TELECOM ---
-with tabs[2]:
-    st.subheader("5. Dossiers (Algérie télécom)")
-    a1, a2, a3, a4 = st.columns(4)
-    data["AT_Dossiers_déposés"] = a1.number_input("Nbrs. Dossiers déposés (AT)", key="at1")
-    data["AT_Dossiers_validés_CEF"] = a2.number_input("Nbrs. Dossiers validés CEF (AT)", key="at2")
-    data["AT_Dossiers_transmis_Banque"] = a3.number_input("Nbrs. Dossiers transmis à la Banque (AT)", key="at3")
-    data["AT_Notifications_bancaires"] = a4.number_input("Nbrs. Notifications bancaires (AT)", key="at4")
-    a5, a6, a7, a8 = st.columns(4)
-    data["AT_Ordre_10"] = a5.number_input("Nbrs. Ordre d'enlèvement 10% (AT)", key="at5")
-    data["AT_Ordre_90"] = a6.number_input("Nbrs. Ordre d'enlèvement 90% (AT)", key="at6")
-    data["AT_PV_Existence"] = a7.number_input("Nbrs. PV d'Existence (AT)", key="at7")
-    data["AT_PV_Démarrage"] = a8.number_input("Nbrs. PV Démarrage (AT)", key="at8")
+# --- 5. TRICYCLE ---
+with tabs[4]:
+    st.subheader("7. Dossiers (Tricycle)")
+    tc1, tc2, tc3, tc4 = st.columns(4)
+    data["TC_Dossiers_déposés"] = tc1.number_input("Nbrs. Dossiers déposés (TC)", key="tc1")
+    data["TC_Dossiers_validés_CEF"] = tc2.number_input("Nbrs. Dossiers validés CEF (TC)", key="tc2")
+    data["TC_Dossiers_transmis_Banque"] = tc3.number_input("Nbrs. Dossiers transmis à la Banque (TC)", key="tc3")
+    data["TC_Dossiers_financés"] = tc4.number_input("Nbrs. Dossiers financés (TC)", key="tc4")
+    tc5, tc6, tc7, tc8 = st.columns(4)
+    data["TC_Ordre_10"] = tc5.number_input("Nbrs. Ordre d'enlèvement 10% (TC)", key="tc5")
+    data["TC_Ordre_90"] = tc6.number_input("Nbrs. Ordre d'enlèvement 90% (TC)", key="tc6")
+    data["TC_PV_Existence"] = tc7.number_input("Nbrs. PV d'Existence (TC)", key="tc7")
+    data["TC_PV_Démarrage"] = tc8.number_input("Nbrs. PV Démarrage (TC)", key="tc8")
 
-# --- 4. RECYCLAGE ---
-with tabs[3]:
-    st.subheader("6. Dossiers (Recyclage)")
-    r1, r2, r3, r4 = st.columns(4)
-    data["REC_Dossiers_déposés"] = r1.number_input("Nbrs. Dossiers déposés (REC)", key="rec1")
-    data["REC_Dossiers_validés_CEF"] = r2.number_input("Nbrs. Dossiers validés CEF (REC)", key="rec2")
-    data["REC_Dossiers_transmis_Banque"] = r3.number_input("Nbrs. Dossiers transmis à la Banque (REC)", key="rec3")
-    data["REC_PV_Existence"] = r4.number_input("Nbrs. PV d'Existence (REC)", key="rec4")
+# --- 6. AUTO-ENTREPRENEUR ---
+with tabs[5]:
+    st.subheader("8. Dossiers (Auto-entrepreneur)")
+    ae1, ae2, ae3, ae4 = st.columns(4)
+    data["AE_Dossiers_déposés"] = ae1.number_input("Nbrs. Dossiers déposés (AE)", key="ae1")
+    data["AE_Dossiers_traités_CEF"] = ae2.number_input("Nbrs. Dossiers traités CEF (AE)", key="ae2")
+    data["AE_Dossiers_validés_CEF"] = ae3.number_input("Nbrs. Dossiers validés CEF (AE)", key="ae3")
+    data["AE_Dossiers_transmis_Banque"] = ae4.number_input("Nbrs. Dossiers transmis à la Banque (AE)", key="ae4")
 
 # --- 7. NESDA / TERRAIN ---
 with tabs[6]:
-    st.subheader("9. Dossiers orientés / 10. Rappels")
-    n1, n2 = st.columns(2)
-    data["NESDA_Dossiers"] = n1.number_input("Nbrs. de dossiers orientés NESDA", key="nes1")
-    data["Sorties_Terrain"] = n2.number_input("Nbrs. Sortie sur terrain", key="st1")
-    data["Rappels_27k"] = st.number_input("Lettres de rappel 27 000 DA", key="r1")
-    data["Rappels_40k"] = st.number_input("Lettres de rappel 40 000 DA", key="r2")
-    data["Rappels_100k"] = st.number_input("Lettres de rappel 100 000 DA", key="r3")
+    st.subheader("9. NESDA / 10. Rappels")
+    data["NESDA_Dossiers"] = st.number_input("Dossiers orientés NESDA", key="nes1")
+    data["Sorties_Terrain"] = st.number_input("Sorties terrain", key="st1")
+    data["Rappels_27k"] = st.number_input("Lettres de rappel 27.000 DA", key="r1")
+    data["Rappels_40k"] = st.number_input("Lettres de rappel 40.000 DA", key="r2")
+    data["Rappels_100k"] = st.number_input("Lettres de rappel 100.000 DA", key="r3")
 
 st.markdown("---")
 
@@ -154,16 +153,16 @@ st.markdown("---")
 col_save, col_pdf, col_excel = st.columns(3)
 
 with col_save:
-    if st.button("💾 ENREGISTRER", type="primary", use_container_width=True):
+    if st.button("💾 ENREGISTRER (Google Sheets)", type="primary", use_container_width=True):
         if save_to_gsheet(data): st.success("✅ Données enregistrées !")
 
 with col_pdf:
     pdf_out = generate_pdf_bytes(data)
-    st.download_button("📥 PDF", data=pdf_out, file_name=f"Bilan_{mois_sel}.pdf", mime="application/pdf", use_container_width=True)
+    st.download_button("📥 TÉLÉCHARGER PDF", data=pdf_bytes if 'pdf_bytes' in locals() else pdf_out, file_name=f"Bilan_{mois_sel}.pdf", mime="application/pdf", use_container_width=True)
 
 with col_excel:
     df = pd.DataFrame([data])
     excel_io = io.BytesIO()
     with pd.ExcelWriter(excel_io, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False)
-    st.download_button("📊 EXCEL", data=excel_io.getvalue(), file_name=f"Bilan_{mois_sel}.xlsx", use_container_width=True)
+    st.download_button("📊 TÉLÉCHARGER EXCEL", data=excel_io.getvalue(), file_name=f"Bilan_{mois_sel}.xlsx", use_container_width=True)
