@@ -5,10 +5,10 @@ from datetime import datetime
 from fpdf import FPDF
 import io
 
-# --- CONFIGURATION ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="ANGEM PRO - Système Officiel", layout="wide", page_icon="🇩🇿")
 
-# --- CONNEXION SÉCURISÉE ---
+# --- 2. CONNEXION SÉCURISÉE ---
 def get_gsheet_client():
     creds = {
         "type": st.secrets["type"], "project_id": st.secrets["project_id"],
@@ -31,7 +31,7 @@ def save_to_gsheet(data_dict):
         st.error(f"Erreur Base de données : {e}")
         return False
 
-# --- GÉNÉRATEUR PDF (STRUCTURE EXACTE EXCEL) ---
+# --- 3. GÉNÉRATEUR PDF (CORRECTION FINALE) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -49,10 +49,9 @@ def generate_pdf_bytes(data):
     pdf.cell(190, 8, f"Mois : {data.get('Mois', '').upper()} {data.get('Annee', '')}", 0, 1, 'R')
     pdf.ln(5)
     
-    # Remplissage automatique simplifié pour le PDF (tableau récapitulatif)
-    pdf.set_fill_color(240, 240, 240)
+    pdf.set_fill_color(245, 245, 245)
     pdf.set_font('Arial', 'B', 8)
-    pdf.cell(130, 8, "Indicateur (Rubrique Complète)", 1, 0, 'L', True)
+    pdf.cell(130, 8, "Rubrique Complète (Modèle Excel)", 1, 0, 'L', True)
     pdf.cell(60, 8, "Valeur", 1, 1, 'C', True)
     
     pdf.set_font('Arial', '', 8)
@@ -61,9 +60,10 @@ def generate_pdf_bytes(data):
             pdf.cell(130, 7, str(key).replace('_', ' '), 1)
             pdf.cell(60, 7, str(val), 1, 1, 'C')
             
-    return pdf.output()
+    # CORRECTION CRITIQUE : Conversion forcée en bytes compatibles Streamlit
+    return pdf.output(dest='S').encode('latin-1')
 
-# --- AUTHENTIFICATION ---
+# --- 4. AUTHENTIFICATION ---
 LISTE_NOMS = ["Mme BERROUANE SAMIRA", "M. MAHREZ MOHAMED", "Mme GUESSMIA ZAHIRA", "M. BOULAHLIB REDOUANE", "Mme DJAOUDI SARAH"]
 if 'auth' not in st.session_state: st.session_state.auth = False
 
@@ -77,8 +77,8 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- FORMULAIRE DÉTAILLÉ (MODÈLE EXCEL) ---
-st.title(f"Bilan : {st.session_state.user}")
+# --- 5. FORMULAIRE DÉPLIÉ (AUCUNE ABRÉVIATION) ---
+st.title(f"Bilan de : {st.session_state.user}")
 m, a = st.columns(2)
 mois_sel = m.selectbox("Mois", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
 annee_sel = a.number_input("Année", 2026)
@@ -87,7 +87,7 @@ data = {"Accompagnateur": st.session_state.user, "Mois": mois_sel, "Annee": anne
 
 tabs = st.tabs(["1. Matière Première", "2. Triangulaire", "3. Télécom", "4. Recyclage", "5. Tricycle", "6. Auto-Entrepreneur", "7. NESDA / Terrain"])
 
-# --- SECTION 1 ---
+# --- SECTION 1 : MP ---
 with tabs[0]:
     st.subheader("1. Formule : Achat de matière premières")
     c1, c2, c3 = st.columns(3)
@@ -101,34 +101,32 @@ with tabs[0]:
     data["MP_Nbrs_reçus_de_remboursement"] = c6.number_input("Nbrs. reçus de remboursement", key="mp6")
     data["MP_Montant_remboursé"] = c7.number_input("Montant remboursé (DA)", key="mp7")
 
-# --- FONCTION POUR SECTIONS IDENTIQUES (TRI, AT, REC, TC) ---
-def render_standard_tab(label, prefix, key_p):
+# --- FONCTION SECTIONS IDENTIQUES ---
+def render_tab(label, prefix, kp):
     st.subheader(label)
     cols1 = st.columns(5)
-    data[f"{prefix}_Nbrs_Dossiers_déposés"] = cols1[0].number_input(f"Dossiers déposés ({prefix})", key=f"{key_p}1")
-    data[f"{prefix}_Nbrs_Dossiers_traités_par_CEF"] = cols1[1].number_input(f"Traités par CEF ({prefix})", key=f"{key_p}2")
-    data[f"{prefix}_Nbrs_Dossiers_validés_par_la_CEF"] = cols1[2].number_input(f"Validés par la CEF ({prefix})", key=f"{key_p}3")
-    data[f"{prefix}_Nbrs_Dossiers_transmis_à_la_Banque"] = cols1[3].number_input(f"Transmis à la Banque ({prefix})", key=f"{key_p}4")
-    data[f"{prefix}_Nbrs_Notifications_bancaires"] = cols1[4].number_input(f"Notifications bancaires ({prefix})", key=f"{key_p}5")
-    
+    data[f"{prefix}_Nbrs_Dossiers_déposés"] = cols1[0].number_input(f"Dossiers déposés ({prefix})", key=f"{kp}1")
+    data[f"{prefix}_Nbrs_Dossiers_traités_par_CEF"] = cols1[1].number_input(f"Traités par CEF ({prefix})", key=f"{kp}2")
+    data[f"{prefix}_Nbrs_Dossiers_validés_par_la_CEF"] = cols1[2].number_input(f"Validés par la CEF ({prefix})", key=f"{kp}3")
+    data[f"{prefix}_Nbrs_Dossiers_transmis_à_la_Banque"] = cols1[3].number_input(f"Transmis à la Banque ({prefix})", key=f"{kp}4")
+    data[f"{prefix}_Nbrs_Notifications_bancaires"] = cols1[4].number_input(f"Notifications bancaires ({prefix})", key=f"{kp}5")
     cols2 = st.columns(4)
-    data[f"{prefix}_Nbrs_Dossiers_transmis_AR"] = cols2[0].number_input(f"Transmis à L'AR ({prefix})", key=f"{key_p}6")
-    data[f"{prefix}_Nbrs_dossiers_financés"] = cols2[1].number_input(f"Dossiers financés ({prefix})", key=f"{key_p}7")
-    data[f"{prefix}_Nbrs_Ordre_enlèvement_10"] = cols2[2].number_input(f"Ordre enlèvement 10% ({prefix})", key=f"{key_p}8")
-    data[f"{prefix}_Nbrs_Ordre_enlèvement_90"] = cols2[3].number_input(f"Ordre enlèvement 90% ({prefix})", key=f"{key_p}9")
-    
+    data[f"{prefix}_Nbrs_Dossiers_transmis_AR"] = cols2[0].number_input(f"Transmis à L'AR ({prefix})", key=f"{kp}6")
+    data[f"{prefix}_Nbrs_dossiers_financés"] = cols2[1].number_input(f"Dossiers financés ({prefix})", key=f"{kp}7")
+    data[f"{prefix}_Nbrs_Ordre_enlèvement_10"] = cols2[2].number_input(f"Ordre enlèvement 10% ({prefix})", key=f"{kp}8")
+    data[f"{prefix}_Nbrs_Ordre_enlèvement_90"] = cols2[3].number_input(f"Ordre enlèvement 90% ({prefix})", key=f"{kp}9")
     cols3 = st.columns(4)
-    data[f"{prefix}_Nbrs_PV_Existence"] = cols3[0].number_input(f"PV Existence ({prefix})", key=f"{key_p}10")
-    data[f"{prefix}_Nbrs_PV_Démarrage"] = cols3[1].number_input(f"PV Démarrage ({prefix})", key=f"{key_p}11")
-    data[f"{prefix}_Nbrs_reçus_remboursement"] = cols3[2].number_input(f"Nb reçus remb. ({prefix})", key=f"{key_p}12")
-    data[f"{prefix}_Montant_remboursé"] = cols3[3].number_input(f"Montant remboursé ({prefix})", key=f"{key_p}13")
+    data[f"{prefix}_Nbrs_PV_Existence"] = cols3[0].number_input(f"PV Existence ({prefix})", key=f"{kp}10")
+    data[f"{prefix}_Nbrs_PV_Démarrage"] = cols3[1].number_input(f"PV Démarrage ({prefix})", key=f"{kp}11")
+    data[f"{prefix}_Nbrs_reçus_remboursement"] = cols3[2].number_input(f"Nb reçus remb. ({prefix})", key=f"{kp}12")
+    data[f"{prefix}_Montant_remboursé"] = cols3[3].number_input(f"Montant remboursé ({prefix})", key=f"{kp}13")
 
-with tabs[1]: render_standard_tab("2. Formule : Triangulaire", "TRI", "t")
-with tabs[2]: render_standard_tab("5. Dossiers (Algérie télécom)", "AT", "at")
-with tabs[3]: render_standard_tab("6. Dossiers (Recyclage)", "REC", "re")
-with tabs[4]: render_standard_tab("7. Dossiers (Tricycle)", "TC", "tc")
+with tabs[1]: render_tab("2. Formule : Triangulaire", "TRI", "t")
+with tabs[2]: render_tab("5. Dossiers (Algérie télécom)", "AT", "at")
+with tabs[3]: render_tab("6. Dossiers (Recyclage)", "REC", "re")
+with tabs[4]: render_tab("7. Dossiers (Tricycle)", "TC", "tc")
 
-# --- AUTO-ENTREPRENEUR ---
+# --- AE ---
 with tabs[5]:
     st.subheader("8. Dossiers (Auto-entrepreneur)")
     a1, a2, a3 = st.columns(3)
