@@ -33,7 +33,7 @@ def get_gsheet_client():
     }
     return gspread.service_account_from_dict(creds)
 
-# --- 3. GÉNÉRATEUR PDF (CORRECTION AFFICHAGE CHIFFRES) ---
+# --- 3. GÉNÉRATEUR PDF (AVEC FIX CHIFFRES) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -62,17 +62,14 @@ def generate_pdf(data_dict, promos_df=None):
         pdf.ln()
         pdf.set_font('Arial', '', 7)
         for k in keys:
-            # --- FIX: Conversion forcee en nombre pour affichage ---
             val = data_dict.get(k, 0)
             try:
-                # Si c'est un chiffre, on enleve le .0 inutile, sinon on garde le texte
-                val_str = str(int(float(val))) if str(val).replace('.','').replace('-','').isdigit() else str(val)
-            except:
-                val_str = str(val)
-            pdf.cell(w, 7, val_str, 1, 0, 'C')
+                # Force l'affichage du chiffre propre
+                v_str = str(int(float(val))) if str(val).replace('.','').replace('-','').isdigit() else str(val)
+            except: v_str = str(val)
+            pdf.cell(w, 7, v_str, 1, 0, 'C')
         pdf.ln(10)
 
-    # Sections habituelles
     draw_section("1. Formule : Achat de matiere premieres", ["Deposes", "Traites CEF", "Valides CEF", "Transmis AR", "Finances", "Recus", "Montant"], ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
     h_std = ["Deposes", "Valides", "Trans. Bq", "Notif. Bq", "Trans. AR", "Finances", "OE 10%", "OE 90%", "PV Exist", "PV Dem", "Recus", "Montant"]
     draw_section("2. Formule : Triangulaire", h_std, ["TR_D", "TR_V", "TR_B", "TR_N", "TR_A", "TR_F", "TR_1", "TR_9", "TR_E", "TR_D", "TR_R", "TR_M"])
@@ -90,7 +87,6 @@ def generate_pdf(data_dict, promos_df=None):
                 pdf.cell(55, 7, str(row[0]), 1, 0, 'L'); pdf.cell(50, 7, str(row[1]), 1, 0, 'L')
                 pdf.cell(45, 7, str(row[2]), 1, 0, 'C'); pdf.cell(40, 7, str(row[3]), 1, 0, 'C')
                 pdf.ln()
-    
     return bytes(pdf.output())
 
 # --- 4. AUTHENTIFICATION ---
@@ -107,80 +103,68 @@ if not st.session_state.auth:
         else: st.error("Code incorrect")
     st.stop()
 
-# --- 5. ESPACE ADMIN (DESIGN D'ORIGINE) ---
+# --- 5. ESPACE ADMIN (DÉTAILLÉ) ---
 if st.session_state.role == "Administrateur":
     st.title("📊 Administration Centrale")
-    t1, t2, t3 = st.tabs(["Donnees", "Telechargements PDF", "Codes"])
+    t1, t2, t3 = st.tabs(["Données Agence", "Téléchargements PDF", "Liste des Codes"])
     try:
         client = get_gsheet_client()
         sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
         ws = sh.worksheet("SAISIE_BRUTE")
         all_v = ws.get_all_values()
         df = pd.DataFrame(all_v[1:], columns=[h if h!="" else f"V_{i}" for i,h in enumerate(all_v[0])]) if len(all_v)>1 else pd.DataFrame()
-    except: st.error("Erreur d'acces"); st.stop()
+    except Exception as e:
+        st.error(f"Connexion impossible : {e}")
+        st.stop()
+
+    with t1:
+        st.subheader("📁 Historique des saisies")
+        st.dataframe(df)
+        if not df.empty:
+            del_idx = st.selectbox("Ligne à supprimer", df.index, format_func=lambda x: f"Ligne {x+2}: {df.loc[x,'Accompagnateur']} ({df.loc[x,'Mois']})")
+            if st.button("❌ SUPPRIMER L'ENREGISTREMENT"):
+                ws.delete_rows(del_idx + 2)
+                st.success("Donnée supprimée !")
+                st.rerun()
 
     with t2:
         if not df.empty:
-            idx = st.selectbox("Saisie PDF", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
-            st.download_button("📥 PDF", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
+            idx = st.selectbox("Sélectionner une fiche", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
+            st.download_button("📥 PDF INDIVIDUEL", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
             st.markdown("---")
-            m_sel = st.selectbox("Mois cumul", df['Mois'].unique())
-            if st.button("Cumul Agence"):
+            m_sel = st.selectbox("Mois pour le CUMUL", df['Mois'].unique())
+            if st.button("CALCULER LE TOTAL MENSUEL"):
                 df_f = df[df['Mois'] == m_sel].copy()
                 cols = [c for c in df_f.columns if c not in ["Accompagnateur", "Mois", "Annee", "Date"]]
                 for c in cols: df_f[c] = pd.to_numeric(df_f[c], errors='coerce').fillna(0)
-                total_data = {'Accompagnateur': "TOTAL", 'Mois': m_sel, 'Annee': 2026, **df_f[cols].sum().to_dict()}
-                st.download_button("📥 CUMUL PDF", generate_pdf(total_data), f"Total_{m_sel}.pdf")
-    if st.button("Deconnexion"): st.session_state.auth = False; st.rerun()
+                total_data = {'Accompagnateur': "TOTAL AGENCE", 'Mois': m_sel, 'Annee': 2026, **df_f[cols].sum().to_dict()}
+                st.download_button("📥 TÉLÉCHARGER LE CUMUL PDF", generate_pdf(total_data), f"Total_{m_sel}.pdf")
+    
+    with t3:
+        st.subheader("🔑 Codes d'accès personnels")
+        st.table(pd.DataFrame(list(ACCES.items()), columns=["Nom", "Code"]))
+    
+    if st.button("Déconnexion"):
+        st.session_state.auth = False
+        st.rerun()
     st.stop()
 
 # --- 6. FORMULAIRE ACCOMPAGNATEUR ---
 st.title(f"Bilan : {st.session_state.user}")
-m_s = st.selectbox("Mois du rapport", ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin", "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"])
+m_s = st.selectbox("Mois du rapport", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
 data = {"Accompagnateur": st.session_state.user, "Mois": m_s, "Annee": 2026, "Date": datetime.now().strftime("%d/%m/%Y")}
 
 def ui_sec(label, p, kp):
     st.subheader(label); c1,c2,c3,c4,c5 = st.columns(5)
-    data[f"{p}_D"]=c1.number_input(f"Dossiers Deposes", key=f"{kp}1")
-    data[f"{p}_V"]=c2.number_input(f"Dossiers Valides CEF", key=f"{kp}2")
+    data[f"{p}_D"]=c1.number_input(f"Dossiers Déposés", key=f"{kp}1")
+    data[f"{p}_V"]=c2.number_input(f"Dossiers Validés CEF", key=f"{kp}2")
     data[f"{p}_B"]=c3.number_input(f"Transmis Banque", key=f"{kp}3")
     data[f"{p}_N"]=c4.number_input(f"Notifications Banque", key=f"{kp}4")
     data[f"{p}_A"]=c5.number_input(f"Transmis AR", key=f"{kp}5")
     c6,c7,c8,c9 = st.columns(4)
-    data[f"{p}_F"]=c6.number_input(f"Dossiers Finances", key=f"{kp}6")
+    data[f"{p}_F"]=c6.number_input(f"Dossiers Financés", key=f"{kp}6")
     data[f"{p}_1"]=c7.number_input(f"OE 10%", key=f"{kp}7")
     data[f"{p}_9"]=c8.number_input(f"OE 90%", key=f"{kp}8")
     data[f"{p}_E"]=c9.number_input(f"PV d'Existence", key=f"{kp}9")
     c10,c11,c12 = st.columns(3)
-    data[f"{p}_D"]=c10.number_input(f"PV de Demarrage", key=f"{kp}10")
-    data[f"{p}_R"]=c11.number_input(f"Nombre de Recus", key=f"{kp}11")
-    data[f"{p}_M"]=c12.number_input(f"Montant Rembourse", key=f"{kp}12")
-
-tabs = st.tabs(["MP", "Triangulaire", "Telecom", "Suivi & Rappels"])
-with tabs[0]:
-    st.subheader("1. Formule : Achat de Matiere Premiere"); cx=st.columns(5)
-    data["MP_D"]=cx[0].number_input("Dossiers Deposes", key="m1"); data["MP_T"]=cx[1].number_input("Traites CEF", key="m2")
-    data["MP_V"]=cx[2].number_input("Valides CEF", key="m3"); data["MP_A"]=cx[3].number_input("Transmis AR", key="m4"); data["MP_F"]=cx[4].number_input("Finances", key="m5")
-    data["MP_R"]=st.number_input("Nombre de Recus", key="m6"); data["MP_M"]=st.number_input("Montant Rembourse", key="m7")
-with tabs[1]: ui_sec("2. Triangulaire", "TR", "tri")
-with tabs[2]: ui_sec("5. Algerie Telecom", "AT", "atl")
-with tabs[3]:
-    st.subheader("9. Suivi & Rappels")
-    data["TEL_A"]=st.number_input("Nombre d'Appels", key="tel1")
-    data["NE_T"]=st.number_input("NESDA", key="n1"); data["ST_T"]=st.number_input("Terrain", key="n2")
-    r=st.columns(5); data["R_27"]=r[0].number_input("27k", key="r1"); data["R_40"]=r[1].number_input("40k", key="r2"); data["R_100"]=r[2].number_input("100k", key="r3"); data["R_400"]=r[3].number_input("400k", key="r4"); data["R_1M"]=r[4].number_input("1M", key="r5")
-    st.markdown("---"); df_promos = st.data_editor(pd.DataFrame(columns=["Nom & Prenom", "Activite", "Financement", "Telephone"]), num_rows="dynamic")
-
-st.markdown("---")
-# --- 7. ACTIONS (BOUTONS SEPARES EN BAS) ---
-b1, b2, b3 = st.columns(3)
-with b1:
-    if st.button("💾 ENREGISTRER"):
-        try:
-            get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM").worksheet("SAISIE_BRUTE").append_row(list(data.values()))
-            st.success("✅ Enregistre !")
-        except Exception as e: st.error(f"Erreur : {e}")
-with b2: st.download_button("📥 PDF", generate_pdf(data, df_promos), f"Bilan_{st.session_state.user}.pdf")
-with b3:
-    io_x = io.BytesIO(); pd.DataFrame([data]).to_excel(pd.ExcelWriter(io_x, engine='xlsxwriter'), index=False)
-    st.download_button("📊 EXCEL", io_x.getvalue(), "Bilan.xlsx")
+    data[f"{p}_D"]=c10.number_input(
