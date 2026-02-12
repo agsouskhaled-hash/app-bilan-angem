@@ -33,7 +33,7 @@ def get_gsheet_client():
     }
     return gspread.service_account_from_dict(creds)
 
-# --- 3. GÉNÉRATEUR PDF (ALIGNEMENT FIXE SANS DÉCALAGE) ---
+# --- 3. GÉNÉRATEUR PDF ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -52,39 +52,27 @@ def generate_pdf(data, title_prefix="Rapport"):
     pdf.ln(5)
 
     def draw_section(title, headers, keys):
-        # Titre de rubrique
         pdf.set_fill_color(255, 230, 204)
         pdf.set_font('Arial', 'B', 9)
         pdf.cell(190, 8, title, 1, 1, 'L', True)
-        
-        # En-têtes (Alignement forcé)
         pdf.set_font('Arial', 'B', 5.5)
         w = 190 / len(headers)
-        
-        # On utilise une hauteur fixe pour éviter les décalages de multi_cell
-        for h in headers:
-            pdf.cell(w, 5, h, 1, 0, 'C')
+        for h in headers: pdf.cell(w, 5, h, 1, 0, 'C')
         pdf.ln()
-        
-        # Données
         pdf.set_font('Arial', '', 7)
         for k in keys:
-            pdf.cell(w, 7, str(data.get(k, 0)), 1, 0, 'C')
+            val = data.get(k, 0)
+            val_str = str(int(val)) if isinstance(val, (int, float)) and val == int(val) else str(val)
+            pdf.cell(w, 7, val_str, 1, 0, 'C')
         pdf.ln(10)
 
-    # --- RENDU DE TOUTES LES RUBRIQUES ---
-    draw_section("1. Formule : Achat de matière premières", 
-                 ["Déposés", "Traités CEF", "Validés CEF", "Transmis AR", "Financés", "Reçus", "Montant"], 
-                 ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
-
+    draw_section("1. Formule : Achat de matière premières", ["Déposés", "Traités CEF", "Validés CEF", "Transmis AR", "Financés", "Reçus", "Montant"], ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
     h_std = ["Déposés", "Validés", "Trans. Bq", "Notif. Bq", "Trans. AR", "Financés", "OE 10%", "OE 90%", "PV Exist", "PV Dém", "Reçus", "Montant"]
-    
     draw_section("2. Formule : Triangulaire", h_std, ["TR_D", "TR_V", "TR_B", "TR_N", "TR_A", "TR_F", "TR_1", "TR_9", "TR_E", "TR_D", "TR_R", "TR_M"])
     draw_section("5. Algérie Télécom", h_std, ["AT_D", "AT_V", "AT_B", "AT_N", "AT_A", "AT_F", "AT_1", "AT_9", "AT_E", "AT_D", "AT_R", "AT_M"])
     draw_section("6. Recyclage", h_std, ["RE_D", "RE_V", "RE_B", "RE_N", "RE_A", "RE_F", "RE_1", "RE_9", "RE_E", "RE_D", "RE_R", "RE_M"])
     draw_section("7. Tricycle", h_std, ["TC_D", "TC_V", "TC_B", "TC_N", "TC_A", "TC_F", "TC_1", "TC_9", "TC_E", "TC_D", "TC_R", "TC_M"])
     draw_section("8. Auto-entrepreneur", h_std, ["AE_D", "AE_V", "AE_B", "AE_N", "AE_A", "AE_F", "AE_1", "AE_9", "AE_E", "AE_D", "AE_R", "AE_M"])
-    
     h_rap = ["NESDA", "Terrain", "Rappel 27k", "Rappel 40k", "Rappel 100k", "Rappel 400k", "Rappel 1M"]
     draw_section("9. NESDA / 10. Rappels", h_rap, ["NE_T", "ST_T", "R_27", "R_40", "R_100", "R_400", "R_1M"])
     
@@ -104,7 +92,7 @@ if not st.session_state.auth:
         else: st.error("Code incorrect")
     st.stop()
 
-# --- 5. ESPACE ADMIN (DÉFINITIF) ---
+# --- 5. ESPACE ADMIN ---
 if st.session_state.role == "Administrateur":
     st.title("📊 Administration Centrale")
     t1, t2, t3 = st.tabs(["Base de Données", "Téléchargements PDF", "Codes"])
@@ -127,7 +115,7 @@ if st.session_state.role == "Administrateur":
             del_idx = st.selectbox("Ligne à supprimer", df.index, format_func=lambda x: f"Ligne {x+2}: {df.loc[x,'Accompagnateur']} ({df.loc[x,'Mois']})")
             if st.button("❌ CONFIRMER LA SUPPRESSION"):
                 ws.delete_rows(del_idx + 2)
-                st.success("Supprimé avec succès.")
+                st.success("Supprimé !")
                 st.rerun()
 
     with t2:
@@ -135,17 +123,19 @@ if st.session_state.role == "Administrateur":
             st.subheader("📁 Bilans Individuels")
             idx = st.selectbox("Saisie à générer", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
             st.download_button(f"📥 PDF de {df.loc[idx, 'Accompagnateur']}", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
+            
             st.markdown("---")
+            st.subheader("📈 Rapport Cumulé (TOTAL AGENCE)")
             m_unique = df['Mois'].unique()
             m_sel = st.selectbox("Mois pour le total", m_unique)
-            if st.button("Calculer le Cumul Agence"):
+            if st.button("Générer le PDF de synthèse"):
                 df_f = df[df['Mois'] == m_sel].copy()
-                for col in df_f.columns:
-                    if col not in ["Accompagnateur", "Mois", "Annee", "Date"]:
-                        df_f[col] = pd.to_numeric(df_f[col], errors='coerce').fillna(0)
-                total_data = df_f.sum(numeric_only=True).to_dict()
-                total_data.update({'Accompagnateur': "TOTAL", 'Mois': m_sel, 'Annee': 2026})
-                st.download_button("📥 TÉLÉCHARGER LE CUMUL", generate_pdf(total_data, "TOTAL"), f"Total_{m_sel}.pdf")
+                cols_to_sum = [c for c in df_f.columns if c not in ["Accompagnateur", "Mois", "Annee", "Date"]]
+                for col in cols_to_sum:
+                    df_f[col] = pd.to_numeric(df_f[col], errors='coerce').fillna(0)
+                total_vals = df_f[cols_to_sum].sum().to_dict()
+                total_data = {'Accompagnateur': "TOTAL AGENCE", 'Mois': m_sel, 'Annee': 2026, **total_vals}
+                st.download_button("📥 TÉLÉCHARGER LE CUMUL GLOBAL", generate_pdf(total_data, "TOTAL"), f"Total_{m_sel}.pdf")
     
     with t3: st.table(pd.DataFrame(list(ACCES.items()), columns=["Nom", "Code"]))
     if st.button("Déconnexion"): st.session_state.auth = False; st.rerun()
@@ -192,7 +182,7 @@ with tabs[6]:
     r=st.columns(5); data["R_27"]=r[0].number_input("27k", key="r1"); data["R_40"]=r[1].number_input("40k", key="r2"); data["R_100"]=r[2].number_input("100k", key="r3"); data["R_400"]=r[3].number_input("400k", key="r4"); data["R_1M"]=r[4].number_input("1M", key="r5")
 
 st.markdown("---")
-# --- 7. ACTIONS (BOUTONS SÉPARÉS) ---
+# --- 7. ACTIONS ---
 b1, b2, b3 = st.columns(3)
 with b1:
     if st.button("💾 ENREGISTRER"):
