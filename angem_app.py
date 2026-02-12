@@ -33,7 +33,7 @@ def get_gsheet_client():
     }
     return gspread.service_account_from_dict(creds)
 
-# --- 3. GÉNÉRATEUR PDF (FIXE ET ALIGNÉ) ---
+# --- 3. GÉNÉRATEUR PDF (CORRECTION AFFICHAGE) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -62,15 +62,17 @@ def generate_pdf(data_dict, promos_df=None):
         pdf.ln()
         pdf.set_font('Arial', '', 7)
         for k in keys:
+            # Sécurité d'affichage des chiffres
             val = data_dict.get(k, 0)
             try:
+                # On s'assure que le chiffre est converti correctement pour le texte PDF
                 val_str = str(int(float(val))) if str(val).replace('.','').replace('-','').isdigit() else str(val)
             except:
                 val_str = str(val)
             pdf.cell(w, 7, val_str, 1, 0, 'C')
         pdf.ln(10)
 
-    # Toutes les sections originales
+    # Sections (MP, TR, AT, RE, TC, AE, Rappels)
     draw_section("1. Formule : Achat de matière premières", ["Déposés", "Traités CEF", "Validés CEF", "Transmis AR", "Financés", "Reçus", "Montant"], ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
     h_std = ["Déposés", "Validés", "Trans. Bq", "Notif. Bq", "Trans. AR", "Financés", "OE 10%", "OE 90%", "PV Exist", "PV Dém", "Reçus", "Montant"]
     draw_section("2. Formule : Triangulaire", h_std, ["TR_D", "TR_V", "TR_B", "TR_N", "TR_A", "TR_F", "TR_1", "TR_9", "TR_E", "TR_D", "TR_R", "TR_M"])
@@ -80,23 +82,25 @@ def generate_pdf(data_dict, promos_df=None):
     draw_section("8. Auto-entrepreneur", h_std, ["AE_D", "AE_V", "AE_B", "AE_N", "AE_A", "AE_F", "AE_1", "AE_9", "AE_E", "AE_D", "AE_R", "AE_M"])
     draw_section("9. Suivi & Rappels", ["Appels", "NESDA", "Terrain", "R_27k", "R_40k", "R_100k", "R_400k", "R_1M"], ["TEL_A", "NE_T", "ST_T", "R_27", "R_40", "R_100", "R_400", "R_1M"])
 
+    # Promoteurs contactés (si le tableau n'est pas vide)
     if promos_df is not None and not promos_df.empty:
-        pdf.ln(5)
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font('Arial', 'B', 10)
-        pdf.cell(190, 8, "LISTE DES PROMOTEURS CONTACTÉS", 1, 1, 'C', True)
-        pdf.set_font('Arial', 'B', 8)
-        w_p = [55, 50, 45, 40]
-        for i, c in enumerate(["Nom & Prénom", "Activité", "Financement", "Téléphone"]): pdf.cell(w_p[i], 7, c, 1, 0, 'C')
-        pdf.ln()
-        pdf.set_font('Arial', '', 8)
-        for _, row in promos_df.iterrows():
-            if any(str(x).strip() != "" for x in row):
-                pdf.cell(55, 7, str(row[0]), 1, 0, 'L')
-                pdf.cell(50, 7, str(row[1]), 1, 0, 'L')
-                pdf.cell(45, 7, str(row[2]), 1, 0, 'C')
-                pdf.cell(40, 7, str(row[3]), 1, 0, 'C')
-                pdf.ln()
+        if any(promos_df.iloc[0].astype(str).str.strip() != ""):
+            pdf.ln(5)
+            pdf.set_fill_color(240, 240, 240)
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(190, 8, "LISTE DES PROMOTEURS CONTACTÉS", 1, 1, 'C', True)
+            pdf.set_font('Arial', 'B', 8)
+            w_p = [55, 50, 45, 40]
+            for i, c in enumerate(["Nom & Prénom", "Activité", "Financement", "Téléphone"]): pdf.cell(w_p[i], 7, c, 1, 0, 'C')
+            pdf.ln()
+            pdf.set_font('Arial', '', 8)
+            for _, row in promos_df.iterrows():
+                if any(str(x).strip() != "" for x in row):
+                    pdf.cell(55, 7, str(row[0]), 1, 0, 'L')
+                    pdf.cell(50, 7, str(row[1]), 1, 0, 'L')
+                    pdf.cell(45, 7, str(row[2]), 1, 0, 'C')
+                    pdf.cell(40, 7, str(row[3]), 1, 0, 'C')
+                    pdf.ln()
     
     return bytes(pdf.output())
 
@@ -126,27 +130,18 @@ if st.session_state.role == "Administrateur":
         df = pd.DataFrame(all_v[1:], columns=[h if h!="" else f"V_{i}" for i,h in enumerate(all_v[0])]) if len(all_v)>1 else pd.DataFrame()
     except: st.error("Erreur d'accès"); st.stop()
 
-    with t1:
-        st.dataframe(df)
-        if not df.empty:
-            del_idx = st.selectbox("Supprimer", df.index, format_func=lambda x: f"Ligne {x+2}: {df.loc[x,'Accompagnateur']}")
-            if st.button("❌ SUPPRIMER"):
-                ws.delete_rows(del_idx + 2); st.rerun()
-
     with t2:
         if not df.empty:
-            idx = st.selectbox("Sélection", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
-            st.download_button("📥 PDF", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
+            idx = st.selectbox("Saisie PDF", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
+            st.download_button("📥 PDF Individuel", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
             st.markdown("---")
-            m_sel = st.selectbox("Mois", df['Mois'].unique())
-            if st.button("Cumul"):
+            m_sel = st.selectbox("Mois pour Cumul", df['Mois'].unique())
+            if st.button("Générer Cumul"):
                 df_f = df[df['Mois'] == m_sel].copy()
                 cols = [c for c in df_f.columns if c not in ["Accompagnateur", "Mois", "Annee", "Date"]]
                 for c in cols: df_f[c] = pd.to_numeric(df_f[c], errors='coerce').fillna(0)
                 total_data = {'Accompagnateur': "TOTAL", 'Mois': m_sel, 'Annee': 2026, **df_f[cols].sum().to_dict()}
                 st.download_button("📥 CUMUL PDF", generate_pdf(total_data), f"Total_{m_sel}.pdf")
-    
-    with t3: st.table(pd.DataFrame(list(ACCES.items()), columns=["Nom", "Code"]))
     if st.button("Déconnexion"): st.session_state.auth = False; st.rerun()
     st.stop()
 
@@ -186,7 +181,7 @@ with tabs[4]: ui_sec("7. Tricycle", "TC", "trc")
 with tabs[5]: ui_sec("8. Auto-entrepreneur", "AE", "aen")
 
 st.markdown("---")
-# --- 7. ACTIONS (BOUTONS SÉPARÉS) ---
+# --- 7. ACTIONS (BOUTONS SÉPARÉS EN BAS) ---
 b1, b2, b3 = st.columns(3)
 with b1:
     if st.button("💾 ENREGISTRER"):
