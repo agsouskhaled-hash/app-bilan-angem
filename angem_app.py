@@ -23,21 +23,25 @@ ACCES = {
 }
 
 def get_gsheet_client():
-    creds = {
-        "type": st.secrets["type"], "project_id": st.secrets["project_id"],
-        "private_key_id": st.secrets["private_key_id"], "private_key": st.secrets["private_key"],
-        "client_email": st.secrets["client_email"], "client_id": st.secrets["client_id"],
-        "auth_uri": st.secrets["auth_uri"], "token_uri": st.secrets["token_uri"],
-        "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
-        "client_x509_cert_url": st.secrets["client_x509_cert_url"]
-    }
-    return gspread.service_account_from_dict(creds)
+    try:
+        creds = {
+            "type": st.secrets["type"], "project_id": st.secrets["project_id"],
+            "private_key_id": st.secrets["private_key_id"], "private_key": st.secrets["private_key"],
+            "client_email": st.secrets["client_email"], "client_id": st.secrets["client_id"],
+            "auth_uri": st.secrets["auth_uri"], "token_uri": st.secrets["token_uri"],
+            "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": st.secrets["client_x509_cert_url"]
+        }
+        return gspread.service_account_from_dict(creds)
+    except Exception as e:
+        st.error(f"Erreur de configuration des Secrets : {e}")
+        st.stop()
 
-# --- 3. GÉNÉRATEUR PDF (ALIGNEMENT PARFAIT) ---
+# --- 3. GÉNÉRATEUR PDF (ALIGNEMENT HAUTE PRÉCISION) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
-        self.cell(100, 5, 'Antenne Régionale : Tipaza', 0, 0)
+        self.cell(100, 5, 'Antenne Regionale : Tipaza', 0, 0)
         self.ln(4)
         self.cell(100, 5, 'Agence : Alger Ouest', 0, 0)
         self.ln(10)
@@ -46,7 +50,7 @@ def generate_pdf(data, title_prefix="Rapport"):
     pdf = ANGEM_PDF()
     pdf.add_page()
     pdf.set_font('Arial', 'B', 14)
-    pdf.cell(190, 10, f"{title_prefix} d'activités mensuel", 0, 1, 'C')
+    pdf.cell(190, 10, f"{title_prefix} d'activites mensuel", 0, 1, 'C')
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(190, 8, f"Mois : {str(data.get('Mois', '')).upper()} {data.get('Annee', '')}", 0, 1, 'R')
     pdf.ln(5)
@@ -55,29 +59,20 @@ def generate_pdf(data, title_prefix="Rapport"):
         pdf.set_fill_color(255, 230, 204)
         pdf.set_font('Arial', 'B', 9)
         pdf.cell(190, 8, title, 1, 1, 'L', True)
-        
         pdf.set_font('Arial', 'B', 5.5)
         w = 190 / len(headers)
-        
-        # On mémorise la position Y de départ pour la ligne des titres
         y_start = pdf.get_y()
         max_h = 0
-        
-        # 1. On dessine les titres et on cherche la hauteur max
         for h in headers:
-            curr_y = pdf.get_y()
             pdf.multi_cell(w, 3.5, h, 1, 'C')
             max_h = max(max_h, pdf.get_y() - y_start)
             pdf.set_xy(pdf.get_x() + w, y_start)
-        
-        # 2. On dessine les données avec un alignement parfait sous les titres
         pdf.set_xy(10, y_start + max_h)
         pdf.set_font('Arial', '', 7)
         for k in keys:
             pdf.cell(w, 7, str(data.get(k, 0)), 1, 0, 'C')
         pdf.ln(12)
 
-    # Sections avec noms complets
     draw_section("1. Formule : Achat de matière premières", 
                  ["Dossiers déposés", "Traités par CEF", "Validés par CEF", "Transmis AR", "Dossiers Financés", "Reçus", "Montant"], 
                  ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
@@ -108,37 +103,40 @@ if not st.session_state.auth:
         else: st.error("Code incorrect")
     st.stop()
 
-# --- 5. ESPACE ADMIN (VERSION AVEC SUPPRESSION) ---
+# --- 5. ESPACE ADMIN (SUPPRESSION + SÉCURITÉ GSHEET) ---
 if st.session_state.role == "Administrateur":
     st.title("📊 Administration Centrale")
     t1, t2, t3 = st.tabs(["Base de Données", "Téléchargements PDF", "Codes"])
     
-    client = get_gsheet_client()
-    sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-    ws = sh.worksheet("SAISIE_BRUTE")
-    all_v = ws.get_all_values()
-    
-    if len(all_v) > 1:
-        headers = [h if h != "" else f"VIDE_{i}" for i, h in enumerate(all_v[0])]
-        df = pd.DataFrame(all_v[1:], columns=headers)
-    else: df = pd.DataFrame()
+    try:
+        client = get_gsheet_client()
+        sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+        ws = sh.worksheet("SAISIE_BRUTE")
+        all_v = ws.get_all_values()
+        headers = [h if h != "" else f"VIDE_{i}" for i, h in enumerate(all_v[0])] if all_v else []
+        df = pd.DataFrame(all_v[1:], columns=headers) if len(all_v) > 1 else pd.DataFrame()
+    except Exception as e:
+        st.error(f"🚨 ERREUR ACCÈS GOOGLE SHEETS : {e}")
+        st.info(f"Vérifiez que vous avez bien partagé le fichier avec : {st.secrets.get('client_email', 'votre adresse email de service')}")
+        st.stop()
 
     with t1:
         st.dataframe(df)
         if not df.empty:
             st.subheader("🗑️ Supprimer un enregistrement")
             del_idx = st.selectbox("Ligne à supprimer", df.index, format_func=lambda x: f"Ligne {x+2}: {df.loc[x,'Accompagnateur']} ({df.loc[x,'Mois']})")
-            if st.button("❌ CONFIRMER LA SUPPRESSION", type="secondary"):
-                ws.delete_rows(del_idx + 2) # +2 car Sheets commence à 1 et la ligne 1 est le header
-                st.success("Enregistrement supprimé. Veuillez rafraîchir la page.")
+            if st.button("❌ CONFIRMER LA SUPPRESSION"):
+                ws.delete_rows(del_idx + 2)
+                st.success("Supprimé !")
                 st.rerun()
 
     with t2:
         if not df.empty:
-            idx = st.selectbox("Choisir une saisie pour PDF", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
-            st.download_button(f"📥 PDF de {df.loc[idx, 'Accompagnateur']}", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
+            idx = st.selectbox("Choisir une saisie", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
+            st.download_button("📥 PDF Individuel", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
             st.markdown("---")
-            m_sel = st.selectbox("Mois pour cumul", df['Mois'].unique() if not df.empty else [""])
+            m_unique = df['Mois'].unique() if not df.empty else []
+            m_sel = st.selectbox("Mois pour cumul", m_unique)
             if st.button("Calculer le Total Agence"):
                 df_f = df[df['Mois'] == m_sel].copy()
                 for col in df_f.columns:
@@ -146,7 +144,7 @@ if st.session_state.role == "Administrateur":
                         df_f[col] = pd.to_numeric(df_f[col], errors='coerce').fillna(0)
                 total_data = df_f.sum(numeric_only=True).to_dict()
                 total_data.update({'Accompagnateur': "TOTAL", 'Mois': m_sel, 'Annee': 2026})
-                st.download_button("📥 TÉLÉCHARGER LE CUMUL GLOBAL", generate_pdf(total_data, "TOTAL"), f"Total_{m_sel}.pdf")
+                st.download_button("📥 TÉLÉCHARGER LE CUMUL", generate_pdf(total_data, "TOTAL"), f"Total_{m_sel}.pdf")
     
     with t3: st.table(pd.DataFrame(list(ACCES.items()), columns=["Nom", "Code"]))
     if st.button("Déconnexion"): st.session_state.auth = False; st.rerun()
@@ -162,7 +160,7 @@ def ui_sec(label, p, kp):
     c1, c2, c3, c4, c5 = st.columns(5)
     data[f"{p}_D"] = c1.number_input(f"Dossiers déposés", key=f"{kp}1")
     data[f"{p}_V"] = c2.number_input(f"Validés CEF", key=f"{kp}2")
-    data[f"{p}_B"] = c3.number_input(f"Trans. Banque", key=f"{kp}3")
+    data[f"{p}_B"] = c3.number_input(f"Trans. Bq", key=f"{kp}3")
     data[f"{p}_N"] = c4.number_input(f"Notif. Bq", key=f"{kp}4")
     data[f"{p}_A"] = c5.number_input(f"Transmis AR", key=f"{kp}5")
     c6, c7, c8, c9 = st.columns(4)
@@ -196,8 +194,12 @@ st.markdown("---")
 b1, b2, b3 = st.columns(3)
 with b1:
     if st.button("💾 ENREGISTRER"):
-        get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM").worksheet("SAISIE_BRUTE").append_row(list(data.values()))
-        st.success("✅ Enregistré !")
+        try:
+            client = get_gsheet_client()
+            sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+            sh.worksheet("SAISIE_BRUTE").append_row(list(data.values()))
+            st.success("✅ Enregistré !")
+        except Exception as e: st.error(f"Erreur : {e}")
 with b2: st.download_button("📥 PDF COMPLET", generate_pdf(data), f"Bilan_{st.session_state.user}.pdf")
 with b3:
     io_x = io.BytesIO()
