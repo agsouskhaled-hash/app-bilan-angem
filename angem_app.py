@@ -33,7 +33,7 @@ def get_gsheet_client():
     }
     return gspread.service_account_from_dict(creds)
 
-# --- 3. GÉNÉRATEUR PDF ---
+# --- 3. GÉNÉRATEUR PDF (CLÉS CORRIGÉES) ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -64,18 +64,20 @@ def generate_pdf(data_dict, promos_df=None):
         for k in keys:
             val = data_dict.get(k, 0)
             try:
+                # Force l'affichage même si c'est du texte, nettoie les formats
                 val_str = str(int(float(val))) if str(val).replace('.','').replace('-','').isdigit() else str(val)
             except: val_str = str(val)
             pdf.cell(w, 7, val_str, 1, 0, 'C')
         pdf.ln(10)
 
+    # Notez le changement ici : _DM au lieu de _D pour "Démarrage"
     draw_section("1. Formule : Achat de matière premières", ["Déposés", "Traités CEF", "Validés CEF", "Transmis AR", "Financés", "Reçus", "Montant"], ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
     h_std = ["Déposés", "Validés", "Trans. Bq", "Notif. Bq", "Trans. AR", "Financés", "OE 10%", "OE 90%", "PV Exist", "PV Dém", "Reçus", "Montant"]
-    draw_section("2. Formule : Triangulaire", h_std, ["TR_D", "TR_V", "TR_B", "TR_N", "TR_A", "TR_F", "TR_1", "TR_9", "TR_E", "TR_D", "TR_R", "TR_M"])
-    draw_section("5. Algérie Télécom", h_std, ["AT_D", "AT_V", "AT_B", "AT_N", "AT_A", "AT_F", "AT_1", "AT_9", "AT_E", "AT_D", "AT_R", "AT_M"])
-    draw_section("6. Recyclage", h_std, ["RE_D", "RE_V", "RE_B", "RE_N", "RE_A", "RE_F", "RE_1", "RE_9", "RE_E", "RE_D", "RE_R", "RE_M"])
-    draw_section("7. Tricycle", h_std, ["TC_D", "TC_V", "TC_B", "TC_N", "TC_A", "TC_F", "TC_1", "TC_9", "TC_E", "TC_D", "TC_R", "TC_M"])
-    draw_section("8. Auto-entrepreneur", h_std, ["AE_D", "AE_V", "AE_B", "AE_N", "AE_A", "AE_F", "AE_1", "AE_9", "AE_E", "AE_D", "AE_R", "AE_M"])
+    draw_section("2. Formule : Triangulaire", h_std, ["TR_D", "TR_V", "TR_B", "TR_N", "TR_A", "TR_F", "TR_1", "TR_9", "TR_E", "TR_DM", "TR_R", "TR_M"])
+    draw_section("5. Algérie Télécom", h_std, ["AT_D", "AT_V", "AT_B", "AT_N", "AT_A", "AT_F", "AT_1", "AT_9", "AT_E", "AT_DM", "AT_R", "AT_M"])
+    draw_section("6. Recyclage", h_std, ["RE_D", "RE_V", "RE_B", "RE_N", "RE_A", "RE_F", "RE_1", "RE_9", "RE_E", "RE_DM", "RE_R", "RE_M"])
+    draw_section("7. Tricycle", h_std, ["TC_D", "TC_V", "TC_B", "TC_N", "TC_A", "TC_F", "TC_1", "TC_9", "TC_E", "TC_DM", "TC_R", "TC_M"])
+    draw_section("8. Auto-entrepreneur", h_std, ["AE_D", "AE_V", "AE_B", "AE_N", "AE_A", "AE_F", "AE_1", "AE_9", "AE_E", "AE_DM", "AE_R", "AE_M"])
     draw_section("9. Suivi & Rappels", ["Appels", "NESDA", "Terrain", "R_27k", "R_40k", "R_100k", "R_400k", "R_1M"], ["TEL_A", "NE_T", "ST_T", "R_27", "R_40", "R_100", "R_400", "R_1M"])
 
     if promos_df is not None and not promos_df.empty:
@@ -150,7 +152,7 @@ st.markdown(f"## 👤 {st.session_state.user}")
 m_s = st.selectbox("Mois de déclaration", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
 data = {"Accompagnateur": st.session_state.user, "Mois": m_s, "Annee": 2026, "Date": datetime.now().strftime("%d/%m/%Y")}
 
-# Fonctions d'interface avec sécurité (min_value=0)
+# ICI EST LA CORRECTION MAJEURE : J'utilise _DM pour Démarrage au lieu de _D
 def ui_sec(label, p, kp):
     st.subheader(label); c1,c2,c3,c4,c5 = st.columns(5)
     data[f"{p}_D"]=c1.number_input("Déposés", min_value=0, key=f"{kp}1"); data[f"{p}_V"]=c2.number_input("Validés CEF", min_value=0, key=f"{kp}2")
@@ -160,22 +162,16 @@ def ui_sec(label, p, kp):
     data[f"{p}_F"]=c6.number_input("Financés", min_value=0, key=f"{kp}6"); data[f"{p}_1"]=c7.number_input("OE 10%", min_value=0, key=f"{kp}7")
     data[f"{p}_9"]=c8.number_input("OE 90%", min_value=0, key=f"{kp}8"); data[f"{p}_E"]=c9.number_input("PV Exist.", min_value=0, key=f"{kp}9")
     c10,c11,c12 = st.columns(3)
-    data[f"{p}_D"]=c10.number_input("PV Dém.", min_value=0, key=f"{kp}10"); data[f"{p}_R"]=c11.number_input("Reçus", min_value=0, key=f"{kp}11"); data[f"{p}_M"]=c12.number_input("Montant", min_value=0, key=f"{kp}12")
-
-# --- NOUVEAU : CALCULATEUR KPI TEMPS RÉEL ---
-# Je le calcule ici mais l'affichage se fera en haut si tu veux, ou je le laisse discret.
-# Pour l'instant, je ne l'affiche pas pour ne pas changer le design, mais les données sont prêtes.
+    data[f"{p}_DM"]=c10.number_input("PV Dém.", min_value=0, key=f"{kp}10"); data[f"{p}_R"]=c11.number_input("Reçus", min_value=0, key=f"{kp}11"); data[f"{p}_M"]=c12.number_input("Montant", min_value=0, key=f"{kp}12")
 
 tabs = st.tabs(["MP", "Triangulaire", "Télécom", "Recyclage", "Tricycle", "AE", "Suivi & Rappels"])
 
 with tabs[0]:
-    st.subheader("1. Matière Première")
-    cx=st.columns(5)
+    st.subheader("1. Matière Première"); cx=st.columns(5)
     data["MP_D"]=cx[0].number_input("Dép.", min_value=0, key="m1"); data["MP_T"]=cx[1].number_input("Tra.", min_value=0, key="m2")
     data["MP_V"]=cx[2].number_input("Val.", min_value=0, key="m3"); data["MP_A"]=cx[3].number_input("AR", min_value=0, key="m4")
     data["MP_F"]=cx[4].number_input("Fin.", min_value=0, key="m5")
     data["MP_R"]=st.number_input("Reçus", min_value=0, key="m6"); data["MP_M"]=st.number_input("Montant", min_value=0, key="m7")
-
 with tabs[1]: ui_sec("2. Triangulaire", "TR", "tri")
 with tabs[2]: ui_sec("5. Algérie Télécom", "AT", "atl")
 with tabs[3]: ui_sec("6. Recyclage", "RE", "rec")
@@ -207,3 +203,17 @@ with b2: st.download_button("📥 PDF", generate_pdf(data, df_promos), f"Bilan_{
 with b3:
     io_x = io.BytesIO(); pd.DataFrame([data]).to_excel(pd.ExcelWriter(io_x, engine='xlsxwriter'), index=False)
     st.download_button("📊 EXCEL", io_x.getvalue(), "Bilan.xlsx")
+
+if st.session_state.role == "Accompagnateur":
+    st.markdown("---")
+    st.subheader("📂 Historique de mes saisies")
+    try:
+        sh = get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+        ws = sh.worksheet("SAISIE_BRUTE")
+        all_v = ws.get_all_values()
+        if len(all_v) > 1:
+            df_histo = pd.DataFrame(all_v[1:], columns=all_v[0])
+            my_data = df_histo[df_histo['Accompagnateur'] == st.session_state.user]
+            if not my_data.empty: st.dataframe(my_data)
+            else: st.info("Aucune saisie trouvée pour vous.")
+    except: pass
