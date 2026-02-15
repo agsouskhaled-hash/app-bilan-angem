@@ -210,4 +210,28 @@ st.markdown("---")
 # --- 7. ACTIONS (BOUTONS SÉPARÉS) ---
 b1, b2, b3 = st.columns(3)
 with b1:
-    if st.button("💾 ENREG
+    if st.button("💾 ENREGISTRER", type="primary"):
+        try:
+            sh = get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+            sh.worksheet("SAISIE_BRUTE").append_row(list(data.values()))
+            st.success("✅ Enregistré !")
+        except Exception as e: st.error(f"Erreur : {e}")
+with b2: st.download_button("📥 PDF", generate_pdf(data, df_promos), f"Bilan_{st.session_state.user}.pdf")
+with b3:
+    io_x = io.BytesIO(); pd.DataFrame([data]).to_excel(pd.ExcelWriter(io_x, engine='xlsxwriter'), index=False)
+    st.download_button("📊 EXCEL", io_x.getvalue(), "Bilan.xlsx")
+
+# --- 8. HISTORIQUE ---
+if st.session_state.role == "Accompagnateur":
+    st.markdown("---")
+    st.subheader("📂 Historique de mes saisies")
+    try:
+        sh = get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
+        ws = sh.worksheet("SAISIE_BRUTE")
+        all_v = ws.get_all_values()
+        if len(all_v) > 1:
+            df_histo = pd.DataFrame(all_v[1:], columns=all_v[0])
+            my_data = df_histo[df_histo['Accompagnateur'] == st.session_state.user]
+            if not my_data.empty: st.dataframe(my_data)
+            else: st.info("Aucune saisie trouvée pour vous.")
+    except: pass
