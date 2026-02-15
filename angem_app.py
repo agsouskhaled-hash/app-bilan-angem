@@ -8,7 +8,7 @@ import io
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="ANGEM PRO - Expert", layout="wide", page_icon="🇩🇿")
 
-# --- 2. BASE DE DONNÉES ET CODES PERSONNELS ---
+# --- 2. BASE DE DONNÉES ET CODES ---
 ACCES = {
     "admin": "admin77",
     "Mme GUESSMIA ZAHIRA": "ZAH24", "M. BOULAHLIB REDOUANE": "RED24", "Mme DJAOUDI SARAH": "SAR24",
@@ -33,7 +33,7 @@ def get_gsheet_client():
     }
     return gspread.service_account_from_dict(creds)
 
-# --- 3. GÉNÉRATEUR PDF (CLÉS CORRIGÉES) ---
+# --- 3. GÉNÉRATEUR PDF ---
 class ANGEM_PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 9)
@@ -56,7 +56,7 @@ def generate_pdf(data_dict, promos_df=None):
         pdf.set_fill_color(255, 230, 204)
         pdf.set_font('Arial', 'B', 9)
         pdf.cell(190, 8, title, 1, 1, 'L', True)
-        pdf.set_font('Arial', 'B', 5.5)
+        pdf.set_font('Arial', 'B', 5)
         w = 190 / len(headers)
         for h in headers: pdf.cell(w, 5, h, 1, 0, 'C')
         pdf.ln()
@@ -64,21 +64,25 @@ def generate_pdf(data_dict, promos_df=None):
         for k in keys:
             val = data_dict.get(k, 0)
             try:
-                # Force l'affichage même si c'est du texte, nettoie les formats
                 val_str = str(int(float(val))) if str(val).replace('.','').replace('-','').isdigit() else str(val)
             except: val_str = str(val)
             pdf.cell(w, 7, val_str, 1, 0, 'C')
         pdf.ln(10)
 
-    # Notez le changement ici : _DM au lieu de _D pour "Démarrage"
-    draw_section("1. Formule : Achat de matière premières", ["Déposés", "Traités CEF", "Validés CEF", "Transmis AR", "Financés", "Reçus", "Montant"], ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
-    h_std = ["Déposés", "Validés", "Trans. Bq", "Notif. Bq", "Trans. AR", "Financés", "OE 10%", "OE 90%", "PV Exist", "PV Dém", "Reçus", "Montant"]
+    # TITRES COMPLETS DANS LE PDF
+    h_mp = ["Dossiers Déposés", "Traités CEF", "Validés CEF", "Transmis Antenne", "Dossiers Financés", "Recouvrement", "Montant Global"]
+    draw_section("1. Formule : Achat de matière premières", h_mp, ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
+    
+    h_std = ["Déposés", "Validés", "Transmis Banque", "Notif. Banque", "Transmis Antenne", "Financés", "Notif. 10%", "Notif. 90%", "PV Existence", "PV Démarrage", "Reçus", "Montant"]
+    
     draw_section("2. Formule : Triangulaire", h_std, ["TR_D", "TR_V", "TR_B", "TR_N", "TR_A", "TR_F", "TR_1", "TR_9", "TR_E", "TR_DM", "TR_R", "TR_M"])
     draw_section("5. Algérie Télécom", h_std, ["AT_D", "AT_V", "AT_B", "AT_N", "AT_A", "AT_F", "AT_1", "AT_9", "AT_E", "AT_DM", "AT_R", "AT_M"])
     draw_section("6. Recyclage", h_std, ["RE_D", "RE_V", "RE_B", "RE_N", "RE_A", "RE_F", "RE_1", "RE_9", "RE_E", "RE_DM", "RE_R", "RE_M"])
     draw_section("7. Tricycle", h_std, ["TC_D", "TC_V", "TC_B", "TC_N", "TC_A", "TC_F", "TC_1", "TC_9", "TC_E", "TC_DM", "TC_R", "TC_M"])
     draw_section("8. Auto-entrepreneur", h_std, ["AE_D", "AE_V", "AE_B", "AE_N", "AE_A", "AE_F", "AE_1", "AE_9", "AE_E", "AE_DM", "AE_R", "AE_M"])
-    draw_section("9. Suivi & Rappels", ["Appels", "NESDA", "Terrain", "R_27k", "R_40k", "R_100k", "R_400k", "R_1M"], ["TEL_A", "NE_T", "ST_T", "R_27", "R_40", "R_100", "R_400", "R_1M"])
+    
+    h_rap = ["Appels Tél.", "Dossiers NESDA", "Sorties Terrain", "Rappel 27k", "Rappel 40k", "Rappel 100k", "Rappel 400k", "Rappel 1M"]
+    draw_section("9. Suivi & Rappels", h_rap, ["TEL_A", "NE_T", "ST_T", "R_27", "R_40", "R_100", "R_400", "R_1M"])
 
     if promos_df is not None and not promos_df.empty:
         pdf.ln(5)
@@ -87,7 +91,7 @@ def generate_pdf(data_dict, promos_df=None):
         pdf.cell(190, 8, "LISTE DES PROMOTEURS CONTACTÉS", 1, 1, 'C', True)
         pdf.set_font('Arial', 'B', 8)
         w_p = [55, 50, 45, 40]
-        for i, c in enumerate(["Nom & Prénom", "Activité", "Financement", "Téléphone"]): pdf.cell(w_p[i], 7, c, 1, 0, 'C')
+        for i, c in enumerate(["Nom & Prénom", "Activité", "Type Financement", "Numéro Téléphone"]): pdf.cell(w_p[i], 7, c, 1, 0, 'C')
         pdf.ln()
         pdf.set_font('Arial', '', 8)
         for _, row in promos_df.iterrows():
@@ -128,16 +132,16 @@ if st.session_state.role == "Administrateur":
     with t1:
         st.dataframe(df)
         if not df.empty:
-            del_idx = st.selectbox("Supprimer", df.index, format_func=lambda x: f"Ligne {x+2}: {df.loc[x,'Accompagnateur']}")
+            del_idx = st.selectbox("Supprimer un enregistrement", df.index, format_func=lambda x: f"Ligne {x+2}: {df.loc[x,'Accompagnateur']}")
             if st.button("❌ SUPPRIMER"): ws.delete_rows(del_idx + 2); st.rerun()
 
     with t2:
         if not df.empty:
             idx = st.selectbox("Sélection", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
-            st.download_button("📥 PDF", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
+            st.download_button("📥 PDF Individuel", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
             st.markdown("---")
-            m_sel = st.selectbox("Mois", df['Mois'].unique())
-            if st.button("Cumul"):
+            m_sel = st.selectbox("Mois du Cumul", df['Mois'].unique())
+            if st.button("Générer le Cumul Agence"):
                 df_f = df[df['Mois'] == m_sel].copy()
                 cols = [c for c in df_f.columns if c not in ["Accompagnateur", "Mois", "Annee", "Date"]]
                 for c in cols: df_f[c] = pd.to_numeric(df_f[c], errors='coerce').fillna(0)
@@ -152,26 +156,36 @@ st.markdown(f"## 👤 {st.session_state.user}")
 m_s = st.selectbox("Mois de déclaration", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
 data = {"Accompagnateur": st.session_state.user, "Mois": m_s, "Annee": 2026, "Date": datetime.now().strftime("%d/%m/%Y")}
 
-# ICI EST LA CORRECTION MAJEURE : J'utilise _DM pour Démarrage au lieu de _D
+# ICI: TOUS LES NOMS SONT COMPLETS SUR L'INTERFACE
 def ui_sec(label, p, kp):
     st.subheader(label); c1,c2,c3,c4,c5 = st.columns(5)
-    data[f"{p}_D"]=c1.number_input("Déposés", min_value=0, key=f"{kp}1"); data[f"{p}_V"]=c2.number_input("Validés CEF", min_value=0, key=f"{kp}2")
-    data[f"{p}_B"]=c3.number_input("Trans. Bq", min_value=0, key=f"{kp}3"); data[f"{p}_N"]=c4.number_input("Notif. Bq", min_value=0, key=f"{kp}4")
-    data[f"{p}_A"]=c5.number_input("Transmis AR", min_value=0, key=f"{kp}5")
+    data[f"{p}_D"]=c1.number_input("Dossiers Déposés", min_value=0, key=f"{kp}1")
+    data[f"{p}_V"]=c2.number_input("Validés par CEF", min_value=0, key=f"{kp}2")
+    data[f"{p}_B"]=c3.number_input("Transmis Banque", min_value=0, key=f"{kp}3")
+    data[f"{p}_N"]=c4.number_input("Notification Banque", min_value=0, key=f"{kp}4")
+    data[f"{p}_A"]=c5.number_input("Transmis Antenne", min_value=0, key=f"{kp}5")
     c6,c7,c8,c9 = st.columns(4)
-    data[f"{p}_F"]=c6.number_input("Financés", min_value=0, key=f"{kp}6"); data[f"{p}_1"]=c7.number_input("OE 10%", min_value=0, key=f"{kp}7")
-    data[f"{p}_9"]=c8.number_input("OE 90%", min_value=0, key=f"{kp}8"); data[f"{p}_E"]=c9.number_input("PV Exist.", min_value=0, key=f"{kp}9")
+    data[f"{p}_F"]=c6.number_input("Dossiers Financés", min_value=0, key=f"{kp}6")
+    data[f"{p}_1"]=c7.number_input("Notification 10%", min_value=0, key=f"{kp}7")
+    data[f"{p}_9"]=c8.number_input("Notification 90%", min_value=0, key=f"{kp}8")
+    data[f"{p}_E"]=c9.number_input("PV Existence", min_value=0, key=f"{kp}9")
     c10,c11,c12 = st.columns(3)
-    data[f"{p}_DM"]=c10.number_input("PV Dém.", min_value=0, key=f"{kp}10"); data[f"{p}_R"]=c11.number_input("Reçus", min_value=0, key=f"{kp}11"); data[f"{p}_M"]=c12.number_input("Montant", min_value=0, key=f"{kp}12")
+    data[f"{p}_DM"]=c10.number_input("PV de Démarrage", min_value=0, key=f"{kp}10") # Code interne _DM
+    data[f"{p}_R"]=c11.number_input("Recouvrement (Reçus)", min_value=0, key=f"{kp}11")
+    data[f"{p}_M"]=c12.number_input("Montant Global", min_value=0, key=f"{kp}12")
 
 tabs = st.tabs(["MP", "Triangulaire", "Télécom", "Recyclage", "Tricycle", "AE", "Suivi & Rappels"])
 
 with tabs[0]:
     st.subheader("1. Matière Première"); cx=st.columns(5)
-    data["MP_D"]=cx[0].number_input("Dép.", min_value=0, key="m1"); data["MP_T"]=cx[1].number_input("Tra.", min_value=0, key="m2")
-    data["MP_V"]=cx[2].number_input("Val.", min_value=0, key="m3"); data["MP_A"]=cx[3].number_input("AR", min_value=0, key="m4")
-    data["MP_F"]=cx[4].number_input("Fin.", min_value=0, key="m5")
-    data["MP_R"]=st.number_input("Reçus", min_value=0, key="m6"); data["MP_M"]=st.number_input("Montant", min_value=0, key="m7")
+    data["MP_D"]=cx[0].number_input("Dossiers Déposés", min_value=0, key="m1")
+    data["MP_T"]=cx[1].number_input("Traités par CEF", min_value=0, key="m2")
+    data["MP_V"]=cx[2].number_input("Validés par CEF", min_value=0, key="m3")
+    data["MP_A"]=cx[3].number_input("Transmis Antenne", min_value=0, key="m4")
+    data["MP_F"]=cx[4].number_input("Dossiers Financés", min_value=0, key="m5")
+    data["MP_R"]=st.number_input("Recouvrement (Reçus)", min_value=0, key="m6")
+    data["MP_M"]=st.number_input("Montant Global", min_value=0, key="m7")
+
 with tabs[1]: ui_sec("2. Triangulaire", "TR", "tri")
 with tabs[2]: ui_sec("5. Algérie Télécom", "AT", "atl")
 with tabs[3]: ui_sec("6. Recyclage", "RE", "rec")
@@ -179,41 +193,21 @@ with tabs[4]: ui_sec("7. Tricycle", "TC", "trc")
 with tabs[5]: ui_sec("8. Auto-entrepreneur", "AE", "aen")
 with tabs[6]:
     st.subheader("9. Suivi & Rappels")
-    data["TEL_A"]=st.number_input("Appels téléphoniques", min_value=0, key="tel1")
-    data["NE_T"]=st.number_input("NESDA", min_value=0, key="n1"); data["ST_T"]=st.number_input("Terrain", min_value=0, key="n2")
+    data["TEL_A"]=st.number_input("Total Appels Téléphoniques", min_value=0, key="tel1")
+    data["NE_T"]=st.number_input("Dossiers orientés NESDA", min_value=0, key="n1")
+    data["ST_T"]=st.number_input("Sorties Terrain", min_value=0, key="n2")
     r=st.columns(5)
-    data["R_27"]=r[0].number_input("27k", min_value=0, key="r1"); data["R_40"]=r[1].number_input("40k", min_value=0, key="r2")
-    data["R_100"]=r[2].number_input("100k", min_value=0, key="r3"); data["R_400"]=r[3].number_input("400k", min_value=0, key="r4")
-    data["R_1M"]=r[4].number_input("1M", min_value=0, key="r5")
+    data["R_27"]=r[0].number_input("Rappel 27.000 DA", min_value=0, key="r1")
+    data["R_40"]=r[1].number_input("Rappel 40.000 DA", min_value=0, key="r2")
+    data["R_100"]=r[2].number_input("Rappel 100.000 DA", min_value=0, key="r3")
+    data["R_400"]=r[3].number_input("Rappel 400.000 DA", min_value=0, key="r4")
+    data["R_1M"]=r[4].number_input("Rappel 1.000.000 DA", min_value=0, key="r5")
     st.markdown("---")
-    st.subheader("📞 Promoteurs contactés")
-    df_promos = st.data_editor(pd.DataFrame(columns=["Nom & Prénom", "Activité", "Financement", "Téléphone"]), num_rows="dynamic")
+    st.subheader("📞 Liste des promoteurs contactés")
+    df_promos = st.data_editor(pd.DataFrame(columns=["Nom & Prénom", "Activité", "Type Financement", "Numéro Téléphone"]), num_rows="dynamic")
 
 st.markdown("---")
 # --- 7. ACTIONS (BOUTONS SÉPARÉS) ---
 b1, b2, b3 = st.columns(3)
 with b1:
-    if st.button("💾 ENREGISTRER", type="primary"):
-        try:
-            sh = get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-            sh.worksheet("SAISIE_BRUTE").append_row(list(data.values()))
-            st.success("✅ Enregistré !")
-        except Exception as e: st.error(f"Erreur : {e}")
-with b2: st.download_button("📥 PDF", generate_pdf(data, df_promos), f"Bilan_{st.session_state.user}.pdf")
-with b3:
-    io_x = io.BytesIO(); pd.DataFrame([data]).to_excel(pd.ExcelWriter(io_x, engine='xlsxwriter'), index=False)
-    st.download_button("📊 EXCEL", io_x.getvalue(), "Bilan.xlsx")
-
-if st.session_state.role == "Accompagnateur":
-    st.markdown("---")
-    st.subheader("📂 Historique de mes saisies")
-    try:
-        sh = get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-        ws = sh.worksheet("SAISIE_BRUTE")
-        all_v = ws.get_all_values()
-        if len(all_v) > 1:
-            df_histo = pd.DataFrame(all_v[1:], columns=all_v[0])
-            my_data = df_histo[df_histo['Accompagnateur'] == st.session_state.user]
-            if not my_data.empty: st.dataframe(my_data)
-            else: st.info("Aucune saisie trouvée pour vous.")
-    except: pass
+    if st.button("💾 ENREG
