@@ -6,6 +6,7 @@ import os
 import unicodedata
 import re
 import plotly.express as px
+import plotly.graph_objects as go
 
 # --- CONFIGURATION DE LA PAGE (DESIGN MODERNE) ---
 st.set_page_config(page_title="ANGEM PRO", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
@@ -23,7 +24,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro_v9.db") # v9 : Refonte totale + Stats libres
+# ON GARDE LA V9 ! Comme ça tu ne perds pas tes données déjà importées.
+DB_PATH = os.path.join(BASE_DIR, "angem_pro_v9.db") 
 
 Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
@@ -130,7 +132,6 @@ def sidebar_menu():
     st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Emblem_of_Algeria.svg/200px-Emblem_of_Algeria.svg.png", width=100)
     st.sidebar.title("ANGEM MANAGER")
     st.sidebar.markdown("---")
-    # Menu simplifié pour le public/agents
     return st.sidebar.radio("📌 Navigation :", ["🗂️ Consultation Dossiers", "📥 Importation Excel", "🔒 Espace Administrateur"])
 
 def page_gestion():
@@ -158,7 +159,7 @@ def page_gestion():
         hide_index=True,
         height=500,
         column_config={
-            "id": None, # Cache l'ID technique
+            "id": None,
             "identifiant": st.column_config.TextColumn("Identifiant Unique", width="large"),
             "montant_pnr": st.column_config.NumberColumn("Crédit PNR", format="%d DA"),
             "reste_rembourser": st.column_config.NumberColumn("Reste à Payer", format="%d DA"),
@@ -200,7 +201,6 @@ def page_import():
                     df_raw = df_raw.fillna('')
                     header_idx = -1
                     
-                    # Détection de l'en-tête très permissive
                     for i in range(min(30, len(df_raw))):
                         row_cleaned = [clean_header(str(x)) for x in df_raw.iloc[i].values]
                         score = 0
@@ -252,17 +252,14 @@ def page_import():
                                 data[db_f] = str(val).strip().upper() if val else ""
                         
                         ident = data.get('identifiant', '')
-                        if not ident and not data.get('nom'): continue # Ignore les lignes totalement vides
+                        if not ident and not data.get('nom'): continue
 
                         exist = None
                         if ident:
-                            # Recherche 1: Identifiant exact
                             exist = session.query(Dossier).filter_by(identifiant=ident).first()
-                            # Recherche 2: Si l'identifiant a été tronqué par Excel (on prend les 12 premiers chiffres)
                             if not exist and len(ident) >= 12 and data.get('nom'):
                                 prefix = ident[:12]
                                 exist = session.query(Dossier).filter(Dossier.identifiant.like(f"{prefix}%")).first()
-                                # Double vérification avec le nom pour éviter les homonymes
                                 if exist and data['nom'][:3] not in exist.nom: exist = None
                         
                         if exist:
@@ -290,7 +287,6 @@ def page_import():
 def page_admin():
     st.title("🔒 Espace Administrateur")
     
-    # Système de connexion simple
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
     
     if not st.session_state.logged_in:
@@ -302,7 +298,6 @@ def page_admin():
             st.error("Mot de passe incorrect.")
         return
 
-    # SI CONNECTÉ : Affichage du Dashboard sécurisé
     st.success("✅ Connecté en tant qu'Administrateur")
     if st.button("🚪 Se déconnecter"):
         st.session_state.logged_in = False
@@ -315,8 +310,8 @@ def page_admin():
         st.warning("Aucune donnée disponible. Veuillez importer des fichiers.")
         return
 
-    # --- ONGLETS ADMINISTRATIFS ---
-    tab1, tab2, tab3 = st.tabs(["📊 Tableau de Bord Général", "📈 Statistiques Sur-Mesure", "⚙️ Système"])
+    # L'AJOUT EST ICI : 4 ONGLETS AU LIEU DE 3 (Garde tout l'existant !)
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Tableau de Bord", "📈 Stats Sur-Mesure", "🔎 Analyses Avancées", "⚙️ Système"])
 
     # ONGLET 1 : TABLEAU DE BORD CLASSIQUE
     with tab1:
@@ -338,12 +333,11 @@ def page_admin():
                 fig2 = px.bar(df[df['secteur'] != '']['secteur'].value_counts().reset_index(), x='secteur', y='count', title="Dossiers par Secteur", color='secteur')
                 st.plotly_chart(fig2, use_container_width=True)
 
-    # ONGLET 2 : NOUVEAU MODULE - STATISTIQUES LIBRES
+    # ONGLET 2 : STATISTIQUES LIBRES
     with tab2:
         st.markdown("### 🛠️ Créateur de Statistiques Personnalisées")
         st.info("Choisissez les critères ci-dessous pour générer le graphique de votre choix.")
         
-        # Options disponibles pour les statistiques
         colonnes_groupement = {
             "Par Activité": "activite", "Par Secteur": "secteur", "Par Commune": "commune",
             "Par Daira": "daira", "Par Banque": "banque_nom", "Par Genre": "genre", "Par État de Dette": "etat_dette"
@@ -360,10 +354,8 @@ def page_admin():
         axe_x = colonnes_groupement[axe_x_label]
         axe_y = colonnes_calcul[axe_y_label]
 
-        # Calcul dynamique
         if axe_x in df.columns and not df[axe_x].eq('').all():
             df_clean = df[df[axe_x] != '']
-            
             if axe_y == "count":
                 stat_df = df_clean[axe_x].value_counts().reset_index()
                 stat_df.columns = [axe_x_label, axe_y_label]
@@ -373,18 +365,77 @@ def page_admin():
                 stat_df.columns = [axe_x_label, axe_y_label]
                 stat_df = stat_df.sort_values(by=axe_y_label, ascending=False)
 
-            # Affichage du graphique généré
             fig_custom = px.bar(stat_df.head(15), x=axe_x_label, y=axe_y_label, title=f"{axe_y_label} {axe_x_label}", text_auto='.2s', color=axe_x_label)
             st.plotly_chart(fig_custom, use_container_width=True)
-            
-            # Affichage du petit tableau de données
             with st.expander("Voir les données en tableau"):
                 st.dataframe(stat_df, use_container_width=True)
         else:
             st.warning(f"La colonne {axe_x_label} ne contient pas de données.")
 
-    # ONGLET 3 : PARAMÈTRES ET SÉCURITÉ
+    # ONGLET 3 : NOUVEAU - ANALYSES AVANCÉES
     with tab3:
+        st.markdown("### 🧭 Analyses Approfondies de l'Agence")
+        
+        total_pnr = df['montant_pnr'].astype(float).sum()
+        total_remb = df['montant_rembourse'].astype(float).sum()
+        taux_recouvrement = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
+        
+        # Jauge de recouvrement
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = taux_recouvrement,
+            title = {'text': "Taux de Recouvrement Global (%)", 'font': {'size': 24}},
+            gauge = {
+                'axis': {'range': [None, 100]},
+                'bar': {'color': "#1f2937"},
+                'steps': [
+                    {'range': [0, 30], 'color': "#ff4b4b"},
+                    {'range': [30, 70], 'color': "#ffa421"},
+                    {'range': [70, 100], 'color': "#09ab3b"}]
+            }
+        ))
+        st.plotly_chart(fig_gauge, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Ligne : Accompagnateurs et Zones
+        c_x, c_y = st.columns(2)
+        with c_x:
+            st.markdown("#### 👥 Top 10 Accompagnateurs (Volume de dossiers)")
+            if 'gestionnaire' in df.columns and not df['gestionnaire'].eq('').all():
+                df_gest = df[df['gestionnaire'] != '']
+                gest_counts = df_gest['gestionnaire'].value_counts().head(10).reset_index()
+                gest_counts.columns = ['Accompagnateur', 'Dossiers gérés']
+                fig_gest = px.bar(gest_counts, x='Dossiers gérés', y='Accompagnateur', orientation='h')
+                st.plotly_chart(fig_gest, use_container_width=True)
+            else:
+                st.info("Données des accompagnateurs non disponibles.")
+                
+        with c_y:
+            st.markdown("#### 🗺️ Répartition d'Activité par Zone")
+            if 'zone' in df.columns and not df['zone'].eq('').all():
+                df_zone = df[df['zone'] != '']
+                zone_counts = df_zone['zone'].value_counts().reset_index()
+                zone_counts.columns = ['Zone', 'Nombre de Dossiers']
+                fig_zone = px.pie(zone_counts, values='Nombre de Dossiers', names='Zone', hole=0.5)
+                st.plotly_chart(fig_zone, use_container_width=True)
+            else:
+                st.info("Données de zonage non disponibles.")
+
+        st.markdown("---")
+        st.markdown("#### 🚨 Alertes : Top 10 des plus grandes dettes actives")
+        df_dettes = df.copy()
+        df_dettes['reste_rembourser'] = pd.to_numeric(df_dettes['reste_rembourser'], errors='coerce').fillna(0)
+        df_dettes = df_dettes[df_dettes['reste_rembourser'] > 0]
+        if not df_dettes.empty:
+            top_dettes = df_dettes.nlargest(10, 'reste_rembourser')[['identifiant', 'nom', 'prenom', 'commune', 'reste_rembourser']]
+            top_dettes.columns = ['Identifiant', 'Nom', 'Prénom', 'Commune', 'Reste à Payer (DA)']
+            st.dataframe(top_dettes, use_container_width=True, hide_index=True)
+        else:
+            st.success("Aucune dette détectée dans la base de données !")
+
+    # ONGLET 4 : PARAMÈTRES ET SÉCURITÉ
+    with tab4:
         st.markdown("### ⚠️ Zone de Danger")
         st.write("Ces actions sont irréversibles.")
         if st.button("🗑️ Vider entièrement la base de données", type="primary"):
