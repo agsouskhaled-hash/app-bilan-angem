@@ -11,7 +11,7 @@ import plotly.express as px
 st.set_page_config(page_title="ANGEM MANAGER PRO", page_icon="🇩🇿", layout="wide")
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro_v4.db") # v4 pour forcer la nouvelle colonne 'identifiant'
+DB_PATH = os.path.join(BASE_DIR, "angem_pro_v5.db") # v5 pour forcer la nouvelle architecture blindée
 
 Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
@@ -23,7 +23,7 @@ class Dossier(Base):
     id = Column(Integer, primary_key=True)
     nom = Column(String)
     prenom = Column(String)
-    identifiant = Column(String, index=True) # Remplacé num_cni par identifiant !
+    identifiant = Column(String, index=True)
     date_naissance = Column(String)
     adresse = Column(String)
     telephone = Column(String)
@@ -57,65 +57,60 @@ Base.metadata.create_all(engine)
 def get_session():
     return Session()
 
-# --- 2. OUTILS DE NETTOYAGE ---
+# --- 2. OUTILS DE NETTOYAGE BLINDÉS ---
 def clean_header(val):
-    if pd.isna(val): 
-        return ""
+    if pd.isna(val): return ""
     val = str(val).upper()
     val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
-    if pd.isna(val) or val == '': 
-        return 0.0
+    if pd.isna(val) or val == '': return 0.0
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.]', '', s)
-    try: 
-        return float(s)
-    except: 
-        return 0.0
+    try: return float(s)
+    except: return 0.0
 
 def clean_identifiant(val):
-    """Garde les 18 chiffres intacts de l'identifiant"""
-    if pd.isna(val): 
-        return ""
+    """Garde les 18 chiffres intacts de l'identifiant et rejette les déchets"""
+    if pd.isna(val): return ""
     s = str(val).strip()
-    if s.endswith('.0'): 
-        s = s[:-2]
+    if s.endswith('.0'): s = s[:-2]
     s = re.sub(r'\D', '', s)
+    if len(s) < 10: return "" # Un vrai CNI ANGEM fait plus de 10 chiffres
     return s
 
-# --- MAPPING INTELLIGENT ---
+# --- MAPPING INTELLIGENT EXHAUSTIF ---
 MAPPING_CONFIG = {
-    'identifiant': ['IDENTIFIANT', 'CNI', 'N° CIN/PC', 'CARTENAT'], # Modifié ici aussi
-    'nom': ['NOM', 'NOM ET PRENOM', 'PROMOTEUR'],
+    'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
+    'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
     'prenom': ['PRENOM', 'PRENOMS'],
-    'genre': ['GENRE', 'G', '(H/F)'],
-    'date_naissance': ['DATE DE NAISSANCE', 'NE LE', 'D.N'],
+    'genre': ['GENRE', 'G', 'HF'],
+    'date_naissance': ['DATEDENAISSANCE', 'NELE', 'DN'],
     'adresse': ['ADRESSE', 'RESIDENCE'],
     'telephone': ['TEL', 'PHONE', 'MOBILE'],
-    'niveau_instruction': ['NIVEAU D\'INSTRUCTION', 'INSTRUCTION'],
-    'age': ['TRANCHE D\'AGE', 'AGE'],
+    'niveau_instruction': ['NIVEAUDINSTRUCTION', 'INSTRUCTION'],
+    'age': ['TRANCHEDAGE', 'AGE'],
     'activite': ['ACTIVITE', 'PROJET', 'AVTIVITE'],
-    'code_activite': ['CODE D\'ACTIVITE', 'CODE ACTIVITE'],
-    'secteur': ['SECTEUR D\'ACTIVITE', 'SECTEUR'],
+    'code_activite': ['CODEDACTIVITE', 'CODEACTIVITE'],
+    'secteur': ['SECTEURDACTIVITE', 'SECTEUR'],
     'daira': ['DAIRA'],
     'commune': ['COMMUNE', 'APC'],
-    'gestionnaire': ['ACCOMPAGNATEUR', 'GEST', 'SUIVI PAR'],
-    'zone': ['ZONE D\'ACTIVIE URBAINE /RURALE', 'ZONE'],
-    'montant_pnr': ['MONTANT PNR 29 %', 'MT DU P.N.R', 'PNR', 'MONTANT'],
-    'apport_personnel': ['APPERS 1%', 'AP,PERS 1%', 'AP', 'APPERS', 'APPORT PERSONNEL'],
-    'credit_bancaire': ['C,BANCAIRE 70%', 'C.BANCAIRE 70%', 'C,BANCAIRE', 'CMT', 'CREDIT BANCAIRE'],
-    'montant_total_credit': ['TOTAL CREDIT', 'COUT DU PROJET'],
-    'banque_nom': ['BANQUE DU PROMOTEUR', 'BANQUE/CCP', 'BANQUE'],
-    'agence_bancaire': ['L\'AGENCE BANCAIRE DU PROMOTEUR', 'CODE AGENCE', 'AGENCE'],
-    'numero_compte': ['N° DU COMPTE', 'N° DU COMPTE '],
-    'num_ordre_versement': ['N° D\'ORDRE DE VIREMENT', 'NUM OV', 'OV'], 
-    'date_financement': ['DATE DE VIREMENT', 'DATE VIREMENT', 'DATE OV'],
-    'debut_consommation': ['DÉBUT CONSOM.', 'DEBUT CONSOMMATION'],
-    'montant_rembourse': ['TOTAL REMB.', 'TOTAL VERS', 'VERSEMENT'],
-    'reste_rembourser': ['MONTANT REST À REMB', 'MONTANT REST A REMB', 'RESTE'],
-    'nb_echeance_tombee': ['NBR ECH TOMB.', 'ECHEANCES TOMBEES'],
+    'gestionnaire': ['ACCOMPAGNATEUR', 'GEST', 'SUIVIPAR'],
+    'zone': ['ZONEDACTIVIEURBAINERURALE', 'ZONE'],
+    'montant_pnr': ['MONTANTPNR29', 'MTDUPNR', 'PNR', 'MONTANT'],
+    'apport_personnel': ['APPERS1', 'APPERS', 'AP', 'APPORTPERSONNEL'],
+    'credit_bancaire': ['CBANCAIRE70', 'CBANCAIRE', 'CMT', 'CREDITBANCAIRE'],
+    'montant_total_credit': ['TOTALCREDIT', 'COUTDUPROJET'],
+    'banque_nom': ['BANQUEDUPROMOTEUR', 'BANQUECCP', 'BANQUE'],
+    'agence_bancaire': ['LAGENCEBANCAIREDUPROMOTEUR', 'CODEAGENCE', 'AGENCE'],
+    'numero_compte': ['NDUCOMPTE'],
+    'num_ordre_versement': ['NDORDREDEVIREMENT', 'NUMOV', 'OV'], 
+    'date_financement': ['DATEDEVIREMENT', 'DATEVIREMENT', 'DATEOV'],
+    'debut_consommation': ['DEBUTCONSOM', 'DEBUTCONSOMMATION'],
+    'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
+    'reste_rembourser': ['MONTANTRESTA', 'MONTANTRESTAREMB', 'RESTE'],
+    'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
     'etat_dette': ['ETAT', 'SITUATION']
 }
 
@@ -133,7 +128,7 @@ def page_dashboard():
         df = pd.DataFrame()
 
     if df.empty:
-        st.warning("La base de données est vide. Allez dans l'onglet 'Import Excel' pour charger vos fichiers.")
+        st.warning("La base de données est vide. Allez dans l'onglet 'Import Excel'.")
         return
 
     col1, col2, col3, col4 = st.columns(4)
@@ -151,8 +146,6 @@ def page_dashboard():
             b_counts = df[df['banque_nom'] != '']['banque_nom'].value_counts().reset_index()
             b_counts.columns = ['Banque', 'Nombre']
             st.plotly_chart(px.pie(b_counts, values='Nombre', names='Banque', hole=0.4), use_container_width=True)
-        else:
-            st.info("Les données bancaires ne sont pas encore importées.")
             
     with c2:
         st.subheader("Top Secteurs / Activités")
@@ -172,7 +165,7 @@ def page_gestion():
         st.warning("Aucun dossier enregistré.")
         return
 
-    search = st.text_input("🔍 Rechercher (Tapez un Nom, un Identifiant ou une Activité) :", "")
+    search = st.text_input("🔍 Rechercher (Nom, Identifiant ou Activité) :", "")
     
     if search:
         mask = df.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
@@ -180,7 +173,7 @@ def page_gestion():
     else:
         df_display = df
 
-    st.info("💡 Cliquez deux fois sur n'importe quelle case du tableau pour la modifier. N'oubliez pas de cliquer sur 'Enregistrer' en bas !")
+    st.info("💡 Double-cliquez sur une cellule pour modifier, puis appuyez sur le bouton Enregistrer.")
     
     edited_df = st.data_editor(
         df_display,
@@ -188,7 +181,7 @@ def page_gestion():
         hide_index=True,
         column_config={
             "id": st.column_config.NumberColumn("ID", disabled=True),
-            "identifiant": st.column_config.TextColumn("Identifiant"),
+            "identifiant": st.column_config.TextColumn("Identifiant (CNI)"),
             "montant_pnr": st.column_config.NumberColumn("PNR (DA)", format="%d DA"),
             "reste_rembourser": st.column_config.NumberColumn("Reste (DA)", format="%d DA"),
             "montant_rembourse": st.column_config.NumberColumn("Versé (DA)", format="%d DA"),
@@ -214,8 +207,9 @@ def page_gestion():
             session.close()
 
 def page_import():
-    st.title("📥 Importation Avancée")
-    st.markdown("Importez vos fichiers. L'algorithme se charge de la fusion.")
+    st.title("📥 Importation Avancée (Fuzzy Match)")
+    st.markdown("Importez vos fichiers. Le système lira intelligemment les en-têtes et les numéros d'identification.")
+    
     uploaded_file = st.file_uploader("Fichier Excel (.xls ou .xlsx)", type=['xlsx', 'xls'])
     
     if uploaded_file and st.button("Analyser et Importer", type="primary"):
@@ -229,16 +223,25 @@ def page_import():
                     df_raw = df_raw.fillna('')
                     header_idx = -1
                     
+                    # NOUVELLE DETECTION INFAILLIBLE DE L'EN-TETE
                     for i in range(min(30, len(df_raw))):
-                        row_str = "".join([clean_header(x) for x in df_raw.iloc[i].values])
-                        if "IDENTIFIANT" in row_str or "NOM" in row_str or "PNR" in row_str:
+                        row_cleaned = [clean_header(str(x)) for x in df_raw.iloc[i].values]
+                        score = 0
+                        if "NOM" in row_cleaned or "NOMETPRENOM" in row_cleaned or "PROMOTEUR" in row_cleaned: score += 1
+                        if "PRENOM" in row_cleaned or "PRENOMS" in row_cleaned: score += 1
+                        if "IDENTIFIANT" in row_cleaned or "CNI" in row_cleaned or "CARTENAT" in row_cleaned: score += 1
+                        if "PNR" in row_cleaned or "MONTANTPNR29" in row_cleaned or "MONTANT" in row_cleaned: score += 1
+                        if "BANQUE" in row_cleaned or "AGENCEBANCAIRE" in row_cleaned: score += 1
+                        
+                        if score >= 2: # Il faut au moins 2 vraies colonnes reconnues pour valider l'en-tête
                             header_idx = i
                             break
                     
                     if header_idx == -1:
-                        st.warning(f"Ignoré : La feuille '{s_name}' ne semble pas être un tableau ANGEM.")
+                        st.warning(f"Ignoré : L'onglet '{s_name}' ne ressemble pas à un tableau ANGEM.")
                         continue
                         
+                    # Découpage du tableau
                     df = df_raw.iloc[header_idx:].copy()
                     df.columns = df.iloc[0].astype(str).tolist()
                     df = df.iloc[1:].reset_index(drop=True)
@@ -246,17 +249,20 @@ def page_import():
                     df_cols = [clean_header(c) for c in df.columns]
                     col_map = {}
                     
+                    # MAPPING STRICT ET PRECIS
                     for db_f, variants in MAPPING_CONFIG.items():
+                        # Recherche Exacte
                         for v in variants:
                             clean_v = clean_header(v)
                             if clean_v in df_cols:
                                 col_map[db_f] = df.columns[df_cols.index(clean_v)]
                                 break
+                        # Recherche partielle si non trouvé
                         if db_f not in col_map:
                             for v in variants:
                                 clean_v = clean_header(v)
                                 for idx, col in enumerate(df_cols):
-                                    if clean_v in col:
+                                    if len(clean_v) >= 3 and clean_v in col:
                                         if clean_v == 'NOM' and 'PRENOM' in col: continue
                                         col_map[db_f] = df.columns[idx]
                                         break
@@ -280,46 +286,15 @@ def page_import():
                         
                         if not data.get('nom'): continue
 
+                        # FUSION INFAILLIBLE PAR IDENTIFIANT OU NOM+PRENOM
+                        ident = data.get('identifiant', '')
                         exist = None
-                        if data.get('identifiant'):
-                            exist = session.query(Dossier).filter_by(identifiant=data['identifiant']).first()
-                        if not exist and data.get('nom'): 
-                            exist = session.query(Dossier).filter_by(nom=data['nom'], prenom=data.get('prenom', '')).first()
                         
-                        if exist:
-                            for k, v in data.items():
-                                if v: setattr(exist, k, v)
-                            count_upd += 1
-                        else:
-                            session.add(Dossier(**data))
-                            count_add += 1
-
-                    total_add += count_add
-                    total_upd += count_upd
-                    st.success(f"✔️ Feuille '{s_name}' : {count_add} ajoutés, {count_upd} mis à jour.")
-
-            session.commit()
-            st.balloons()
-            st.success(f"🚀 Terminé ! Total : {total_add} Nouveaux | {total_upd} Fusionnés/Mis à jour.")
-            
-        except Exception as e:
-            session.rollback()
-            st.error(f"Erreur critique : {e}")
-        finally:
-            session.close()
-
-def page_admin():
-    st.title("🔒 Administration")
-    if st.text_input("Mot de passe", type="password") == "angem":
-        if st.button("🗑️ VIDER TOUTE LA BASE", type="primary"):
-            session = get_session()
-            session.query(Dossier).delete()
-            session.commit()
-            st.warning("Base vidée.")
-            st.rerun()
-
-page = sidebar_menu()
-if page == "Tableau de Bord": page_dashboard()
-elif page == "Gestion Dossiers": page_gestion()
-elif page == "Import Excel": page_import()
-elif page == "Admin": page_admin()
+                        if ident:
+                            exist = session.query(Dossier).filter_by(identifiant=ident).first()
+                        
+                        if not exist and data.get('nom'):
+                            nom_val = data['nom']
+                            prenom_val = data.get('prenom', '')
+                            exist = session.query(Dossier).filter_by(nom=nom_val, prenom=prenom_val).first()
+                            #
