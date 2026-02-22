@@ -7,8 +7,8 @@ import unicodedata
 import re
 import plotly.express as px
 
-# --- CONFIGURATION & CHEMIN ABSOLU (CORRECTION BUG) ---
-st.set_page_config(page_title="ANGEM MANAGER", page_icon="🇩🇿", layout="wide")
+# --- CONFIGURATION DE LA PAGE & CHEMIN ABSOLU ---
+st.set_page_config(page_title="ANGEM MANAGER PRO", page_icon="🇩🇿", layout="wide")
 
 # Force la base de données à se créer EXACTEMENT dans le même dossier que app.py
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -18,7 +18,7 @@ Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
 Session = sessionmaker(bind=engine)
 
-# --- 1. STRUCTURE DE LA BASE ---
+# --- 1. STRUCTURE DE LA BASE DE DONNÉES ---
 class Dossier(Base):
     __tablename__ = 'dossiers'
     id = Column(Integer, primary_key=True)
@@ -30,20 +30,27 @@ class Dossier(Base):
     telephone = Column(String)
     genre = Column(String)
     niveau_instruction = Column(String)
+    age = Column(String)
     activite = Column(String)
+    code_activite = Column(String)
     secteur = Column(String)
+    daira = Column(String)
     commune = Column(String)
     gestionnaire = Column(String)
     zone = Column(String)
     montant_pnr = Column(Float, default=0.0)
     apport_personnel = Column(Float, default=0.0)
     credit_bancaire = Column(Float, default=0.0)
+    montant_total_credit = Column(Float, default=0.0)
     banque_nom = Column(String)
+    agence_bancaire = Column(String)
     numero_compte = Column(String)
+    num_ordre_versement = Column(String)
     date_financement = Column(String)
+    debut_consommation = Column(String)
     montant_rembourse = Column(Float, default=0.0)
     reste_rembourser = Column(Float, default=0.0)
-    nb_echeance_tombee = Column(Integer, default=0)
+    nb_echeance_tombee = Column(String)
     etat_dette = Column(String)
 
 Base.metadata.create_all(engine)
@@ -53,12 +60,14 @@ def get_session():
 
 # --- 2. OUTILS DE NETTOYAGE ---
 def clean_header(val):
+    """Nettoie les noms de colonnes pour les comparer facilement (enlève accents, espaces, majuscules)"""
     if pd.isna(val): return ""
     val = str(val).upper()
     val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
+    """Nettoie les montants financiers (ex: '100 000 DA' -> 100000.0)"""
     if pd.isna(val) or val == '': return 0.0
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.]', '', s)
@@ -66,6 +75,7 @@ def clean_money(val):
     except: return 0.0
 
 def clean_cni(val):
+    """Nettoie les numéros de CNI/Identifiants pour éviter le format scientifique"""
     if pd.isna(val): return ""
     try:
         if isinstance(val, float): return '{:.0f}'.format(val)
@@ -74,52 +84,82 @@ def clean_cni(val):
         return s
     except: return str(val).strip()
 
+# --- MAPPING INTELLIGENT (Adapté à tes vrais fichiers 2006-2023) ---
 MAPPING_CONFIG = {
-    'nom': ['NOM', 'NAME', 'PROMOTEUR'],
+    'num_cni': ['IDENTIFIANT', 'CNI', 'N° CIN/PC', 'CARTENAT'],
+    'nom': ['NOM', 'NOM ET PRENOM', 'PROMOTEUR'],
     'prenom': ['PRENOM', 'PRENOMS'],
-    'num_cni': ['CNI', 'IDENTIFIANT', 'N° CIN/PC', 'CARTENAT'],
-    'activite': ['ACTIVITE', 'PROJET', 'INTITULE'],
-    'commune': ['COMMUNE', 'APC', 'DAIRA'],
-    'montant_pnr': ['PNR', 'MONTANT PNR', 'MT PNR'],
-    'banque_nom': ['BANQUE', 'AGENCE BANCAIRE'],
-    'montant_rembourse': ['VERSEMENT', 'REMBOURSE', 'TOTAL VERS'],
-    'reste_rembourser': ['RESTE', 'SOLDE', 'A PAYER']
+    'genre': ['GENRE', 'G', '(H/F)'],
+    'date_naissance': ['DATE DE NAISSANCE', 'NE LE', 'D.N'],
+    'adresse': ['ADRESSE', 'RESIDENCE'],
+    'telephone': ['TEL', 'PHONE', 'MOBILE'],
+    'niveau_instruction': ['NIVEAU D\'INSTRUCTION', 'INSTRUCTION'],
+    'age': ['TRANCHE D\'AGE', 'AGE'],
+    'activite': ['ACTIVITE', 'PROJET', 'AVTIVITE'],
+    'code_activite': ['CODE D\'ACTIVITE', 'CODE ACTIVITE'],
+    'secteur': ['SECTEUR D\'ACTIVITE', 'SECTEUR'],
+    'daira': ['DAIRA'],
+    'commune': ['COMMUNE', 'APC'],
+    'gestionnaire': ['ACCOMPAGNATEUR', 'GEST', 'SUIVI PAR'],
+    'zone': ['ZONE D\'ACTIVIE URBAINE /RURALE', 'ZONE'],
+    'montant_pnr': ['MONTANT PNR 29 %', 'MT DU P.N.R', 'PNR', 'MONTANT'],
+    'apport_personnel': ['APPERS 1%', 'AP,PERS 1%', 'AP', 'APPERS', 'APPORT PERSONNEL'],
+    'credit_bancaire': ['C,BANCAIRE 70%', 'C.BANCAIRE 70%', 'C,BANCAIRE', 'CMT', 'CREDIT BANCAIRE'],
+    'montant_total_credit': ['TOTAL CREDIT', 'COUT DU PROJET'],
+    'banque_nom': ['BANQUE DU PROMOTEUR', 'BANQUE/CCP', 'BANQUE'],
+    'agence_bancaire': ['L\'AGENCE BANCAIRE DU PROMOTEUR', 'CODE AGENCE', 'AGENCE'],
+    'numero_compte': ['N° DU COMPTE', 'N° DU COMPTE '],
+    'num_ordre_versement': ['N° D\'ORDRE DE VIREMENT', 'NUM OV', 'OV'], 
+    'date_financement': ['DATE DE VIREMENT', 'DATE VIREMENT', 'DATE OV'],
+    'debut_consommation': ['DÉBUT CONSOM.', 'DEBUT CONSOMMATION'],
+    'montant_rembourse': ['TOTAL REMB.', 'TOTAL VERS', 'VERSEMENT'],
+    'reste_rembourser': ['MONTANT REST À REMB', 'MONTANT REST A REMB', 'RESTE'],
+    'nb_echeance_tombee': ['NBR ECH TOMB.', 'ECHEANCES TOMBEES'],
+    'etat_dette': ['ETAT', 'SITUATION']
 }
 
 # --- 3. PAGES DE L'APPLICATION ---
 def sidebar_menu():
-    st.sidebar.title("MENU GÉNÉRAL")
+    st.sidebar.title("MENU ANGEM")
     return st.sidebar.radio("Navigation", ["Tableau de Bord", "Gestion Dossiers", "Import Excel", "Admin"])
 
 def page_dashboard():
     st.title("📊 Tableau de Bord")
     
-    # Lecture sécurisée de la BDD
     try:
         df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
     except:
         df = pd.DataFrame()
 
     if df.empty:
-        st.warning("La base de données est vide. Allez dans l'onglet 'Import Excel'.")
+        st.warning("La base de données est vide. Allez dans l'onglet 'Import Excel' pour charger vos fichiers.")
         return
 
+    # KPIS
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Dossiers", len(df))
     col2.metric("Montant PNR (DA)", f"{df['montant_pnr'].astype(float).sum():,.0f}")
-    col3.metric("Recouvré (DA)", f"{df['montant_rembourse'].astype(float).sum():,.0f}", delta="Versé")
+    col3.metric("Total Recouvré (DA)", f"{df['montant_rembourse'].astype(float).sum():,.0f}", delta="Versé")
     col4.metric("Reste à Payer (DA)", f"{df['reste_rembourser'].astype(float).sum():,.0f}", delta_color="inverse")
     
     st.markdown("---")
+    
+    # Graphiques
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Bilan par Banque")
+        st.subheader("Répartition par Banque")
         if 'banque_nom' in df.columns and not df['banque_nom'].eq('').all():
             b_counts = df[df['banque_nom'] != '']['banque_nom'].value_counts().reset_index()
             b_counts.columns = ['Banque', 'Nombre']
             st.plotly_chart(px.pie(b_counts, values='Nombre', names='Banque', hole=0.4), use_container_width=True)
         else:
-            st.info("Importez un fichier 'Finance' pour voir les banques.")
+            st.info("Les données bancaires ne sont pas encore importées.")
+            
+    with c2:
+        st.subheader("Top Secteurs / Activités")
+        if 'activite' in df.columns and not df['activite'].eq('').all():
+            act_counts = df[df['activite'] != '']['activite'].value_counts().head(10)
+            st.bar_chart(act_counts)
 
 def page_gestion():
     st.title("🗂️ Gestion des Dossiers")
@@ -133,7 +173,8 @@ def page_gestion():
         st.warning("Aucun dossier enregistré.")
         return
 
-    search = st.text_input("🔍 Rechercher par Nom, CNI ou Activité :", "")
+    # Barre de recherche
+    search = st.text_input("🔍 Rechercher (Tapez un Nom, une CNI ou une Activité) :", "")
     
     if search:
         mask = df.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
@@ -141,8 +182,9 @@ def page_gestion():
     else:
         df_display = df
 
-    st.info("💡 Vous pouvez modifier les cases directement ci-dessous, puis cliquer sur Enregistrer !")
+    st.info("💡 Cliquez deux fois sur n'importe quelle case du tableau pour la modifier. N'oubliez pas de cliquer sur 'Enregistrer' en bas !")
     
+    # Tableau éditable
     edited_df = st.data_editor(
         df_display,
         use_container_width=True,
@@ -151,11 +193,12 @@ def page_gestion():
             "id": st.column_config.NumberColumn("ID", disabled=True),
             "montant_pnr": st.column_config.NumberColumn("PNR (DA)", format="%d DA"),
             "reste_rembourser": st.column_config.NumberColumn("Reste (DA)", format="%d DA"),
+            "montant_rembourse": st.column_config.NumberColumn("Versé (DA)", format="%d DA"),
         }
     )
 
-    # SAUVEGARDE SÉCURISÉE SANS CASSER LA STRUCTURE
-    if st.button("💾 Enregistrer les modifications"):
+    # Sauvegarde
+    if st.button("💾 Enregistrer les modifications", type="primary"):
         session = get_session()
         try:
             for _, row in edited_df.iterrows():
@@ -174,30 +217,39 @@ def page_gestion():
             session.close()
 
 def page_import():
-    st.title("📥 Importation Excel")
+    st.title("📥 Importation Automatique")
+    st.markdown("Glissez vos fichiers **Finance** et **Recouvrement** ci-dessous.")
+    
     uploaded_file = st.file_uploader("Fichier Excel (.xls ou .xlsx)", type=['xlsx', 'xls'])
     
-    if uploaded_file and st.button("Lancer l'Analyse"):
+    if uploaded_file and st.button("Lancer l'Analyse et l'Import"):
         session = get_session()
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, dtype=str)
             count_add = 0
             count_upd = 0
+            
             progress = st.progress(0)
+            status = st.empty()
             
             for idx, (s_name, df_raw) in enumerate(xl.items()):
+                status.text(f"Analyse de la feuille : {s_name}...")
                 df_raw = df_raw.fillna('')
+                
+                # Chercher la ligne d'en-tête (Fuzzy header)
                 header_idx = -1
                 for i in range(min(30, len(df_raw))):
                     row = [clean_header(x) for x in df_raw.iloc[i].values]
-                    if any(k in row for k in ['NOM', 'PNR', 'BANQUE', 'VERSEMENT']):
+                    if any(k in row for k in ['NOM', 'PNR', 'BANQUE', 'VERSEMENT', 'IDENTIFIANT', 'NOMETPRENOM']):
                         header_idx = i; break
                 
                 if header_idx == -1: continue
                 
+                # Recharger le tableau proprement à partir de l'en-tête
                 uploaded_file.seek(0)
                 df = pd.read_excel(uploaded_file, sheet_name=s_name, header=header_idx, dtype=str).fillna('')
                 
+                # Mapper les colonnes
                 col_map = {}
                 df_cols = [clean_header(c) for c in df.columns]
                 
@@ -205,24 +257,34 @@ def page_import():
                     for v in variants:
                         clean_v = clean_header(v)
                         match = next((col for col in df_cols if clean_v in col), None)
-                        if match: col_map[db_f] = df.columns[df_cols.index(match)]; break
+                        if match: 
+                            col_map[db_f] = df.columns[df_cols.index(match)]
+                            break
                 
+                # Sécurité : S'il n'y a pas de nom identifié, on ignore la feuille
                 if 'nom' not in col_map: continue
 
+                # Insérer ou Mettre à jour (Upsert)
                 for _, row in df.iterrows():
                     data = {}
                     for db_f, xl_c in col_map.items():
                         val = row[xl_c]
-                        if db_f in ['montant_pnr', 'montant_rembourse', 'reste_rembourser']: data[db_f] = clean_money(val)
-                        elif db_f == 'num_cni': data[db_f] = clean_cni(val)
-                        else: data[db_f] = str(val).strip().upper() if val else ""
+                        if db_f in ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel', 'credit_bancaire', 'montant_total_credit']: 
+                            data[db_f] = clean_money(val)
+                        elif db_f == 'num_cni': 
+                            data[db_f] = clean_cni(val)
+                        else: 
+                            data[db_f] = str(val).strip().upper() if val else ""
                     
                     if not data.get('nom'): continue
 
+                    # Recherche de doublon par CNI ou Nom+Prenom
                     exist = session.query(Dossier).filter_by(num_cni=data['num_cni']).first() if data.get('num_cni') else None
-                    if not exist: exist = session.query(Dossier).filter_by(nom=data['nom'], prenom=data.get('prenom', '')).first()
+                    if not exist: 
+                        exist = session.query(Dossier).filter_by(nom=data['nom'], prenom=data.get('prenom', '')).first()
                     
                     if exist:
+                        # Met à jour uniquement les cases qui ne sont pas vides dans l'Excel
                         for k, v in data.items():
                             if v: setattr(exist, k, v)
                         count_upd += 1
@@ -233,7 +295,9 @@ def page_import():
                 progress.progress((idx + 1) / len(xl))
 
             session.commit()
-            st.success(f"Terminé ! {count_add} ajoutés, {count_upd} mis à jour.")
+            status.text("Traitement terminé !")
+            st.success(f"Opération réussie : {count_add} nouveaux dossiers ajoutés, {count_upd} dossiers existants mis à jour.")
+            
         except Exception as e:
             session.rollback()
             st.error(f"Erreur technique : {e}")
@@ -244,14 +308,26 @@ def page_admin():
     st.title("🔒 Administration")
     if st.text_input("Mot de passe", type="password") == "angem":
         st.success("Accès Autorisé")
-        if st.button("🗑️ VIDER LA BASE DE DONNÉES", type="primary"):
+        
+        st.markdown("### Danger Zone")
+        if st.button("🗑️ VIDER TOUTE LA BASE DE DONNÉES", type="primary"):
             session = get_session()
             session.query(Dossier).delete()
             session.commit()
-            st.warning("Base vidée.")
+            st.warning("La base de données a été totalement vidée.")
             st.rerun()
+            
+        st.markdown("### Sauvegarde")
+        if os.path.exists(DB_PATH):
+            with open(DB_PATH, "rb") as file:
+                st.download_button(
+                    label="📥 Télécharger la sauvegarde de la Base (.db)",
+                    data=file,
+                    file_name="angem_backup.db",
+                    mime="application/octet-stream"
+                )
 
-# --- DEMARRAGE ---
+# --- DÉMARRAGE DE L'APPLICATION ---
 page = sidebar_menu()
 if page == "Tableau de Bord": page_dashboard()
 elif page == "Gestion Dossiers": page_gestion()
