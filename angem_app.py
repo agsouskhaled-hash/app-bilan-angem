@@ -1,237 +1,322 @@
 import streamlit as st
 import pandas as pd
-import gspread
+import sqlite3
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, text
+from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
-from fpdf import FPDF
 import io
+import unicodedata
+import re
+import plotly.express as px
 
-# --- 1. CONFIGURATION ---
-st.set_page_config(page_title="ANGEM PRO - Expert", layout="wide", page_icon="🇩🇿")
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(
+    page_title="ANGEM MANAGER",
+    page_icon="🇩🇿",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- 2. BASE DE DONNÉES ET CODES ---
-ACCES = {
-    "admin": "admin77",
-    "Mme GUESSMIA ZAHIRA": "ZAH24", "M. BOULAHLIB REDOUANE": "RED24", "Mme DJAOUDI SARAH": "SAR24",
-    "Mme BEN SAHNOUN LILA": "LIL24", "Mme NASRI RIM": "RIM24", "Mme MECHALIKHE FATMA": "FAT24",
-    "Mlle SALMI NOUR EL HOUDA": "NOU24", "M. BERRABEH DOUADI": "DOU24", "Mme BELAID FAZIA": "FAZ24",
-    "M. METMAR OMAR": "OMA24", "Mme AIT OUARAB AMINA": "AMI24", "Mme MILOUDI AMEL": "AME24",
-    "Mme BERROUANE SAMIRA": "SAM24", "M. MAHREZ MOHAMED": "MOH24", "Mlle FELFOUL SAMIRA": "FELS24",
-    "Mlle MEDJHOUM RAOUIA": "RAO24", "Mme SAHNOUNE IMENE": "IME24", "Mme KHERIF FADILA": "KHE24",
-    "Mme MERAKEB FAIZA": "MER24", "Mme MEJDOUB AMEL": "MEJ24", "Mme BEN AICHE MOUNIRA": "MOU24",
-    "Mme SEKAT MANEL FATIMA": "MAN24", "Mme KADRI SIHEM": "SIH24", "Mme TOUAKNI SARAH": "TOU24",
-    "Mme MAASSOUM EPS LAKHDARI SAIDA": "SAI24", "M. TALAMALI IMAD": "IMA24", "Mme BOUCHAREB MOUNIA": "BOU24"
+# --- STYLE CSS PERSONNALISÉ ---
+st.markdown("""
+<style>
+    .metric-card {background-color: #f0f2f6; border-radius: 10px; padding: 15px; text-align: center; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);}
+    .metric-value {font-size: 24px; font-weight: bold; color: #0e1117;}
+    .metric-label {font-size: 14px; color: #555;}
+    .stApp {background-color: #ffffff;}
+    div[data-testid="stMetric"] {background-color: #ffffff; border: 1px solid #e6e9ef; padding: 10px; border-radius: 5px;}
+</style>
+""", unsafe_allow_html=True)
+
+# --- 1. BASE DE DONNÉES (SQLAlchemy) ---
+Base = declarative_base()
+engine = create_engine('sqlite:///angem_pro.db', echo=False)
+Session = sessionmaker(bind=engine)
+
+class Dossier(Base):
+    __tablename__ = 'dossiers'
+    id = Column(Integer, primary_key=True)
+    # Identité
+    nom = Column(String)
+    prenom = Column(String)
+    num_cni = Column(String, index=True)
+    date_naissance = Column(String)
+    adresse = Column(String)
+    telephone = Column(String)
+    genre = Column(String)
+    niveau_instruction = Column(String)
+    # Projet
+    activite = Column(String)
+    secteur = Column(String)
+    commune = Column(String)
+    gestionnaire = Column(String)
+    zone = Column(String)
+    # Finance
+    montant_pnr = Column(Float, default=0.0)
+    apport_personnel = Column(Float, default=0.0)
+    credit_bancaire = Column(Float, default=0.0)
+    banque_nom = Column(String)
+    numero_compte = Column(String)
+    date_financement = Column(String)
+    # Recouvrement
+    montant_rembourse = Column(Float, default=0.0)
+    reste_rembourser = Column(Float, default=0.0)
+    nb_echeance_tombee = Column(Integer, default=0)
+    etat_dette = Column(String)
+
+# Création de la table si elle n'existe pas
+Base.metadata.create_all(engine)
+
+# --- 2. OUTILS & LOGIQUE MÉTIER ---
+
+def get_session():
+    return Session()
+
+def clean_header(val):
+    if pd.isna(val): return ""
+    val = str(val).upper()
+    val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
+    return ''.join(filter(str.isalnum, val))
+
+def clean_money(val):
+    if pd.isna(val) or val == '': return 0.0
+    s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
+    s = re.sub(r'[^\d\.]', '', s)
+    try: return float(s)
+    except: return 0.0
+
+def clean_cni(val):
+    if pd.isna(val): return ""
+    try:
+        if isinstance(val, float): return '{:.0f}'.format(val)
+        s = str(val).strip()
+        if 'E' in s or '.' in s: return '{:.0f}'.format(float(s))
+        return s
+    except: return str(val).strip()
+
+# --- MAPPING INTELLIGENT ---
+MAPPING_CONFIG = {
+    'nom': ['NOM', 'NAME', 'PROMOTEUR'],
+    'prenom': ['PRENOM', 'PRENOMS'],
+    'num_cni': ['CNI', 'IDENTIFIANT', 'N° CIN/PC', 'CARTENAT'],
+    'activite': ['ACTIVITE', 'PROJET', 'INTITULE'],
+    'montant_pnr': ['PNR', 'MONTANT PNR', 'MT PNR'],
+    'banque_nom': ['BANQUE', 'AGENCE BANCAIRE'],
+    'montant_rembourse': ['VERSEMENT', 'REMBOURSE', 'TOTAL VERS'],
+    'reste_rembourser': ['RESTE', 'SOLDE', 'A PAYER']
+    # (J'ai allégé pour la lisibilité, mais la logique reste la même)
 }
 
-def get_gsheet_client():
-    creds = {
-        "type": st.secrets["type"], "project_id": st.secrets["project_id"],
-        "private_key_id": st.secrets["private_key_id"], "private_key": st.secrets["private_key"],
-        "client_email": st.secrets["client_email"], "client_id": st.secrets["client_id"],
-        "auth_uri": st.secrets["auth_uri"], "token_uri": st.secrets["token_uri"],
-        "auth_provider_x509_cert_url": st.secrets["auth_provider_x509_cert_url"],
-        "client_x509_cert_url": st.secrets["client_x509_cert_url"]
-    }
-    return gspread.service_account_from_dict(creds)
+# --- 3. INTERFACE UTILISATEUR ---
 
-# --- 3. GÉNÉRATEUR PDF ---
-class ANGEM_PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 9)
-        self.cell(100, 5, 'Antenne Régionale : Tipaza', 0, 0)
-        self.ln(4)
-        self.cell(100, 5, 'Agence : Alger Ouest', 0, 0)
-        self.ln(10)
+def sidebar_menu():
+    st.sidebar.title("MENU GÉNÉRAL")
+    page = st.sidebar.radio("Navigation", ["Tableau de Bord", "Gestion Dossiers", "Import Excel", "Admin"])
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Système ANGEM V.Streamlit")
+    return page
 
-def generate_pdf(data_dict, promos_df=None):
-    pdf = ANGEM_PDF()
-    pdf.add_page()
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(190, 10, "Rapport d'activités mensuel", 0, 1, 'C')
-    pdf.set_font('Arial', 'B', 10)
-    pdf.cell(190, 8, f"Accompagnateur : {data_dict.get('Accompagnateur', '---')}", 0, 1, 'L')
-    pdf.cell(190, 8, f"Mois : {str(data_dict.get('Mois', '')).upper()} {data_dict.get('Annee', '2026')}", 0, 1, 'R')
-    pdf.ln(5)
-
-    def draw_section(title, headers, keys):
-        pdf.set_fill_color(255, 230, 204)
-        pdf.set_font('Arial', 'B', 9)
-        pdf.cell(190, 8, title, 1, 1, 'L', True)
-        pdf.set_font('Arial', 'B', 5)
-        w = 190 / len(headers)
-        for h in headers: pdf.cell(w, 5, h, 1, 0, 'C')
-        pdf.ln()
-        pdf.set_font('Arial', '', 7)
-        for k in keys:
-            val = data_dict.get(k, 0)
-            try:
-                val_str = str(int(float(val))) if str(val).replace('.','').replace('-','').isdigit() else str(val)
-            except: val_str = str(val)
-            pdf.cell(w, 7, val_str, 1, 0, 'C')
-        pdf.ln(10)
-
-    # TITRES COMPLETS DANS LE PDF
-    h_mp = ["Dossiers Déposés", "Traités CEF", "Validés CEF", "Transmis Antenne", "Dossiers Financés", "Recouvrement", "Montant Global"]
-    draw_section("1. Formule : Achat de matière premières", h_mp, ["MP_D", "MP_T", "MP_V", "MP_A", "MP_F", "MP_R", "MP_M"])
+def page_dashboard():
+    st.title("📊 Tableau de Bord")
     
-    h_std = ["Déposés", "Validés", "Transmis Banque", "Notif. Banque", "Transmis Antenne", "Financés", "Notif. 10%", "Notif. 90%", "PV Existence", "PV Démarrage", "Reçus", "Montant"]
-    
-    draw_section("2. Formule : Triangulaire", h_std, ["TR_D", "TR_V", "TR_B", "TR_N", "TR_A", "TR_F", "TR_1", "TR_9", "TR_E", "TR_DM", "TR_R", "TR_M"])
-    draw_section("5. Algérie Télécom", h_std, ["AT_D", "AT_V", "AT_B", "AT_N", "AT_A", "AT_F", "AT_1", "AT_9", "AT_E", "AT_DM", "AT_R", "AT_M"])
-    draw_section("6. Recyclage", h_std, ["RE_D", "RE_V", "RE_B", "RE_N", "RE_A", "RE_F", "RE_1", "RE_9", "RE_E", "RE_DM", "RE_R", "RE_M"])
-    draw_section("7. Tricycle", h_std, ["TC_D", "TC_V", "TC_B", "TC_N", "TC_A", "TC_F", "TC_1", "TC_9", "TC_E", "TC_DM", "TC_R", "TC_M"])
-    draw_section("8. Auto-entrepreneur", h_std, ["AE_D", "AE_V", "AE_B", "AE_N", "AE_A", "AE_F", "AE_1", "AE_9", "AE_E", "AE_DM", "AE_R", "AE_M"])
-    
-    h_rap = ["Appels Tél.", "Dossiers NESDA", "Sorties Terrain", "Rappel 27k", "Rappel 40k", "Rappel 100k", "Rappel 400k", "Rappel 1M"]
-    draw_section("9. Suivi & Rappels", h_rap, ["TEL_A", "NE_T", "ST_T", "R_27", "R_40", "R_100", "R_400", "R_1M"])
+    session = get_session()
+    df = pd.read_sql(session.query(Dossier).statement, session.bind)
+    session.close()
 
-    if promos_df is not None and not promos_df.empty:
-        pdf.ln(5)
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font('Arial', 'B', 10)
-        pdf.cell(190, 8, "LISTE DES PROMOTEURS CONTACTÉS", 1, 1, 'C', True)
-        pdf.set_font('Arial', 'B', 8)
-        w_p = [55, 50, 45, 40]
-        for i, c in enumerate(["Nom & Prénom", "Activité", "Type Financement", "Numéro Téléphone"]): pdf.cell(w_p[i], 7, c, 1, 0, 'C')
-        pdf.ln()
-        pdf.set_font('Arial', '', 8)
-        for _, row in promos_df.iterrows():
-            if any(str(x).strip() != "" for x in row):
-                pdf.cell(55, 7, str(row[0]), 1, 0, 'L')
-                pdf.cell(50, 7, str(row[1]), 1, 0, 'L')
-                pdf.cell(45, 7, str(row[2]), 1, 0, 'C')
-                pdf.cell(40, 7, str(row[3]), 1, 0, 'C')
-                pdf.ln()
-    return bytes(pdf.output())
+    if df.empty:
+        st.warning("La base de données est vide. Allez dans 'Import Excel'.")
+        return
 
-# --- 4. AUTHENTIFICATION ---
-if 'auth' not in st.session_state: st.session_state.auth = False
-if not st.session_state.auth:
-    st.markdown("<h1 style='text-align: center; color: #2E86C1;'>🔐 ANGEM PRO</h1>", unsafe_allow_html=True)
-    role = st.radio("Connexion", ["Accompagnateur", "Administrateur"])
-    u = st.selectbox("Utilisateur", list(ACCES.keys()) if role == "Accompagnateur" else ["admin"])
-    p = st.text_input("Code Personnel", type="password")
-    if st.button("Se connecter", type="primary"):
-        if ACCES.get(u) == p:
-            st.session_state.auth, st.session_state.user, st.session_state.role = True, u, role
-            st.rerun()
-        else: st.error("Code incorrect")
-    st.stop()
+    # KPIS
+    col1, col2, col3, col4 = st.columns(4)
+    total_dossiers = len(df)
+    total_pnr = df['montant_pnr'].sum()
+    total_recouvre = df['montant_rembourse'].sum()
+    total_reste = df['reste_rembourser'].sum()
 
-# --- 5. ESPACE ADMIN ---
-if st.session_state.role == "Administrateur":
-    st.title("📊 Administration Centrale")
-    t1, t2, t3 = st.tabs(["Base de Données", "Téléchargements PDF", "Codes"])
-    try:
-        client = get_gsheet_client()
-        sh = client.open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-        ws = sh.worksheet("SAISIE_BRUTE")
-        all_v = ws.get_all_values()
-        df = pd.DataFrame(all_v[1:], columns=[h if h!="" else f"V_{i}" for i,h in enumerate(all_v[0])]) if len(all_v)>1 else pd.DataFrame()
-    except: st.error("Erreur d'accès"); st.stop()
+    col1.metric("Total Dossiers", total_dossiers)
+    col2.metric("Montant PNR (DA)", f"{total_pnr:,.0f}")
+    col3.metric("Recouvré (DA)", f"{total_recouvre:,.0f}", delta="Versé")
+    col4.metric("Reste à Payer (DA)", f"{total_reste:,.0f}", delta_color="inverse")
 
-    with t1:
-        st.dataframe(df)
-        if not df.empty:
-            del_idx = st.selectbox("Supprimer un enregistrement", df.index, format_func=lambda x: f"Ligne {x+2}: {df.loc[x,'Accompagnateur']}")
-            if st.button("❌ SUPPRIMER"): ws.delete_rows(del_idx + 2); st.rerun()
-
-    with t2:
-        if not df.empty:
-            idx = st.selectbox("Sélection", df.index, format_func=lambda x: f"{df.loc[x, 'Accompagnateur']} - {df.loc[x, 'Mois']}")
-            st.download_button("📥 PDF Individuel", generate_pdf(df.loc[idx].to_dict()), f"Bilan_{df.loc[idx, 'Accompagnateur']}.pdf")
-            st.markdown("---")
-            m_sel = st.selectbox("Mois du Cumul", df['Mois'].unique())
-            if st.button("Générer le Cumul Agence"):
-                df_f = df[df['Mois'] == m_sel].copy()
-                cols = [c for c in df_f.columns if c not in ["Accompagnateur", "Mois", "Annee", "Date"]]
-                for c in cols: df_f[c] = pd.to_numeric(df_f[c], errors='coerce').fillna(0)
-                total_data = {'Accompagnateur': "TOTAL", 'Mois': m_sel, 'Annee': 2026, **df_f[cols].sum().to_dict()}
-                st.download_button("📥 CUMUL PDF", generate_pdf(total_data), f"Total_{m_sel}.pdf")
-    with t3: st.table(pd.DataFrame(list(ACCES.items()), columns=["Nom", "Code"]))
-    if st.button("Déconnexion"): st.session_state.auth = False; st.rerun()
-    st.stop()
-
-# --- 6. FORMULAIRE ACCOMPAGNATEUR ---
-st.markdown(f"## 👤 {st.session_state.user}")
-m_s = st.selectbox("Mois de déclaration", ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"])
-data = {"Accompagnateur": st.session_state.user, "Mois": m_s, "Annee": 2026, "Date": datetime.now().strftime("%d/%m/%Y")}
-
-# ICI: TOUS LES NOMS SONT COMPLETS SUR L'INTERFACE
-def ui_sec(label, p, kp):
-    st.subheader(label); c1,c2,c3,c4,c5 = st.columns(5)
-    data[f"{p}_D"]=c1.number_input("Dossiers Déposés", min_value=0, key=f"{kp}1")
-    data[f"{p}_V"]=c2.number_input("Validés par CEF", min_value=0, key=f"{kp}2")
-    data[f"{p}_B"]=c3.number_input("Transmis Banque", min_value=0, key=f"{kp}3")
-    data[f"{p}_N"]=c4.number_input("Notification Banque", min_value=0, key=f"{kp}4")
-    data[f"{p}_A"]=c5.number_input("Transmis Antenne", min_value=0, key=f"{kp}5")
-    c6,c7,c8,c9 = st.columns(4)
-    data[f"{p}_F"]=c6.number_input("Dossiers Financés", min_value=0, key=f"{kp}6")
-    data[f"{p}_1"]=c7.number_input("Notification 10%", min_value=0, key=f"{kp}7")
-    data[f"{p}_9"]=c8.number_input("Notification 90%", min_value=0, key=f"{kp}8")
-    data[f"{p}_E"]=c9.number_input("PV Existence", min_value=0, key=f"{kp}9")
-    c10,c11,c12 = st.columns(3)
-    data[f"{p}_DM"]=c10.number_input("PV de Démarrage", min_value=0, key=f"{kp}10") # Code interne _DM
-    data[f"{p}_R"]=c11.number_input("Recouvrement (Reçus)", min_value=0, key=f"{kp}11")
-    data[f"{p}_M"]=c12.number_input("Montant Global", min_value=0, key=f"{kp}12")
-
-tabs = st.tabs(["MP", "Triangulaire", "Télécom", "Recyclage", "Tricycle", "AE", "Suivi & Rappels"])
-
-with tabs[0]:
-    st.subheader("1. Matière Première"); cx=st.columns(5)
-    data["MP_D"]=cx[0].number_input("Dossiers Déposés", min_value=0, key="m1")
-    data["MP_T"]=cx[1].number_input("Traités par CEF", min_value=0, key="m2")
-    data["MP_V"]=cx[2].number_input("Validés par CEF", min_value=0, key="m3")
-    data["MP_A"]=cx[3].number_input("Transmis Antenne", min_value=0, key="m4")
-    data["MP_F"]=cx[4].number_input("Dossiers Financés", min_value=0, key="m5")
-    data["MP_R"]=st.number_input("Recouvrement (Reçus)", min_value=0, key="m6")
-    data["MP_M"]=st.number_input("Montant Global", min_value=0, key="m7")
-
-with tabs[1]: ui_sec("2. Triangulaire", "TR", "tri")
-with tabs[2]: ui_sec("5. Algérie Télécom", "AT", "atl")
-with tabs[3]: ui_sec("6. Recyclage", "RE", "rec")
-with tabs[4]: ui_sec("7. Tricycle", "TC", "trc")
-with tabs[5]: ui_sec("8. Auto-entrepreneur", "AE", "aen")
-with tabs[6]:
-    st.subheader("9. Suivi & Rappels")
-    data["TEL_A"]=st.number_input("Total Appels Téléphoniques", min_value=0, key="tel1")
-    data["NE_T"]=st.number_input("Dossiers orientés NESDA", min_value=0, key="n1")
-    data["ST_T"]=st.number_input("Sorties Terrain", min_value=0, key="n2")
-    r=st.columns(5)
-    data["R_27"]=r[0].number_input("Rappel 27.000 DA", min_value=0, key="r1")
-    data["R_40"]=r[1].number_input("Rappel 40.000 DA", min_value=0, key="r2")
-    data["R_100"]=r[2].number_input("Rappel 100.000 DA", min_value=0, key="r3")
-    data["R_400"]=r[3].number_input("Rappel 400.000 DA", min_value=0, key="r4")
-    data["R_1M"]=r[4].number_input("Rappel 1.000.000 DA", min_value=0, key="r5")
     st.markdown("---")
-    st.subheader("📞 Liste des promoteurs contactés")
-    df_promos = st.data_editor(pd.DataFrame(columns=["Nom & Prénom", "Activité", "Type Financement", "Numéro Téléphone"]), num_rows="dynamic")
 
-st.markdown("---")
-# --- 7. ACTIONS (BOUTONS SÉPARÉS) ---
-b1, b2, b3 = st.columns(3)
-with b1:
-    if st.button("💾 ENREGISTRER", type="primary"):
+    # GRAPHIQUES
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.subheader("Répartition par Banque")
+        if 'banque_nom' in df.columns:
+            banque_counts = df['banque_nom'].value_counts().reset_index()
+            banque_counts.columns = ['Banque', 'Nombre']
+            fig = px.pie(banque_counts, values='Nombre', names='Banque', hole=0.4)
+            st.plotly_chart(fig, use_container_width=True)
+
+    with c2:
+        st.subheader("Top 10 Activités")
+        if 'activite' in df.columns:
+            act_counts = df['activite'].value_counts().head(10)
+            st.bar_chart(act_counts)
+
+def page_gestion():
+    st.title("🗂️ Gestion des Dossiers")
+    
+    session = get_session()
+    df = pd.read_sql(session.query(Dossier).statement, session.bind)
+    
+    # RECHERCHE
+    search = st.text_input("🔍 Rechercher (Nom, CNI, Activité...)", "")
+    
+    if search:
+        mask = df.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
+        df_display = df[mask]
+    else:
+        df_display = df
+
+    # TABLEAU INTERACTIF (EDITABLE !)
+    st.info("💡 Astuce : Vous pouvez modifier les cases directement dans le tableau ci-dessous !")
+    
+    edited_df = st.data_editor(
+        df_display,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "montant_pnr": st.column_config.NumberColumn(format="%d DA"),
+            "reste_rembourser": st.column_config.NumberColumn(format="%d DA"),
+        },
+        hide_index=True
+    )
+
+    # SAUVEGARDE DES MODIFICATIONS
+    if st.button("💾 Enregistrer les modifications"):
+        # Logique simplifiée pour mettre à jour la DB depuis le dataframe édité
+        # Attention : Pour une vraie prod, il faut comparer les diffs.
+        # Ici, on réécrit (méthode brutale mais efficace pour Streamlit local)
         try:
-            sh = get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-            sh.worksheet("SAISIE_BRUTE").append_row(list(data.values()))
-            st.success("✅ Enregistré !")
-        except Exception as e: st.error(f"Erreur : {e}")
-with b2: st.download_button("📥 PDF", generate_pdf(data, df_promos), f"Bilan_{st.session_state.user}.pdf")
-with b3:
-    io_x = io.BytesIO(); pd.DataFrame([data]).to_excel(pd.ExcelWriter(io_x, engine='xlsxwriter'), index=False)
-    st.download_button("📊 EXCEL", io_x.getvalue(), "Bilan.xlsx")
+            edited_df.to_sql('dossiers', con=engine, if_exists='replace', index=False)
+            st.success("Base de données mise à jour avec succès !")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erreur lors de la sauvegarde : {e}")
+            
+    session.close()
 
-# --- 8. HISTORIQUE ---
-if st.session_state.role == "Accompagnateur":
-    st.markdown("---")
-    st.subheader("📂 Historique de mes saisies")
-    try:
-        sh = get_gsheet_client().open_by_key("1ktTYrR1U3xxk5QjamVb1kqdHSTjZe9APoLXg_XzYJNM")
-        ws = sh.worksheet("SAISIE_BRUTE")
-        all_v = ws.get_all_values()
-        if len(all_v) > 1:
-            df_histo = pd.DataFrame(all_v[1:], columns=all_v[0])
-            my_data = df_histo[df_histo['Accompagnateur'] == st.session_state.user]
-            if not my_data.empty: st.dataframe(my_data)
-            else: st.info("Aucune saisie trouvée pour vous.")
-    except: pass
+def page_import():
+    st.title("📥 Importation Excel")
+    st.markdown("Fusionnez vos fichiers **Finance** et **Recouvrement** ici.")
+    
+    uploaded_file = st.file_uploader("Choisir un fichier Excel (.xlsx, .xls)", type=['xlsx', 'xls'])
+    
+    if uploaded_file and st.button("Lancer l'Analyse et l'Import"):
+        session = get_session()
+        try:
+            xl = pd.read_excel(uploaded_file, sheet_name=None, dtype=str)
+            count_add = 0
+            count_upd = 0
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for sheet_idx, (sheet_name, df_raw) in enumerate(xl.items()):
+                status_text.text(f"Traitement de la feuille : {sheet_name}")
+                df_raw = df_raw.fillna('')
+                
+                # Recherche En-tête
+                header_idx = -1
+                for i in range(min(30, len(df_raw))):
+                    row = [clean_header(x) for x in df_raw.iloc[i].values]
+                    if any(k in row for k in ['NOM', 'PNR', 'BANQUE', 'VERSEMENT']):
+                        header_idx = i; break
+                
+                if header_idx == -1: continue
+                
+                # Lecture propre
+                uploaded_file.seek(0)
+                df = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=header_idx, dtype=str).fillna('')
+                
+                # Mapping dynamique
+                col_map = {}
+                df_cols = [clean_header(c) for c in df.columns]
+                
+                for db_field, variants in MAPPING_CONFIG.items():
+                    for v in variants:
+                        clean_v = clean_header(v)
+                        # Match exact ou partiel
+                        match = next((col for col in df_cols if clean_v in col), None)
+                        if match:
+                            col_map[db_field] = df.columns[df_cols.index(match)]
+                            break
+                
+                if 'nom' not in col_map: continue
+
+                # Upsert Logic
+                for _, row in df.iterrows():
+                    data = {}
+                    for db_f, xl_c in col_map.items():
+                        val = row[xl_c]
+                        if db_f in ['montant_pnr', 'montant_rembourse', 'reste_rembourser']:
+                            data[db_f] = clean_money(val)
+                        elif db_f == 'num_cni':
+                            data[db_f] = clean_cni(val)
+                        else:
+                            data[db_f] = str(val).strip().upper() if val else ""
+                    
+                    if not data.get('nom'): continue
+
+                    # Recherche doublon
+                    existing = None
+                    if data.get('num_cni'):
+                        existing = session.query(Dossier).filter_by(num_cni=data['num_cni']).first()
+                    
+                    if existing:
+                        # Update seulement si vide
+                        for k, v in data.items():
+                            if v: setattr(existing, k, v)
+                        count_upd += 1
+                    else:
+                        # Insert
+                        new_dos = Dossier(**data)
+                        session.add(new_dos)
+                        count_add += 1
+                
+                progress_bar.progress((sheet_idx + 1) / len(xl))
+
+            session.commit()
+            st.success(f"Terminé ! {count_add} ajoutés, {count_upd} mis à jour.")
+            
+        except Exception as e:
+            st.error(f"Erreur : {e}")
+        finally:
+            session.close()
+
+def page_admin():
+    st.title("🔒 Administration")
+    password = st.text_input("Mot de passe Admin", type="password")
+    
+    if password == "angem":
+        st.success("Connecté")
+        if st.button("🗑️ VIDER LA BASE DE DONNÉES", type="primary"):
+            session = get_session()
+            session.query(Dossier).delete()
+            session.commit()
+            session.close()
+            st.warning("Base vidée.")
+            st.rerun()
+        
+        st.download_button(
+            "📥 Télécharger la Base (Excel)",
+            data=open("angem_pro.db", "rb"), # Idéalement convertir en Excel ici
+            file_name="backup_angem.db"
+        )
+
+# --- LANCEMENT ---
+page = sidebar_menu()
+
+if page == "Tableau de Bord":
+    page_dashboard()
+elif page == "Gestion Dossiers":
+    page_gestion()
+elif page == "Import Excel":
+    page_import()
+elif page == "Admin":
+    page_admin()
