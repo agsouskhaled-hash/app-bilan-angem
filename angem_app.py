@@ -11,7 +11,7 @@ import plotly.express as px
 st.set_page_config(page_title="ANGEM MANAGER PRO", page_icon="🇩🇿", layout="wide")
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro_v5.db") 
+DB_PATH = os.path.join(BASE_DIR, "angem_pro_v6.db") # Version 6 pour forcer la nouvelle fusion !
 
 Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
@@ -72,12 +72,15 @@ def clean_money(val):
     except: return 0.0
 
 def clean_identifiant(val):
-    """Garde les 18 chiffres intacts de l'identifiant et rejette les déchets"""
+    """Garde les 18 chiffres et gère le bug scientifique d'Excel"""
     if pd.isna(val): return ""
-    s = str(val).strip()
+    s = str(val).strip().upper()
+    if 'E' in s: # Si Excel a transformé en 1.6E+17
+        try: s = f"{float(s):.0f}"
+        except: pass
     if s.endswith('.0'): s = s[:-2]
     s = re.sub(r'\D', '', s)
-    if len(s) < 10: return "" # Un vrai CNI ANGEM fait plus de 10 chiffres
+    if len(s) < 10: return ""
     return s
 
 # --- MAPPING INTELLIGENT EXHAUSTIF ---
@@ -281,23 +284,33 @@ def page_import():
                         
                         if not data.get('nom'): continue
 
+                        # --- LOGIQUE DE FUSION BLINDÉE ---
                         ident = data.get('identifiant', '')
+                        nom_val = data.get('nom', '')
                         exist = None
                         
                         if ident:
+                            # 1. Recherche exacte
                             exist = session.query(Dossier).filter_by(identifiant=ident).first()
+                            
+                            # 2. Recherche tolérante (Si Excel a abîmé la fin de l'Identifiant)
+                            if not exist and len(ident) >= 14 and nom_val:
+                                prefix = ident[:14] # Prend les 14 premiers chiffres (toujours justes)
+                                nom_prefix = nom_val[:4] # Prend les 4 premières lettres du nom
+                                exist = session.query(Dossier).filter(
+                                    Dossier.identifiant.like(f"{prefix}%"),
+                                    Dossier.nom.like(f"{nom_prefix}%")
+                                ).first()
                         
-                        if not exist and data.get('nom'):
-                            nom_val = data['nom']
-                            prenom_val = data.get('prenom', '')
-                            exist = session.query(Dossier).filter_by(nom=nom_val, prenom=prenom_val).first()
-                            if not exist and prenom_val:
-                                full_name = f"{nom_val} {prenom_val}".strip()
-                                exist = session.query(Dossier).filter_by(nom=full_name).first()
+                        # 3. Ultime recours par Nom Complet
+                        if not exist and nom_val:
+                            exist = session.query(Dossier).filter(Dossier.nom.like(f"{nom_val}%")).first()
                         
                         if exist:
                             for k, v in data.items():
-                                if v: setattr(exist, k, v)
+                                # CORRECTION DU BUG DES ZEROS : Accepte les mises à jour même si c'est 0.0 !
+                                if v != "" and v is not None: 
+                                    setattr(exist, k, v)
                             count_upd += 1
                         else:
                             session.add(Dossier(**data))
