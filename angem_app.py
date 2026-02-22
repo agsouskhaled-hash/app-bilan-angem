@@ -11,7 +11,7 @@ import plotly.express as px
 st.set_page_config(page_title="ANGEM MANAGER PRO", page_icon="🇩🇿", layout="wide")
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro_v6.db") # Version 6 pour forcer la nouvelle fusion !
+DB_PATH = os.path.join(BASE_DIR, "angem_pro_v8.db") # v8 : Fusion stricte par Identifiant !
 
 Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
@@ -72,15 +72,15 @@ def clean_money(val):
     except: return 0.0
 
 def clean_identifiant(val):
-    """Garde les 18 chiffres et gère le bug scientifique d'Excel"""
+    """Garde les chiffres intacts et rejette les formats invalides"""
     if pd.isna(val): return ""
     s = str(val).strip().upper()
-    if 'E' in s: # Si Excel a transformé en 1.6E+17
+    if 'E' in s: 
         try: s = f"{float(s):.0f}"
         except: pass
     if s.endswith('.0'): s = s[:-2]
     s = re.sub(r'\D', '', s)
-    if len(s) < 10: return ""
+    if len(s) < 5: return "" # On accepte si c'est au moins 5 chiffres (ex: ancien format)
     return s
 
 # --- MAPPING INTELLIGENT EXHAUSTIF ---
@@ -210,15 +210,15 @@ def page_gestion():
             session.close()
 
 def page_import():
-    st.title("📥 Importation Avancée (Fuzzy Match)")
-    st.markdown("Importez vos fichiers. Le système lira intelligemment les en-têtes et les numéros d'identification.")
+    st.title("📥 Importation Avancée (Fusion par Identifiant)")
+    st.markdown("Importez vos fichiers. L'algorithme se basera **UNIQUEMENT** sur l'Identifiant (18 chiffres) pour fusionner les dossiers.")
     
     uploaded_file = st.file_uploader("Fichier Excel (.xls ou .xlsx)", type=['xlsx', 'xls'])
     
     if uploaded_file and st.button("Analyser et Importer", type="primary"):
         session = get_session()
         try:
-            xl = pd.read_excel(uploaded_file, sheet_name=None, dtype=str)
+            xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
             total_add, total_upd = 0, 0
             
             with st.expander("🔍 Journal d'importation (Détails)", expanded=True):
@@ -234,6 +234,7 @@ def page_import():
                         if "IDENTIFIANT" in row_cleaned or "CNI" in row_cleaned or "CARTENAT" in row_cleaned: score += 1
                         if "PNR" in row_cleaned or "MONTANTPNR29" in row_cleaned or "MONTANT" in row_cleaned: score += 1
                         if "BANQUE" in row_cleaned or "AGENCEBANCAIRE" in row_cleaned: score += 1
+                        if "TOTALREMB" in row_cleaned or "MONTANTRESTAREMB" in row_cleaned: score += 1
                         
                         if score >= 2: 
                             header_idx = i
@@ -284,45 +285,31 @@ def page_import():
                         
                         if not data.get('nom'): continue
 
-                        # --- LOGIQUE DE FUSION BLINDÉE ---
+                        # --- LA CORRECTION MAGIQUE : FUSION STRICTEMENT SUR L'IDENTIFIANT ---
                         ident = data.get('identifiant', '')
-                        nom_val = data.get('nom', '')
                         exist = None
                         
                         if ident:
-                            # 1. Recherche exacte
+                            # 100% basé sur l'identifiant, plus de fusion par nom !
                             exist = session.query(Dossier).filter_by(identifiant=ident).first()
-                            
-                            # 2. Recherche tolérante (Si Excel a abîmé la fin de l'Identifiant)
-                            if not exist and len(ident) >= 14 and nom_val:
-                                prefix = ident[:14] # Prend les 14 premiers chiffres (toujours justes)
-                                nom_prefix = nom_val[:4] # Prend les 4 premières lettres du nom
-                                exist = session.query(Dossier).filter(
-                                    Dossier.identifiant.like(f"{prefix}%"),
-                                    Dossier.nom.like(f"{nom_prefix}%")
-                                ).first()
-                        
-                        # 3. Ultime recours par Nom Complet
-                        if not exist and nom_val:
-                            exist = session.query(Dossier).filter(Dossier.nom.like(f"{nom_val}%")).first()
                         
                         if exist:
                             for k, v in data.items():
-                                # CORRECTION DU BUG DES ZEROS : Accepte les mises à jour même si c'est 0.0 !
                                 if v != "" and v is not None: 
                                     setattr(exist, k, v)
                             count_upd += 1
                         else:
+                            # S'il n'y a pas d'identifiant correspondant, on ne l'écrase pas, on l'AJOUTE
                             session.add(Dossier(**data))
                             count_add += 1
 
                     total_add += count_add
                     total_upd += count_upd
-                    st.success(f"✔️ Feuille '{s_name}' : {count_add} ajoutés, {count_upd} mis à jour.")
+                    st.success(f"✔️ Feuille '{s_name}' : {count_add} Nouveaux ajoutés, {count_upd} fusionnés/mis à jour.")
 
             session.commit()
             st.balloons()
-            st.success(f"🚀 Terminé ! Total : {total_add} Nouveaux | {total_upd} Fusionnés/Mis à jour.")
+            st.success(f"🚀 Terminé ! Total de l'opération : {total_add} Nouveaux | {total_upd} Mis à jour.")
             
         except Exception as e:
             session.rollback()
