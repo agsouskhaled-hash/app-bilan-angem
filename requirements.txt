@@ -1,5 +1,6 @@
+
 streamlit
 pandas
-gspread
-fpdf2
-xlsxwriter
+openpyxl
+sqlalchemy
+plotly
