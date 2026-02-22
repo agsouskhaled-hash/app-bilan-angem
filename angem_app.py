@@ -11,7 +11,7 @@ import plotly.express as px
 st.set_page_config(page_title="ANGEM MANAGER PRO", page_icon="🇩🇿", layout="wide")
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro_v5.db") # v5 pour forcer la nouvelle architecture blindée
+DB_PATH = os.path.join(BASE_DIR, "angem_pro_v5.db") 
 
 Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
@@ -223,7 +223,6 @@ def page_import():
                     df_raw = df_raw.fillna('')
                     header_idx = -1
                     
-                    # NOUVELLE DETECTION INFAILLIBLE DE L'EN-TETE
                     for i in range(min(30, len(df_raw))):
                         row_cleaned = [clean_header(str(x)) for x in df_raw.iloc[i].values]
                         score = 0
@@ -233,7 +232,7 @@ def page_import():
                         if "PNR" in row_cleaned or "MONTANTPNR29" in row_cleaned or "MONTANT" in row_cleaned: score += 1
                         if "BANQUE" in row_cleaned or "AGENCEBANCAIRE" in row_cleaned: score += 1
                         
-                        if score >= 2: # Il faut au moins 2 vraies colonnes reconnues pour valider l'en-tête
+                        if score >= 2: 
                             header_idx = i
                             break
                     
@@ -241,7 +240,6 @@ def page_import():
                         st.warning(f"Ignoré : L'onglet '{s_name}' ne ressemble pas à un tableau ANGEM.")
                         continue
                         
-                    # Découpage du tableau
                     df = df_raw.iloc[header_idx:].copy()
                     df.columns = df.iloc[0].astype(str).tolist()
                     df = df.iloc[1:].reset_index(drop=True)
@@ -249,15 +247,12 @@ def page_import():
                     df_cols = [clean_header(c) for c in df.columns]
                     col_map = {}
                     
-                    # MAPPING STRICT ET PRECIS
                     for db_f, variants in MAPPING_CONFIG.items():
-                        # Recherche Exacte
                         for v in variants:
                             clean_v = clean_header(v)
                             if clean_v in df_cols:
                                 col_map[db_f] = df.columns[df_cols.index(clean_v)]
                                 break
-                        # Recherche partielle si non trouvé
                         if db_f not in col_map:
                             for v in variants:
                                 clean_v = clean_header(v)
@@ -286,7 +281,6 @@ def page_import():
                         
                         if not data.get('nom'): continue
 
-                        # FUSION INFAILLIBLE PAR IDENTIFIANT OU NOM+PRENOM
                         ident = data.get('identifiant', '')
                         exist = None
                         
@@ -297,4 +291,46 @@ def page_import():
                             nom_val = data['nom']
                             prenom_val = data.get('prenom', '')
                             exist = session.query(Dossier).filter_by(nom=nom_val, prenom=prenom_val).first()
-                            #
+                            if not exist and prenom_val:
+                                full_name = f"{nom_val} {prenom_val}".strip()
+                                exist = session.query(Dossier).filter_by(nom=full_name).first()
+                        
+                        if exist:
+                            for k, v in data.items():
+                                if v: setattr(exist, k, v)
+                            count_upd += 1
+                        else:
+                            session.add(Dossier(**data))
+                            count_add += 1
+
+                    total_add += count_add
+                    total_upd += count_upd
+                    st.success(f"✔️ Feuille '{s_name}' : {count_add} ajoutés, {count_upd} mis à jour.")
+
+            session.commit()
+            st.balloons()
+            st.success(f"🚀 Terminé ! Total : {total_add} Nouveaux | {total_upd} Fusionnés/Mis à jour.")
+            
+        except Exception as e:
+            session.rollback()
+            st.error(f"Erreur critique : {e}")
+        finally:
+            session.close()
+
+def page_admin():
+    st.title("🔒 Administration")
+    if st.text_input("Mot de passe", type="password") == "angem":
+        if st.button("🗑️ VIDER TOUTE LA BASE", type="primary"):
+            session = get_session()
+            session.query(Dossier).delete()
+            session.commit()
+            st.warning("Base vidée.")
+            st.rerun()
+
+page = sidebar_menu()
+if page == "Tableau de Bord": page_dashboard()
+elif page == "Gestion Dossiers": page_gestion()
+elif page == "Import Excel": page_import()
+elif page == "Admin": page_admin()
+
+# --- FIN DU FICHIER ---
