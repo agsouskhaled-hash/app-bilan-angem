@@ -11,7 +11,7 @@ import plotly.express as px
 st.set_page_config(page_title="ANGEM MANAGER PRO", page_icon="🇩🇿", layout="wide")
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro_v2.db")
+DB_PATH = os.path.join(BASE_DIR, "angem_pro_v4.db") # v4 pour forcer la nouvelle colonne 'identifiant'
 
 Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
@@ -23,7 +23,7 @@ class Dossier(Base):
     id = Column(Integer, primary_key=True)
     nom = Column(String)
     prenom = Column(String)
-    num_cni = Column(String, index=True)
+    identifiant = Column(String, index=True) # Remplacé num_cni par identifiant !
     date_naissance = Column(String)
     adresse = Column(String)
     telephone = Column(String)
@@ -75,22 +75,19 @@ def clean_money(val):
     except: 
         return 0.0
 
-def clean_cni(val):
+def clean_identifiant(val):
+    """Garde les 18 chiffres intacts de l'identifiant"""
     if pd.isna(val): 
         return ""
-    try:
-        if isinstance(val, float): 
-            return '{:.0f}'.format(val)
-        s = str(val).strip()
-        if 'E' in s or '.' in s: 
-            return '{:.0f}'.format(float(s))
-        return s
-    except: 
-        return str(val).strip()
+    s = str(val).strip()
+    if s.endswith('.0'): 
+        s = s[:-2]
+    s = re.sub(r'\D', '', s)
+    return s
 
 # --- MAPPING INTELLIGENT ---
 MAPPING_CONFIG = {
-    'num_cni': ['IDENTIFIANT', 'CNI', 'N° CIN/PC', 'CARTENAT'],
+    'identifiant': ['IDENTIFIANT', 'CNI', 'N° CIN/PC', 'CARTENAT'], # Modifié ici aussi
     'nom': ['NOM', 'NOM ET PRENOM', 'PROMOTEUR'],
     'prenom': ['PRENOM', 'PRENOMS'],
     'genre': ['GENRE', 'G', '(H/F)'],
@@ -175,7 +172,7 @@ def page_gestion():
         st.warning("Aucun dossier enregistré.")
         return
 
-    search = st.text_input("🔍 Rechercher (Tapez un Nom, une CNI ou une Activité) :", "")
+    search = st.text_input("🔍 Rechercher (Tapez un Nom, un Identifiant ou une Activité) :", "")
     
     if search:
         mask = df.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
@@ -191,6 +188,7 @@ def page_gestion():
         hide_index=True,
         column_config={
             "id": st.column_config.NumberColumn("ID", disabled=True),
+            "identifiant": st.column_config.TextColumn("Identifiant"),
             "montant_pnr": st.column_config.NumberColumn("PNR (DA)", format="%d DA"),
             "reste_rembourser": st.column_config.NumberColumn("Reste (DA)", format="%d DA"),
             "montant_rembourse": st.column_config.NumberColumn("Versé (DA)", format="%d DA"),
@@ -216,121 +214,112 @@ def page_gestion():
             session.close()
 
 def page_import():
-    st.title("📥 Importation Automatique")
-    st.markdown("Glissez vos fichiers **Finance** et **Recouvrement** ci-dessous.")
-    
+    st.title("📥 Importation Avancée")
+    st.markdown("Importez vos fichiers. L'algorithme se charge de la fusion.")
     uploaded_file = st.file_uploader("Fichier Excel (.xls ou .xlsx)", type=['xlsx', 'xls'])
     
-    if uploaded_file and st.button("Lancer l'Analyse et l'Import"):
+    if uploaded_file and st.button("Analyser et Importer", type="primary"):
         session = get_session()
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, dtype=str)
-            count_add = 0
-            count_upd = 0
+            total_add, total_upd = 0, 0
             
-            progress = st.progress(0)
-            status = st.empty()
-            
-            for idx, (s_name, df_raw) in enumerate(xl.items()):
-                status.text(f"Analyse de la feuille : {s_name}...")
-                df_raw = df_raw.fillna('')
-                
-                header_idx = -1
-                for i in range(min(30, len(df_raw))):
-                    row = [clean_header(x) for x in df_raw.iloc[i].values]
-                    if any(k in row for k in ['NOM', 'PNR', 'BANQUE', 'VERSEMENT', 'IDENTIFIANT', 'NOMETPRENOM']):
-                        header_idx = i
-                        break
-                
-                if header_idx == -1: 
-                    continue
-                
-                uploaded_file.seek(0)
-                df = pd.read_excel(uploaded_file, sheet_name=s_name, header=header_idx, dtype=str).fillna('')
-                
-                col_map = {}
-                df_cols = [clean_header(c) for c in df.columns]
-                
-                for db_f, variants in MAPPING_CONFIG.items():
-                    for v in variants:
-                        clean_v = clean_header(v)
-                        match = next((col for col in df_cols if clean_v in col), None)
-                        if match: 
-                            col_map[db_f] = df.columns[df_cols.index(match)]
-                            break
-                
-                if 'nom' not in col_map: 
-                    continue
-
-                for _, row in df.iterrows():
-                    data = {}
-                    for db_f, xl_c in col_map.items():
-                        val = row[xl_c]
-                        if db_f in ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel', 'credit_bancaire', 'montant_total_credit']: 
-                            data[db_f] = clean_money(val)
-                        elif db_f == 'num_cni': 
-                            data[db_f] = clean_cni(val)
-                        else: 
-                            data[db_f] = str(val).strip().upper() if val else ""
+            with st.expander("🔍 Journal d'importation (Détails)", expanded=True):
+                for s_name, df_raw in xl.items():
+                    df_raw = df_raw.fillna('')
+                    header_idx = -1
                     
-                    if not data.get('nom'): 
+                    for i in range(min(30, len(df_raw))):
+                        row_str = "".join([clean_header(x) for x in df_raw.iloc[i].values])
+                        if "IDENTIFIANT" in row_str or "NOM" in row_str or "PNR" in row_str:
+                            header_idx = i
+                            break
+                    
+                    if header_idx == -1:
+                        st.warning(f"Ignoré : La feuille '{s_name}' ne semble pas être un tableau ANGEM.")
+                        continue
+                        
+                    df = df_raw.iloc[header_idx:].copy()
+                    df.columns = df.iloc[0].astype(str).tolist()
+                    df = df.iloc[1:].reset_index(drop=True)
+                    
+                    df_cols = [clean_header(c) for c in df.columns]
+                    col_map = {}
+                    
+                    for db_f, variants in MAPPING_CONFIG.items():
+                        for v in variants:
+                            clean_v = clean_header(v)
+                            if clean_v in df_cols:
+                                col_map[db_f] = df.columns[df_cols.index(clean_v)]
+                                break
+                        if db_f not in col_map:
+                            for v in variants:
+                                clean_v = clean_header(v)
+                                for idx, col in enumerate(df_cols):
+                                    if clean_v in col:
+                                        if clean_v == 'NOM' and 'PRENOM' in col: continue
+                                        col_map[db_f] = df.columns[idx]
+                                        break
+                                if db_f in col_map: break
+                    
+                    if 'nom' not in col_map:
+                        st.warning(f"Ignoré : Colonne 'Nom' introuvable dans '{s_name}'.")
                         continue
 
-                    exist = session.query(Dossier).filter_by(num_cni=data['num_cni']).first() if data.get('num_cni') else None
-                    if not exist: 
-                        exist = session.query(Dossier).filter_by(nom=data['nom'], prenom=data.get('prenom', '')).first()
-                    
-                    if exist:
-                        for k, v in data.items():
-                            if v: 
-                                setattr(exist, k, v)
-                        count_upd += 1
-                    else:
-                        session.add(Dossier(**data))
-                        count_add += 1
-                
-                progress.progress((idx + 1) / len(xl))
+                    count_add, count_upd = 0, 0
+                    for _, row in df.iterrows():
+                        data = {}
+                        for db_f, xl_c in col_map.items():
+                            val = row[xl_c]
+                            if db_f in ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel', 'credit_bancaire', 'montant_total_credit']:
+                                data[db_f] = clean_money(val)
+                            elif db_f == 'identifiant':
+                                data[db_f] = clean_identifiant(val)
+                            else:
+                                data[db_f] = str(val).strip().upper() if val else ""
+                        
+                        if not data.get('nom'): continue
+
+                        exist = None
+                        if data.get('identifiant'):
+                            exist = session.query(Dossier).filter_by(identifiant=data['identifiant']).first()
+                        if not exist and data.get('nom'): 
+                            exist = session.query(Dossier).filter_by(nom=data['nom'], prenom=data.get('prenom', '')).first()
+                        
+                        if exist:
+                            for k, v in data.items():
+                                if v: setattr(exist, k, v)
+                            count_upd += 1
+                        else:
+                            session.add(Dossier(**data))
+                            count_add += 1
+
+                    total_add += count_add
+                    total_upd += count_upd
+                    st.success(f"✔️ Feuille '{s_name}' : {count_add} ajoutés, {count_upd} mis à jour.")
 
             session.commit()
-            status.text("Traitement terminé !")
-            st.success(f"Opération réussie : {count_add} nouveaux dossiers ajoutés, {count_upd} dossiers existants mis à jour.")
+            st.balloons()
+            st.success(f"🚀 Terminé ! Total : {total_add} Nouveaux | {total_upd} Fusionnés/Mis à jour.")
             
         except Exception as e:
             session.rollback()
-            st.error(f"Erreur technique : {e}")
+            st.error(f"Erreur critique : {e}")
         finally:
             session.close()
 
 def page_admin():
     st.title("🔒 Administration")
     if st.text_input("Mot de passe", type="password") == "angem":
-        st.success("Accès Autorisé")
-        
-        st.markdown("### Danger Zone")
-        if st.button("🗑️ VIDER TOUTE LA BASE DE DONNÉES", type="primary"):
+        if st.button("🗑️ VIDER TOUTE LA BASE", type="primary"):
             session = get_session()
             session.query(Dossier).delete()
             session.commit()
-            st.warning("La base de données a été totalement vidée.")
+            st.warning("Base vidée.")
             st.rerun()
-            
-        st.markdown("### Sauvegarde")
-        if os.path.exists(DB_PATH):
-            with open(DB_PATH, "rb") as file:
-                st.download_button(
-                    label="📥 Télécharger la sauvegarde de la Base (.db)",
-                    data=file,
-                    file_name="angem_backup.db",
-                    mime="application/octet-stream"
-                )
 
-# --- DÉMARRAGE DE L'APPLICATION ---
 page = sidebar_menu()
-if page == "Tableau de Bord":
-    page_dashboard()
-elif page == "Gestion Dossiers":
-    page_gestion()
-elif page == "Import Excel":
-    page_import()
-elif page == "Admin":
-    page_admin()
+if page == "Tableau de Bord": page_dashboard()
+elif page == "Gestion Dossiers": page_gestion()
+elif page == "Import Excel": page_import()
+elif page == "Admin": page_admin()
