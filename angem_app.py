@@ -10,9 +10,9 @@ import plotly.express as px
 # --- CONFIGURATION DE LA PAGE & CHEMIN ABSOLU ---
 st.set_page_config(page_title="ANGEM MANAGER PRO", page_icon="🇩🇿", layout="wide")
 
-# Force la base de données à se créer EXACTEMENT dans le même dossier que app.py
+# LA CORRECTION EST ICI : On utilise un nouveau nom (v2) pour forcer une base neuve !
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro.db")
+DB_PATH = os.path.join(BASE_DIR, "angem_pro_v2.db")
 
 Base = declarative_base()
 engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
@@ -60,14 +60,12 @@ def get_session():
 
 # --- 2. OUTILS DE NETTOYAGE ---
 def clean_header(val):
-    """Nettoie les noms de colonnes pour les comparer facilement (enlève accents, espaces, majuscules)"""
     if pd.isna(val): return ""
     val = str(val).upper()
     val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
-    """Nettoie les montants financiers (ex: '100 000 DA' -> 100000.0)"""
     if pd.isna(val) or val == '': return 0.0
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.]', '', s)
@@ -75,7 +73,6 @@ def clean_money(val):
     except: return 0.0
 
 def clean_cni(val):
-    """Nettoie les numéros de CNI/Identifiants pour éviter le format scientifique"""
     if pd.isna(val): return ""
     try:
         if isinstance(val, float): return '{:.0f}'.format(val)
@@ -84,7 +81,7 @@ def clean_cni(val):
         return s
     except: return str(val).strip()
 
-# --- MAPPING INTELLIGENT (Adapté à tes vrais fichiers 2006-2023) ---
+# --- MAPPING INTELLIGENT (Spécial ANGEM 2006-2023) ---
 MAPPING_CONFIG = {
     'num_cni': ['IDENTIFIANT', 'CNI', 'N° CIN/PC', 'CARTENAT'],
     'nom': ['NOM', 'NOM ET PRENOM', 'PROMOTEUR'],
@@ -242,94 +239,3 @@ def page_import():
                     row = [clean_header(x) for x in df_raw.iloc[i].values]
                     if any(k in row for k in ['NOM', 'PNR', 'BANQUE', 'VERSEMENT', 'IDENTIFIANT', 'NOMETPRENOM']):
                         header_idx = i; break
-                
-                if header_idx == -1: continue
-                
-                # Recharger le tableau proprement à partir de l'en-tête
-                uploaded_file.seek(0)
-                df = pd.read_excel(uploaded_file, sheet_name=s_name, header=header_idx, dtype=str).fillna('')
-                
-                # Mapper les colonnes
-                col_map = {}
-                df_cols = [clean_header(c) for c in df.columns]
-                
-                for db_f, variants in MAPPING_CONFIG.items():
-                    for v in variants:
-                        clean_v = clean_header(v)
-                        match = next((col for col in df_cols if clean_v in col), None)
-                        if match: 
-                            col_map[db_f] = df.columns[df_cols.index(match)]
-                            break
-                
-                # Sécurité : S'il n'y a pas de nom identifié, on ignore la feuille
-                if 'nom' not in col_map: continue
-
-                # Insérer ou Mettre à jour (Upsert)
-                for _, row in df.iterrows():
-                    data = {}
-                    for db_f, xl_c in col_map.items():
-                        val = row[xl_c]
-                        if db_f in ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel', 'credit_bancaire', 'montant_total_credit']: 
-                            data[db_f] = clean_money(val)
-                        elif db_f == 'num_cni': 
-                            data[db_f] = clean_cni(val)
-                        else: 
-                            data[db_f] = str(val).strip().upper() if val else ""
-                    
-                    if not data.get('nom'): continue
-
-                    # Recherche de doublon par CNI ou Nom+Prenom
-                    exist = session.query(Dossier).filter_by(num_cni=data['num_cni']).first() if data.get('num_cni') else None
-                    if not exist: 
-                        exist = session.query(Dossier).filter_by(nom=data['nom'], prenom=data.get('prenom', '')).first()
-                    
-                    if exist:
-                        # Met à jour uniquement les cases qui ne sont pas vides dans l'Excel
-                        for k, v in data.items():
-                            if v: setattr(exist, k, v)
-                        count_upd += 1
-                    else:
-                        session.add(Dossier(**data))
-                        count_add += 1
-                
-                progress.progress((idx + 1) / len(xl))
-
-            session.commit()
-            status.text("Traitement terminé !")
-            st.success(f"Opération réussie : {count_add} nouveaux dossiers ajoutés, {count_upd} dossiers existants mis à jour.")
-            
-        except Exception as e:
-            session.rollback()
-            st.error(f"Erreur technique : {e}")
-        finally:
-            session.close()
-
-def page_admin():
-    st.title("🔒 Administration")
-    if st.text_input("Mot de passe", type="password") == "angem":
-        st.success("Accès Autorisé")
-        
-        st.markdown("### Danger Zone")
-        if st.button("🗑️ VIDER TOUTE LA BASE DE DONNÉES", type="primary"):
-            session = get_session()
-            session.query(Dossier).delete()
-            session.commit()
-            st.warning("La base de données a été totalement vidée.")
-            st.rerun()
-            
-        st.markdown("### Sauvegarde")
-        if os.path.exists(DB_PATH):
-            with open(DB_PATH, "rb") as file:
-                st.download_button(
-                    label="📥 Télécharger la sauvegarde de la Base (.db)",
-                    data=file,
-                    file_name="angem_backup.db",
-                    mime="application/octet-stream"
-                )
-
-# --- DÉMARRAGE DE L'APPLICATION ---
-page = sidebar_menu()
-if page == "Tableau de Bord": page_dashboard()
-elif page == "Gestion Dossiers": page_gestion()
-elif page == "Import Excel": page_import()
-elif page == "Admin": page_admin()
