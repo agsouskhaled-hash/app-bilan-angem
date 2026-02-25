@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="ANGEM PRO", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
-# --- STYLE CSS (GARDÉ À L'IDENTIQUE) ---
+# --- STYLE CSS ---
 st.markdown("""
 <style>
     .stMetric {background-color: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #007bff; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);}
@@ -19,11 +19,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "angem_pro_v9.db") 
-
+# --- CONNEXION AU COFFRE-FORT SUPABASE ---
 Base = declarative_base()
-engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
+# Voici ton câble de connexion direct et sécurisé
+engine = create_engine("postgresql://postgres:algerouest2026@db.greyjhgiytajxpvucbrk.supabase.co:5432/postgres", echo=False)
 Session = sessionmaker(bind=engine)
 
 class Dossier(Base):
@@ -63,7 +62,7 @@ class Dossier(Base):
 Base.metadata.create_all(engine)
 def get_session(): return Session()
 
-# --- OUTILS DE NETTOYAGE (GARDÉS À L'IDENTIQUE) ---
+# --- OUTILS DE NETTOYAGE ---
 def clean_header(val):
     if pd.isna(val): return ""
     val = str(val).upper()
@@ -127,7 +126,7 @@ def sidebar_menu():
     st.sidebar.markdown("---")
     return st.sidebar.radio("📌 Navigation :", ["🗂️ Consultation Dossiers", "📥 Importation Excel", "🔒 Espace Administrateur"])
 
-# --- PAGE GESTION AMÉLIORÉE POUR L'ATTRIBUTION ---
+# --- PAGE GESTION ---
 def page_gestion():
     st.title("🗂️ Attribution des Accompagnateurs")
     st.markdown("Utilisez les filtres pour identifier vos promoteurs et vous attribuer les dossiers.")
@@ -139,7 +138,6 @@ def page_gestion():
         st.info("📌 La base est vide.")
         return
 
-    # --- FILTRES DE TRAVAIL ---
     col_a, col_b = st.columns([2, 1])
     with col_a:
         search = st.text_input("🔍 Chercher un dossier :", placeholder="Nom, Identifiant...")
@@ -154,7 +152,6 @@ def page_gestion():
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
 
-    # --- LISTE DES NOMS (A AJUSTER SELON TES AGENTS) ---
     liste_agents = ["", "M. MAHREZ MOHAMED", "Mme AIT OUARAB AMINA", "FELFOUL Samira", 
                     "MEDJHOUM Raouia", "CHEMMAMDJI REDA", "DJAOUDI SARA", "BERRABAH Douadi",
                     "BOULAHLIB Redouane", "NASRI Riym", "KADRI Mohamed amine", "SEKAT Manel"]
@@ -191,7 +188,7 @@ def page_gestion():
             st.error(f"Erreur : {e}")
         finally: session.close()
 
-# --- IMPORTATION (INCHANGÉE) ---
+# --- IMPORTATION ---
 def page_import():
     st.title("📥 Importation des Fichiers")
     uploaded_file = st.file_uploader("📂 Glissez votre fichier Excel", type=['xlsx', 'xls'])
@@ -240,7 +237,7 @@ def page_import():
             st.error(f"Erreur : {e}")
         finally: session.close()
 
-# --- ADMIN (INCHANGÉ MAIS AVEC TOUTES LES STATS) ---
+# --- ADMIN ---
 def page_admin():
     st.title("🔒 Espace Administrateur")
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
@@ -256,7 +253,7 @@ def page_admin():
     
     if df.empty: return
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Tableau de Bord", "📈 Stats Sur-Mesure", "🔎 Analyses Avancées", "⚙️ Système"])
+    tab1, tab3, tab4 = st.tabs(["📊 Tableau de Bord", "🔎 Analyses Avancées", "⚙️ Système"])
 
     with tab1:
         c1, c2, c3, c4 = st.columns(4)
@@ -270,10 +267,6 @@ def page_admin():
             st.plotly_chart(px.pie(df[df['banque_nom'] != ''], names='banque_nom', title="Banques", hole=0.4), use_container_width=True)
         with col_r:
             st.plotly_chart(px.bar(df[df['secteur'] != '']['secteur'].value_counts().reset_index(), x='secteur', y='count', title="Secteurs"), use_container_width=True)
-
-    with tab2:
-        st.markdown("### Créateur de Statistiques Libres")
-        # Logique des stats libres gardée à l'identique... (omise ici pour la taille mais présente dans ton code)
 
     with tab3:
         st.markdown("### Analyses Approfondies")
