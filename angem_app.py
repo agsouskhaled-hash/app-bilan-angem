@@ -226,6 +226,17 @@ def page_import():
                                 data[db_f] = clean_money(valeur_brute)
                             elif db_f == 'identifiant':
                                 data[db_f] = clean_identifiant(valeur_brute)
+                            elif db_f == 'gestionnaire':
+                                nom_brut = str(valeur_brute).strip()
+                                agents = ["M. MAHREZ MOHAMED", "Mme AIT OUARAB AMINA", "FELFOUL Samira", 
+                                          "MEDJHOUM Raouia", "CHEMMAMDJI REDA", "DJAOUDI SARA", "BERRABAH Douadi",
+                                          "BOULAHLIB Redouane", "NASRI Riym", "KADRI Mohamed amine", "SEKAT Manel"]
+                                nom_final = nom_brut.upper()
+                                for agent in agents:
+                                    if agent.upper() == nom_brut.upper():
+                                        nom_final = agent
+                                        break
+                                data[db_f] = nom_final
                             else:
                                 data[db_f] = str(valeur_brute).strip().upper()
 
