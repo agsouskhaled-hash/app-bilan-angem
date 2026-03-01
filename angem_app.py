@@ -9,7 +9,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+# On ajoute v2.0 pour prouver que le site s'est mis à jour
+st.set_page_config(page_title="Intra-Service ANGEM v2.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS ---
 st.markdown("""
@@ -118,10 +119,14 @@ MAPPING_CONFIG = {
     'etat_dette': ['ETAT', 'SITUATION']
 }
 
+# La liste officielle de l'argent
+COLONNES_ARGENT = ['montant_pnr', 'apport_personnel', 'credit_bancaire', 'montant_total_credit', 'montant_rembourse', 'reste_rembourser']
+
 # --- INTERFACE ---
 def sidebar_menu():
     st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Emblem_of_Algeria.svg/200px-Emblem_of_Algeria.svg.png", width=100)
-    st.sidebar.title("Intra-Service ANGEM")
+    # Le titre change ici aussi pour s'assurer de la mise à jour
+    st.sidebar.title("Intra-Service ANGEM 🟢 v2.0")
     st.sidebar.markdown("---")
     return st.sidebar.radio("📌 Navigation :", ["🗂️ Détails et Dossiers Promoteurs", "📥 Importation des Fichiers", "🔒 Espace Administrateur"])
 
@@ -196,10 +201,7 @@ def page_import():
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
             
-            # Liste exacte des colonnes financières
-            colonnes_argent = ['montant_pnr', 'apport_personnel', 'credit_bancaire', 'montant_total_credit', 'montant_rembourse', 'reste_rembourser']
-            
-            with st.status("Analyse des dossiers...", expanded=True) as status:
+            with st.status("Analyse des dossiers (Filtre Sécurité Actif)...", expanded=True) as status:
                 for s_name, df_raw in xl.items():
                     df_raw = df_raw.fillna('')
                     header_idx = -1
@@ -220,11 +222,10 @@ def page_import():
                     
                     count_add, count_upd = 0, 0
                     for _, row in df.iterrows():
-                        # NOUVEAU SYSTÈME BLINDÉ : On trie chaque information une par une
                         data = {}
                         for db_f, xl_c in col_map.items():
                             valeur_brute = row[xl_c]
-                            if db_f in colonnes_argent:
+                            if db_f in COLONNES_ARGENT:
                                 data[db_f] = clean_money(valeur_brute)
                             elif db_f == 'identifiant':
                                 data[db_f] = clean_identifiant(valeur_brute)
@@ -234,10 +235,18 @@ def page_import():
                         ident = data.get('identifiant', '')
                         if not ident: continue
                         
+                        # LE DOUBLE VERROU : On repasse une couche de nettoyage juste avant d'envoyer
+                        for k in COLONNES_ARGENT:
+                            if k in data:
+                                data[k] = clean_money(data[k])
+
                         exist = session.query(Dossier).filter_by(identifiant=ident).first()
                         if exist:
                             for k, v in data.items():
-                                if v != "" and v != 0.0: setattr(exist, k, v)
+                                if v != "" and v != 0.0: 
+                                    # Triple vérification !
+                                    if k in COLONNES_ARGENT: v = clean_money(v)
+                                    setattr(exist, k, v)
                             count_upd += 1
                         else:
                             session.add(Dossier(**data))
