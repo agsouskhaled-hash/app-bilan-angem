@@ -9,7 +9,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- CONFIGURATION DE LA PAGE ---
-# On ajoute v2.0 pour prouver que le site s'est mis à jour
 st.set_page_config(page_title="Intra-Service ANGEM v2.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS ---
@@ -119,13 +118,11 @@ MAPPING_CONFIG = {
     'etat_dette': ['ETAT', 'SITUATION']
 }
 
-# La liste officielle de l'argent
 COLONNES_ARGENT = ['montant_pnr', 'apport_personnel', 'credit_bancaire', 'montant_total_credit', 'montant_rembourse', 'reste_rembourser']
 
 # --- INTERFACE ---
 def sidebar_menu():
     st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Emblem_of_Algeria.svg/200px-Emblem_of_Algeria.svg.png", width=100)
-    # Le titre change ici aussi pour s'assurer de la mise à jour
     st.sidebar.title("Intra-Service ANGEM 🟢 v2.0")
     st.sidebar.markdown("---")
     return st.sidebar.radio("📌 Navigation :", ["🗂️ Détails et Dossiers Promoteurs", "📥 Importation des Fichiers", "🔒 Espace Administrateur"])
@@ -235,7 +232,7 @@ def page_import():
                         ident = data.get('identifiant', '')
                         if not ident: continue
                         
-                        # LE DOUBLE VERROU : On repasse une couche de nettoyage juste avant d'envoyer
+                        # LE DOUBLE VERROU : Nettoyage avant l'envoi
                         for k in COLONNES_ARGENT:
                             if k in data:
                                 data[k] = clean_money(data[k])
@@ -244,7 +241,6 @@ def page_import():
                         if exist:
                             for k, v in data.items():
                                 if v != "" and v != 0.0: 
-                                    # Triple vérification !
                                     if k in COLONNES_ARGENT: v = clean_money(v)
                                     setattr(exist, k, v)
                             count_upd += 1
