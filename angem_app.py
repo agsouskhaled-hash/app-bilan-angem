@@ -19,12 +19,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONNEXION AU COFFRE-FORT SUPABASE (PORT 5432 + SSL) ---
+# --- CONNEXION AU COFFRE-FORT SUPABASE ---
 Base = declarative_base()
-
-# Le câble final et sécurisé pour contourner les blocages Streamlit
 engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
-
 Session = sessionmaker(bind=engine)
 
 class Dossier(Base):
@@ -198,7 +195,10 @@ def page_import():
         session = get_session()
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
-            total_add, total_upd = 0, 0
+            
+            # La liste exacte de toutes tes colonnes qui contiennent de l'argent
+            colonnes_argent = ['montant_pnr', 'apport_personnel', 'credit_bancaire', 'montant_total_credit', 'montant_rembourse', 'reste_rembourser']
+            
             with st.status("Analyse des dossiers...", expanded=True) as status:
                 for s_name, df_raw in xl.items():
                     df_raw = df_raw.fillna('')
@@ -220,13 +220,14 @@ def page_import():
                     
                     count_add, count_upd = 0, 0
                     for _, row in df.iterrows():
-                        data = {db_f: clean_money(row[xl_c]) if 'montant' in db_f or 'reste' in db_f else (clean_identifiant(row[xl_c]) if db_f == 'identifiant' else str(row[xl_c]).strip().upper()) for db_f, xl_c in col_map.items()}
+                        # La correction est ici : on nettoie les virgules de TOUTES les colonnes d'argent
+                        data = {db_f: clean_money(row[xl_c]) if db_f in colonnes_argent else (clean_identifiant(row[xl_c]) if db_f == 'identifiant' else str(row[xl_c]).strip().upper()) for db_f, xl_c in col_map.items()}
                         ident = data.get('identifiant', '')
                         if not ident: continue
                         exist = session.query(Dossier).filter_by(identifiant=ident).first()
                         if exist:
                             for k, v in data.items():
-                                if v != "": setattr(exist, k, v)
+                                if v != "" and v != 0.0: setattr(exist, k, v)
                             count_upd += 1
                         else:
                             session.add(Dossier(**data))
