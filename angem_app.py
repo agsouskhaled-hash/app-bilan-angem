@@ -19,7 +19,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONNEXION AU COFFRE-FORT SUPABASE ---
+# --- CONNEXION AU COFFRE-FORT SUPABASE (PORT 5432 + SSL) ---
 Base = declarative_base()
 engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
 Session = sessionmaker(bind=engine)
@@ -130,7 +130,7 @@ def page_gestion():
     st.title("🗂️ Gestion des Dossiers Promoteurs")
     st.markdown("Consultez les détails des promoteurs et attribuez les accompagnateurs aux dossiers.")
     
-    try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
+    try: df = pd.read_sql_query("SELECT * FROM dossiers ORDER BY id DESC", con=engine).fillna('')
     except: df = pd.DataFrame()
 
     if df.empty:
@@ -196,7 +196,7 @@ def page_import():
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
             
-            # La liste exacte de toutes tes colonnes qui contiennent de l'argent
+            # Liste exacte des colonnes financières
             colonnes_argent = ['montant_pnr', 'apport_personnel', 'credit_bancaire', 'montant_total_credit', 'montant_rembourse', 'reste_rembourser']
             
             with st.status("Analyse des dossiers...", expanded=True) as status:
@@ -220,10 +220,20 @@ def page_import():
                     
                     count_add, count_upd = 0, 0
                     for _, row in df.iterrows():
-                        # La correction est ici : on nettoie les virgules de TOUTES les colonnes d'argent
-                        data = {db_f: clean_money(row[xl_c]) if db_f in colonnes_argent else (clean_identifiant(row[xl_c]) if db_f == 'identifiant' else str(row[xl_c]).strip().upper()) for db_f, xl_c in col_map.items()}
+                        # NOUVEAU SYSTÈME BLINDÉ : On trie chaque information une par une
+                        data = {}
+                        for db_f, xl_c in col_map.items():
+                            valeur_brute = row[xl_c]
+                            if db_f in colonnes_argent:
+                                data[db_f] = clean_money(valeur_brute)
+                            elif db_f == 'identifiant':
+                                data[db_f] = clean_identifiant(valeur_brute)
+                            else:
+                                data[db_f] = str(valeur_brute).strip().upper()
+
                         ident = data.get('identifiant', '')
                         if not ident: continue
+                        
                         exist = session.query(Dossier).filter_by(identifiant=ident).first()
                         if exist:
                             for k, v in data.items():
