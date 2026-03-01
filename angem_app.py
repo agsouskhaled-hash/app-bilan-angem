@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM PRO", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS ---
 st.markdown("""
@@ -19,10 +19,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONNEXION AU COFFRE-FORT SUPABASE ---
+# --- CONNEXION AU COFFRE-FORT SUPABASE (PORT 5432 + SSL) ---
 Base = declarative_base()
-# Voici ton câble de connexion direct et sécurisé
-engine = create_engine("postgresql://postgres:algerouest2026@db.greyjhgiytajxpvucbrk.supabase.co:5432/postgres", echo=False)
+
+# Le câble final et sécurisé pour contourner les blocages Streamlit
+engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
+
 Session = sessionmaker(bind=engine)
 
 class Dossier(Base):
@@ -122,14 +124,14 @@ MAPPING_CONFIG = {
 # --- INTERFACE ---
 def sidebar_menu():
     st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Emblem_of_Algeria.svg/200px-Emblem_of_Algeria.svg.png", width=100)
-    st.sidebar.title("ANGEM MANAGER")
+    st.sidebar.title("Intra-Service ANGEM")
     st.sidebar.markdown("---")
-    return st.sidebar.radio("📌 Navigation :", ["🗂️ Consultation Dossiers", "📥 Importation Excel", "🔒 Espace Administrateur"])
+    return st.sidebar.radio("📌 Navigation :", ["🗂️ Détails et Dossiers Promoteurs", "📥 Importation des Fichiers", "🔒 Espace Administrateur"])
 
 # --- PAGE GESTION ---
 def page_gestion():
-    st.title("🗂️ Attribution des Accompagnateurs")
-    st.markdown("Utilisez les filtres pour identifier vos promoteurs et vous attribuer les dossiers.")
+    st.title("🗂️ Gestion des Dossiers Promoteurs")
+    st.markdown("Consultez les détails des promoteurs et attribuez les accompagnateurs aux dossiers.")
     
     try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
     except: df = pd.DataFrame()
@@ -140,7 +142,7 @@ def page_gestion():
 
     col_a, col_b = st.columns([2, 1])
     with col_a:
-        search = st.text_input("🔍 Chercher un dossier :", placeholder="Nom, Identifiant...")
+        search = st.text_input("🔍 Chercher le dossier d'un promoteur :", placeholder="Nom, Identifiant...")
     with col_b:
         st.markdown("<br>", unsafe_allow_html=True)
         orphelins = st.checkbox("⚠️ Dossiers SANS accompagnateur")
@@ -156,7 +158,7 @@ def page_gestion():
                     "MEDJHOUM Raouia", "CHEMMAMDJI REDA", "DJAOUDI SARA", "BERRABAH Douadi",
                     "BOULAHLIB Redouane", "NASRI Riym", "KADRI Mohamed amine", "SEKAT Manel"]
 
-    st.info(f"Il y a {len(df_filtered)} dossiers affichés. Modifiez la colonne 'Accompagnateur' puis enregistrez.")
+    st.info(f"Il y a {len(df_filtered)} dossiers affichés avec tous leurs détails.")
 
     edited_df = st.data_editor(
         df_filtered,
@@ -171,7 +173,7 @@ def page_gestion():
         }
     )
 
-    if st.button("💾 Enregistrer les attributions", type="primary"):
+    if st.button("💾 Enregistrer les modifications du dossier", type="primary"):
         session = get_session()
         try:
             for _, row in edited_df.iterrows():
@@ -181,7 +183,7 @@ def page_gestion():
                     setattr(dos, 'nom', row['nom'])
                     setattr(dos, 'prenom', row['prenom'])
             session.commit()
-            st.success("✅ Attributions sauvegardées !")
+            st.success("✅ Détails du dossier sauvegardés !")
             st.rerun()
         except Exception as e:
             session.rollback()
@@ -190,14 +192,14 @@ def page_gestion():
 
 # --- IMPORTATION ---
 def page_import():
-    st.title("📥 Importation des Fichiers")
-    uploaded_file = st.file_uploader("📂 Glissez votre fichier Excel", type=['xlsx', 'xls'])
-    if uploaded_file and st.button("🚀 Lancer l'Analyse", type="primary"):
+    st.title("📥 Importation des Fichiers Promoteurs")
+    uploaded_file = st.file_uploader("📂 Glissez le fichier Excel contenant les détails des promoteurs", type=['xlsx', 'xls'])
+    if uploaded_file and st.button("🚀 Lancer l'Intégration", type="primary"):
         session = get_session()
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
             total_add, total_upd = 0, 0
-            with st.status("Analyse...", expanded=True) as status:
+            with st.status("Analyse des dossiers...", expanded=True) as status:
                 for s_name, df_raw in xl.items():
                     df_raw = df_raw.fillna('')
                     header_idx = -1
@@ -230,7 +232,7 @@ def page_import():
                             session.add(Dossier(**data))
                             count_add += 1
                 session.commit()
-                status.update(label="Importation Terminée", state="complete")
+                status.update(label="Intégration des détails terminée", state="complete")
             st.balloons()
         except Exception as e:
             session.rollback()
@@ -253,34 +255,34 @@ def page_admin():
     
     if df.empty: return
 
-    tab1, tab3, tab4 = st.tabs(["📊 Tableau de Bord", "🔎 Analyses Avancées", "⚙️ Système"])
+    tab1, tab3, tab4 = st.tabs(["📊 Récapitulatif", "🔎 Détails Globaux des Promoteurs", "⚙️ Système"])
 
     with tab1:
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Dossiers", len(df))
+        c1.metric("Dossiers Promoteurs", len(df))
         c2.metric("Total PNR", f"{df['montant_pnr'].astype(float).sum():,.0f}")
         c3.metric("Recouvré", f"{df['montant_rembourse'].astype(float).sum():,.0f}")
         c4.metric("Dette", f"{df['reste_rembourser'].astype(float).sum():,.0f}", delta_color="inverse")
         
         col_l, col_r = st.columns(2)
         with col_l:
-            st.plotly_chart(px.pie(df[df['banque_nom'] != ''], names='banque_nom', title="Banques", hole=0.4), use_container_width=True)
+            st.plotly_chart(px.pie(df[df['banque_nom'] != ''], names='banque_nom', title="Banques des Promoteurs", hole=0.4), use_container_width=True)
         with col_r:
-            st.plotly_chart(px.bar(df[df['secteur'] != '']['secteur'].value_counts().reset_index(), x='secteur', y='count', title="Secteurs"), use_container_width=True)
+            st.plotly_chart(px.bar(df[df['secteur'] != '']['secteur'].value_counts().reset_index(), x='secteur', y='count', title="Secteurs d'Activité"), use_container_width=True)
 
     with tab3:
-        st.markdown("### Analyses Approfondies")
+        st.markdown("### Suivi des Dossiers")
         total_pnr = df['montant_pnr'].astype(float).sum()
         total_remb = df['montant_rembourse'].astype(float).sum()
         taux = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
         st.plotly_chart(go.Figure(go.Indicator(mode="gauge+number", value=taux, title={'text': "Taux de Recouvrement %"}, gauge={'axis': {'range': [0, 100]}})), use_container_width=True)
         
-        st.markdown("#### 👥 Performance des Accompagnateurs")
+        st.markdown("#### 👥 Répartition par Accompagnateur")
         if 'gestionnaire' in df.columns:
             st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='count', y='gestionnaire', orientation='h'), use_container_width=True)
 
     with tab4:
-        if st.button("🗑️ VIDER LA BASE", type="primary"):
+        if st.button("🗑️ VIDER LA BASE (Détails et Dossiers)", type="primary"):
             session = get_session()
             session.query(Dossier).delete()
             session.commit()
@@ -288,6 +290,6 @@ def page_admin():
 
 # --- BOOT ---
 page = sidebar_menu()
-if page == "🗂️ Consultation Dossiers": page_gestion()
-elif page == "📥 Importation Excel": page_import()
+if page == "🗂️ Détails et Dossiers Promoteurs": page_gestion()
+elif page == "📥 Importation des Fichiers": page_import()
 elif page == "🔒 Espace Administrateur": page_admin()
