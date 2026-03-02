@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from sqlalchemy import create_engine, Column, Integer, String, Float
+from sqlalchemy import create_engine, Column, Integer, String, Float, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 import unicodedata
@@ -9,17 +9,18 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v2.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v3.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
-# --- STYLE CSS ---
+# --- STYLE CSS (Design Moderne) ---
 st.markdown("""
 <style>
-    .stMetric {background-color: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #007bff; box-shadow: 2px 2px 10px rgba(0,0,0,0.05);}
-    .stTabs [aria-selected="true"] {background-color: #f3f4f6; border-bottom: 3px solid #007bff;}
+    .stMetric {background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid #1f77b4; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
+    .stTabs [aria-selected="true"] {background-color: #f0f2f6; border-bottom: 4px solid #1f77b4; font-weight: bold;}
+    .login-box {max-width: 400px; margin: auto; padding: 30px; background-color: #ffffff; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);}
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONNEXION AU COFFRE-FORT SUPABASE (PORT 5432 + SSL) ---
+# --- CONNEXION BASE DE DONNÉES SUPABASE ---
 Base = declarative_base()
 engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
 Session = sessionmaker(bind=engine)
@@ -57,9 +58,44 @@ class Dossier(Base):
     reste_rembourser = Column(Float, default=0.0)
     nb_echeance_tombee = Column(String)
     etat_dette = Column(String)
+    statut_dossier = Column(String, default="Phase dépôt du dossier") # NOUVELLE COLONNE
 
+# Création de la table si elle n'existe pas
 Base.metadata.create_all(engine)
+
+# ASTUCE DE SÉCURITÉ : Ajouter la colonne 'statut_dossier' si la table existe déjà pour ne pas perdre tes données
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS statut_dossier VARCHAR DEFAULT 'Phase dépôt du dossier'"))
+        conn.commit()
+except:
+    pass
+
 def get_session(): return Session()
+
+# --- UTILISATEURS ET SÉCURITÉ ---
+UTILISATEURS = {
+    "admin": {"nom": "Administrateur", "mdp": "angem", "role": "admin"},
+    "mahrez": {"nom": "M. MAHREZ MOHAMED", "mdp": "angem2026", "role": "agent"},
+    "aitouarab": {"nom": "Mme AIT OUARAB AMINA", "mdp": "angem2026", "role": "agent"},
+    "felfoul": {"nom": "FELFOUL Samira", "mdp": "angem2026", "role": "agent"},
+    "medjhoum": {"nom": "MEDJHOUM Raouia", "mdp": "angem2026", "role": "agent"},
+    "chemmamdji": {"nom": "CHEMMAMDJI REDA", "mdp": "angem2026", "role": "agent"},
+    "djaoudi": {"nom": "DJAOUDI SARA", "mdp": "angem2026", "role": "agent"},
+    "berrabah": {"nom": "BERRABAH Douadi", "mdp": "angem2026", "role": "agent"},
+    "boulahlib": {"nom": "BOULAHLIB Redouane", "mdp": "angem2026", "role": "agent"},
+    "nasri": {"nom": "NASRI Riym", "mdp": "angem2026", "role": "agent"},
+    "kadri": {"nom": "KADRI Mohamed amine", "mdp": "angem2026", "role": "agent"},
+    "sekat": {"nom": "SEKAT Manel", "mdp": "angem2026", "role": "agent"}
+}
+
+LISTE_STATUTS = [
+    "Phase dépôt du dossier", 
+    "En attente de la commission d'éligibilité", 
+    "Accordé / En cours de financement", 
+    "En phase d'exploitation", 
+    "Contentieux / Retard de remboursement"
+]
 
 # --- OUTILS DE NETTOYAGE ---
 def clean_header(val):
@@ -85,6 +121,7 @@ def clean_identifiant(val):
     s = re.sub(r'\D', '', s)
     return s
 
+# MAPPING MIS À JOUR AVEC TON FICHIER IMAGE
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
@@ -100,64 +137,102 @@ MAPPING_CONFIG = {
     'secteur': ['SECTEURDACTIVITE', 'SECTEUR'],
     'daira': ['DAIRA'],
     'commune': ['COMMUNE', 'APC'],
-    'gestionnaire': ['ACCOMPAGNATEUR', 'GEST', 'SUIVIPAR'],
+    'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVIPAR'],
     'zone': ['ZONEDACTIVIEURBAINERURALE', 'ZONE'],
-    'montant_pnr': ['MONTANTPNR29', 'MTDUPNR', 'PNR', 'MONTANT'],
+    'montant_pnr': ['PNR', 'MONTANTPNR29', 'MTDUPNR', 'MONTANT'],
     'apport_personnel': ['APPERS1', 'APPERS', 'AP', 'APPORTPERSONNEL'],
     'credit_bancaire': ['CBANCAIRE70', 'CBANCAIRE', 'CMT', 'CREDITBANCAIRE'],
     'montant_total_credit': ['TOTALCREDIT', 'COUTDUPROJET'],
     'banque_nom': ['BANQUEDUPROMOTEUR', 'BANQUECCP', 'BANQUE'],
     'agence_bancaire': ['LAGENCEBANCAIREDUPROMOTEUR', 'CODEAGENCE', 'AGENCE'],
     'numero_compte': ['NDUCOMPTE'],
-    'num_ordre_versement': ['NDORDREDEVIREMENT', 'NUMOV', 'OV'], 
-    'date_financement': ['DATEDEVIREMENT', 'DATEVIREMENT', 'DATEOV'],
+    'num_ordre_versement': ['NUMOV', 'NDORDREDEVIREMENT', 'OV'], 
+    'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT'],
     'debut_consommation': ['DEBUTCONSOM', 'DEBUTCONSOMMATION'],
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
-    'reste_rembourser': ['MONTANTRESTA', 'MONTANTRESTAREMB', 'RESTE'],
+    'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
     'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
     'etat_dette': ['ETAT', 'SITUATION']
 }
 
 COLONNES_ARGENT = ['montant_pnr', 'apport_personnel', 'credit_bancaire', 'montant_total_credit', 'montant_rembourse', 'reste_rembourser']
 
-# --- INTERFACE ---
+# --- SYSTÈME DE CONNEXION ---
+if 'user' not in st.session_state:
+    st.session_state.user = None
+
+def login_page():
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        try:
+            st.image("logo_angem.png", width=250)
+        except:
+            st.warning("Logo ANGEM introuvable. Placez l'image 'logo_angem.png' dans le dossier.")
+        
+        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
+        st.subheader("🔐 Accès Intra-Service")
+        username = st.text_input("Identifiant", placeholder="Ex: admin ou nasri")
+        password = st.text_input("Mot de passe", type="password")
+        
+        if st.button("Se connecter", type="primary", use_container_width=True):
+            user = username.lower().strip()
+            if user in UTILISATEURS and UTILISATEURS[user]["mdp"] == password:
+                st.session_state.user = UTILISATEURS[user]
+                st.rerun()
+            else:
+                st.error("Identifiant ou mot de passe incorrect.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# --- INTERFACE ET NAVIGATION ---
 def sidebar_menu():
-    st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Emblem_of_Algeria.svg/200px-Emblem_of_Algeria.svg.png", width=100)
-    st.sidebar.title("Intra-Service ANGEM 🟢 v2.0")
+    try: st.sidebar.image("logo_angem.png", use_container_width=True)
+    except: pass
+    
+    st.sidebar.markdown(f"**👤 Connecté :** {st.session_state.user['nom']}")
     st.sidebar.markdown("---")
-    return st.sidebar.radio("📌 Navigation :", ["🗂️ Détails et Dossiers Promoteurs", "📥 Importation des Fichiers", "🔒 Espace Administrateur"])
+    
+    options = ["🗂️ Mes Dossiers Promoteurs"]
+    
+    # Accès total pour l'Admin
+    if st.session_state.user['role'] == "admin":
+        options = ["📊 Espace Administrateur", "🗂️ Tous les Dossiers", "📥 Importation des Fichiers"]
+        
+    choix = st.sidebar.radio("📌 Navigation :", options)
+    
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Se déconnecter"):
+        st.session_state.user = None
+        st.rerun()
+        
+    return choix
 
 # --- PAGE GESTION ---
-def page_gestion():
-    st.title("🗂️ Gestion des Dossiers Promoteurs")
-    st.markdown("Consultez les détails des promoteurs et attribuez les accompagnateurs aux dossiers.")
+def page_gestion(vue_admin=False):
+    st.title("🗂️ Suivi des Dossiers Promoteurs")
+    if not vue_admin:
+        st.markdown(f"**Espace Accompagnateur :** Bienvenue {st.session_state.user['nom']}. Voici uniquement vos dossiers assignés.")
     
     try: df = pd.read_sql_query("SELECT * FROM dossiers ORDER BY id DESC", con=engine).fillna('')
     except: df = pd.DataFrame()
 
     if df.empty:
-        st.info("📌 La base est vide.")
+        st.info("📌 Aucun dossier trouvé.")
         return
 
-    col_a, col_b = st.columns([2, 1])
-    with col_a:
-        search = st.text_input("🔍 Chercher le dossier d'un promoteur :", placeholder="Nom, Identifiant...")
-    with col_b:
-        st.markdown("<br>", unsafe_allow_html=True)
-        orphelins = st.checkbox("⚠️ Dossiers SANS accompagnateur")
+    # Sécurité : Si c'est un agent, on filtre ses propres dossiers
+    if not vue_admin:
+        df = df[df['gestionnaire'] == st.session_state.user['nom']]
 
+    search = st.text_input("🔍 Chercher un dossier :", placeholder="Nom, Identifiant...")
     df_filtered = df.copy()
-    if orphelins:
-        df_filtered = df_filtered[df_filtered['gestionnaire'] == '']
     if search:
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
 
-    liste_agents = ["", "M. MAHREZ MOHAMED", "Mme AIT OUARAB AMINA", "FELFOUL Samira", 
-                    "MEDJHOUM Raouia", "CHEMMAMDJI REDA", "DJAOUDI SARA", "BERRABAH Douadi",
-                    "BOULAHLIB Redouane", "NASRI Riym", "KADRI Mohamed amine", "SEKAT Manel"]
+    liste_agents = [""] + [u["nom"] for u in UTILISATEURS.values() if u["role"] == "agent"]
 
-    st.info(f"Il y a {len(df_filtered)} dossiers affichés avec tous leurs détails.")
+    st.success(f"{len(df_filtered)} dossiers trouvés.")
 
     edited_df = st.data_editor(
         df_filtered,
@@ -166,23 +241,25 @@ def page_gestion():
         height=500,
         column_config={
             "id": None,
-            "identifiant": st.column_config.TextColumn("Identifiant Unique", disabled=True),
-            "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Accompagnateur", options=liste_agents, width="medium"),
-            "montant_pnr": st.column_config.NumberColumn("Crédit PNR", format="%d DA", disabled=True),
+            "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
+            "nom": "Nom Promoteur",
+            "statut_dossier": st.column_config.SelectboxColumn("🚦 Statut actuel", options=LISTE_STATUTS, width="large"),
+            "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Agent", options=liste_agents, disabled=not vue_admin),
+            "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
+            "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
         }
     )
 
-    if st.button("💾 Enregistrer les modifications du dossier", type="primary"):
+    if st.button("💾 Enregistrer les modifications", type="primary"):
         session = get_session()
         try:
             for _, row in edited_df.iterrows():
                 dos = session.query(Dossier).get(row['id'])
                 if dos:
-                    setattr(dos, 'gestionnaire', row['gestionnaire'])
-                    setattr(dos, 'nom', row['nom'])
-                    setattr(dos, 'prenom', row['prenom'])
+                    setattr(dos, 'statut_dossier', row['statut_dossier'])
+                    if vue_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
             session.commit()
-            st.success("✅ Détails du dossier sauvegardés !")
+            st.toast("✅ Modifications sauvegardées avec succès !")
             st.rerun()
         except Exception as e:
             session.rollback()
@@ -191,21 +268,23 @@ def page_gestion():
 
 # --- IMPORTATION ---
 def page_import():
-    st.title("📥 Importation des Fichiers Promoteurs")
-    uploaded_file = st.file_uploader("📂 Glissez le fichier Excel contenant les détails des promoteurs", type=['xlsx', 'xls'])
+    st.title("📥 Moteur d'Intégration Excel")
+    st.info("Importez vos fichiers financiers ou d'identification. Les montants (PNR, Reste à Rembourser) seront mis à jour automatiquement.")
+    uploaded_file = st.file_uploader("📂 Glissez le fichier Excel", type=['xlsx', 'xls', 'csv'])
     if uploaded_file and st.button("🚀 Lancer l'Intégration", type="primary"):
         session = get_session()
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
             
-            with st.status("Analyse des dossiers (Filtre Sécurité Actif)...", expanded=True) as status:
+            with st.status("Analyse et fusion des données...", expanded=True) as status:
+                count_add, count_upd = 0, 0
                 for s_name, df_raw in xl.items():
                     df_raw = df_raw.fillna('')
                     header_idx = -1
                     for i in range(min(30, len(df_raw))):
                         row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
                         score = 0
-                        if any(k in row_cl for k in ["IDENTIFIANT", "CNI"]): score += 2
+                        if any(k in row_cl for k in ["IDENTIFIANT", "CNI", "REF"]): score += 2
                         if "NOM" in row_cl: score += 1
                         if score >= 2: 
                             header_idx = i
@@ -217,7 +296,6 @@ def page_import():
                     df_cols = [clean_header(c) for c in df.columns]
                     col_map = {db_f: df.columns[df_cols.index(clean_header(v))] for db_f, variants in MAPPING_CONFIG.items() for v in variants if clean_header(v) in df_cols}
                     
-                    count_add, count_upd = 0, 0
                     for _, row in df.iterrows():
                         data = {}
                         for db_f, xl_c in col_map.items():
@@ -228,9 +306,7 @@ def page_import():
                                 data[db_f] = clean_identifiant(valeur_brute)
                             elif db_f == 'gestionnaire':
                                 nom_brut = str(valeur_brute).strip()
-                                agents = ["M. MAHREZ MOHAMED", "Mme AIT OUARAB AMINA", "FELFOUL Samira", 
-                                          "MEDJHOUM Raouia", "CHEMMAMDJI REDA", "DJAOUDI SARA", "BERRABAH Douadi",
-                                          "BOULAHLIB Redouane", "NASRI Riym", "KADRI Mohamed amine", "SEKAT Manel"]
+                                agents = [u["nom"] for u in UTILISATEURS.values() if u["role"] == "agent"]
                                 nom_final = nom_brut.upper()
                                 for agent in agents:
                                     if agent.upper() == nom_brut.upper():
@@ -243,10 +319,9 @@ def page_import():
                         ident = data.get('identifiant', '')
                         if not ident: continue
                         
-                        # LE DOUBLE VERROU : Nettoyage avant l'envoi
+                        # Nettoyage sécurité
                         for k in COLONNES_ARGENT:
-                            if k in data:
-                                data[k] = clean_money(data[k])
+                            if k in data: data[k] = clean_money(data[k])
 
                         exist = session.query(Dossier).filter_by(identifiant=ident).first()
                         if exist:
@@ -259,64 +334,54 @@ def page_import():
                             session.add(Dossier(**data))
                             count_add += 1
                 session.commit()
-                status.update(label="Intégration des détails terminée", state="complete")
+                status.update(label=f"Opération terminée : {count_add} créés, {count_upd} mis à jour.", state="complete")
             st.balloons()
         except Exception as e:
             session.rollback()
-            st.error(f"Erreur : {e}")
+            st.error(f"Erreur d'importation : {e}")
         finally: session.close()
 
 # --- ADMIN ---
 def page_admin():
-    st.title("🔒 Espace Administrateur")
-    if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-    if not st.session_state.logged_in:
-        pwd = st.text_input("Mot de passe :", type="password")
-        if pwd == "angem":
-            st.session_state.logged_in = True
-            st.rerun()
-        return
-
+    st.title("📊 Tableau de Bord Général")
+    
     try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
     except: df = pd.DataFrame()
     
-    if df.empty: return
+    if df.empty: 
+        st.warning("La base est vide.")
+        return
 
-    tab1, tab3, tab4 = st.tabs(["📊 Récapitulatif", "🔎 Détails Globaux des Promoteurs", "⚙️ Système"])
+    tab1, tab2 = st.tabs(["📈 Statistiques Financières", "⚙️ Gestion du Système"])
 
     with tab1:
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Dossiers Promoteurs", len(df))
-        c2.metric("Total PNR", f"{df['montant_pnr'].astype(float).sum():,.0f}")
-        c3.metric("Recouvré", f"{df['montant_rembourse'].astype(float).sum():,.0f}")
-        c4.metric("Dette", f"{df['reste_rembourser'].astype(float).sum():,.0f}", delta_color="inverse")
+        c1.metric("Total Dossiers", len(df))
+        c2.metric("Crédit PNR Engagé", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
+        c3.metric("Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
+        c4.metric("Dette Globale", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
         
         col_l, col_r = st.columns(2)
         with col_l:
-            st.plotly_chart(px.pie(df[df['banque_nom'] != ''], names='banque_nom', title="Banques des Promoteurs", hole=0.4), use_container_width=True)
+            if 'statut_dossier' in df.columns:
+                st.plotly_chart(px.pie(df, names='statut_dossier', title="Répartition par Étapes", hole=0.3), use_container_width=True)
         with col_r:
-            st.plotly_chart(px.bar(df[df['secteur'] != '']['secteur'].value_counts().reset_index(), x='secteur', y='count', title="Secteurs d'Activité"), use_container_width=True)
+            st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='count', y='gestionnaire', orientation='h', title="Charge par Agent"), use_container_width=True)
 
-    with tab3:
-        st.markdown("### Suivi des Dossiers")
-        total_pnr = df['montant_pnr'].astype(float).sum()
-        total_remb = df['montant_rembourse'].astype(float).sum()
-        taux = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
-        st.plotly_chart(go.Figure(go.Indicator(mode="gauge+number", value=taux, title={'text': "Taux de Recouvrement %"}, gauge={'axis': {'range': [0, 100]}})), use_container_width=True)
-        
-        st.markdown("#### 👥 Répartition par Accompagnateur")
-        if 'gestionnaire' in df.columns:
-            st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='count', y='gestionnaire', orientation='h'), use_container_width=True)
-
-    with tab4:
-        if st.button("🗑️ VIDER LA BASE (Détails et Dossiers)", type="primary"):
+    with tab2:
+        st.error("Zone de danger")
+        if st.button("🗑️ Vider intégralement la base de données", type="primary"):
             session = get_session()
             session.query(Dossier).delete()
             session.commit()
             st.rerun()
 
-# --- BOOT ---
-page = sidebar_menu()
-if page == "🗂️ Détails et Dossiers Promoteurs": page_gestion()
-elif page == "📥 Importation des Fichiers": page_import()
-elif page == "🔒 Espace Administrateur": page_admin()
+# --- DEMARRAGE DE L'APPLICATION ---
+if st.session_state.user is None:
+    login_page()
+else:
+    page = sidebar_menu()
+    if page == "🗂️ Tous les Dossiers": page_gestion(vue_admin=True)
+    elif page == "🗂️ Mes Dossiers Promoteurs": page_gestion(vue_admin=False)
+    elif page == "📥 Importation des Fichiers": page_import()
+    elif page == "📊 Espace Administrateur": page_admin()
