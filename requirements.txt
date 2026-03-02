@@ -1,7 +1,8 @@
 streamlit
 pandas
 sqlalchemy
-plotly
-openpyxl
 psycopg2-binary
-xlrd
+plotly
+fpdf
+openpyxl
+
