@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v3.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v4.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS (Design Moderne) ---
 st.markdown("""
@@ -25,6 +25,7 @@ Base = declarative_base()
 engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
 Session = sessionmaker(bind=engine)
 
+# Table des Dossiers
 class Dossier(Base):
     __tablename__ = 'dossiers'
     id = Column(Integer, primary_key=True)
@@ -58,12 +59,21 @@ class Dossier(Base):
     reste_rembourser = Column(Float, default=0.0)
     nb_echeance_tombee = Column(String)
     etat_dette = Column(String)
-    statut_dossier = Column(String, default="Phase dépôt du dossier") # NOUVELLE COLONNE
+    statut_dossier = Column(String, default="Phase dépôt du dossier")
 
-# Création de la table si elle n'existe pas
+# Table : Sécurité et Mots de passe
+class UtilisateurAuth(Base):
+    __tablename__ = 'utilisateurs_auth'
+    id = Column(Integer, primary_key=True)
+    identifiant = Column(String, unique=True)
+    nom = Column(String)
+    mot_de_passe = Column(String)
+    role = Column(String)
+
+# Création des tables
 Base.metadata.create_all(engine)
 
-# ASTUCE DE SÉCURITÉ : Ajouter la colonne 'statut_dossier' si la table existe déjà pour ne pas perdre tes données
+# Ajout automatique de la colonne statut (si elle n'existe pas)
 try:
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS statut_dossier VARCHAR DEFAULT 'Phase dépôt du dossier'"))
@@ -73,21 +83,29 @@ except:
 
 def get_session(): return Session()
 
-# --- UTILISATEURS ET SÉCURITÉ ---
-UTILISATEURS = {
-    "admin": {"nom": "Administrateur", "mdp": "angem", "role": "admin"},
-    "mahrez": {"nom": "M. MAHREZ MOHAMED", "mdp": "angem2026", "role": "agent"},
-    "aitouarab": {"nom": "Mme AIT OUARAB AMINA", "mdp": "angem2026", "role": "agent"},
-    "felfoul": {"nom": "FELFOUL Samira", "mdp": "angem2026", "role": "agent"},
-    "medjhoum": {"nom": "MEDJHOUM Raouia", "mdp": "angem2026", "role": "agent"},
-    "chemmamdji": {"nom": "CHEMMAMDJI REDA", "mdp": "angem2026", "role": "agent"},
-    "djaoudi": {"nom": "DJAOUDI SARA", "mdp": "angem2026", "role": "agent"},
-    "berrabah": {"nom": "BERRABAH Douadi", "mdp": "angem2026", "role": "agent"},
-    "boulahlib": {"nom": "BOULAHLIB Redouane", "mdp": "angem2026", "role": "agent"},
-    "nasri": {"nom": "NASRI Riym", "mdp": "angem2026", "role": "agent"},
-    "kadri": {"nom": "KADRI Mohamed amine", "mdp": "angem2026", "role": "agent"},
-    "sekat": {"nom": "SEKAT Manel", "mdp": "angem2026", "role": "agent"}
-}
+# INITIALISATION DES COMPTES 
+def init_db_users():
+    session = get_session()
+    if session.query(UtilisateurAuth).count() == 0:
+        utilisateurs_base = [
+            UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"),
+            UtilisateurAuth(identifiant="mahrez", nom="M. MAHREZ MOHAMED", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="aitouarab", nom="Mme AIT OUARAB AMINA", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="felfoul", nom="FELFOUL Samira", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="medjhoum", nom="MEDJHOUM Raouia", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="chemmamdji", nom="CHEMMAMDJI REDA", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="djaoudi", nom="DJAOUDI SARA", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="berrabah", nom="BERRABAH Douadi", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="boulahlib", nom="BOULAHLIB Redouane", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="nasri", nom="NASRI Riym", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="kadri", nom="KADRI Mohamed amine", mot_de_passe="angem2026", role="agent"),
+            UtilisateurAuth(identifiant="sekat", nom="SEKAT Manel", mot_de_passe="angem2026", role="agent")
+        ]
+        session.add_all(utilisateurs_base)
+        session.commit()
+    session.close()
+
+init_db_users()
 
 LISTE_STATUTS = [
     "Phase dépôt du dossier", 
@@ -121,7 +139,6 @@ def clean_identifiant(val):
     s = re.sub(r'\D', '', s)
     return s
 
-# MAPPING MIS À JOUR AVEC TON FICHIER IMAGE
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
@@ -152,7 +169,7 @@ MAPPING_CONFIG = {
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
     'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
     'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
-    'etat_dette': ['ETAT', 'SITUATION']
+    'etat_dette': ['ETAT', 'SITUATION', 'OBS']
 }
 
 COLONNES_ARGENT = ['montant_pnr', 'apport_personnel', 'credit_bancaire', 'montant_total_credit', 'montant_rembourse', 'reste_rembourser']
@@ -165,10 +182,8 @@ def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        try:
-            st.image("logo_angem.png", width=250)
-        except:
-            st.warning("Logo ANGEM introuvable. Placez l'image 'logo_angem.png' dans le dossier.")
+        try: st.image("logo_angem.png", width=250)
+        except: st.warning("Logo ANGEM introuvable. Placez l'image 'logo_angem.png' dans le dossier.")
         
         st.markdown("<div class='login-box'>", unsafe_allow_html=True)
         st.subheader("🔐 Accès Intra-Service")
@@ -176,9 +191,17 @@ def login_page():
         password = st.text_input("Mot de passe", type="password")
         
         if st.button("Se connecter", type="primary", use_container_width=True):
-            user = username.lower().strip()
-            if user in UTILISATEURS and UTILISATEURS[user]["mdp"] == password:
-                st.session_state.user = UTILISATEURS[user]
+            user_input = username.lower().strip()
+            session = get_session()
+            user_db = session.query(UtilisateurAuth).filter_by(identifiant=user_input).first()
+            session.close()
+            
+            if user_db and user_db.mot_de_passe == password:
+                st.session_state.user = {
+                    "identifiant": user_db.identifiant, 
+                    "nom": user_db.nom, 
+                    "role": user_db.role
+                }
                 st.rerun()
             else:
                 st.error("Identifiant ou mot de passe incorrect.")
@@ -194,7 +217,6 @@ def sidebar_menu():
     
     options = ["🗂️ Mes Dossiers Promoteurs"]
     
-    # Accès total pour l'Admin
     if st.session_state.user['role'] == "admin":
         options = ["📊 Espace Administrateur", "🗂️ Tous les Dossiers", "📥 Importation des Fichiers"]
         
@@ -220,7 +242,6 @@ def page_gestion(vue_admin=False):
         st.info("📌 Aucun dossier trouvé.")
         return
 
-    # Sécurité : Si c'est un agent, on filtre ses propres dossiers
     if not vue_admin:
         df = df[df['gestionnaire'] == st.session_state.user['nom']]
 
@@ -230,7 +251,11 @@ def page_gestion(vue_admin=False):
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
 
-    liste_agents = [""] + [u["nom"] for u in UTILISATEURS.values() if u["role"] == "agent"]
+    try:
+        df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
+        liste_agents = [""] + df_agents['nom'].tolist()
+    except:
+        liste_agents = [""]
 
     st.success(f"{len(df_filtered)} dossiers trouvés.")
 
@@ -244,7 +269,7 @@ def page_gestion(vue_admin=False):
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
             "nom": "Nom Promoteur",
             "statut_dossier": st.column_config.SelectboxColumn("🚦 Statut actuel", options=LISTE_STATUTS, width="large"),
-            "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Agent", options=liste_agents, disabled=not vue_admin),
+            "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Accompagnateur", options=liste_agents, disabled=not vue_admin),
             "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
             "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
         }
@@ -266,16 +291,19 @@ def page_gestion(vue_admin=False):
             st.error(f"Erreur : {e}")
         finally: session.close()
 
-# --- IMPORTATION ---
+# --- IMPORTATION (LE BUG EST CORRIGÉ ICI) ---
 def page_import():
     st.title("📥 Moteur d'Intégration Excel")
-    st.info("Importez vos fichiers financiers ou d'identification. Les montants (PNR, Reste à Rembourser) seront mis à jour automatiquement.")
+    st.info("Importez vos fichiers financiers ou d'identification. Les montants seront mis à jour automatiquement.")
     uploaded_file = st.file_uploader("📂 Glissez le fichier Excel", type=['xlsx', 'xls', 'csv'])
     if uploaded_file and st.button("🚀 Lancer l'Intégration", type="primary"):
         session = get_session()
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
             
+            agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
+            agents_noms = [a.nom for a in agents_db]
+
             with st.status("Analyse et fusion des données...", expanded=True) as status:
                 count_add, count_upd = 0, 0
                 for s_name, df_raw in xl.items():
@@ -300,15 +328,19 @@ def page_import():
                         data = {}
                         for db_f, xl_c in col_map.items():
                             valeur_brute = row[xl_c]
+                            
+                            # LA CORRECTION EST ICI : Si la case Excel est vide, on l'ignore totalement
+                            if pd.isna(valeur_brute) or str(valeur_brute).strip() == "":
+                                continue 
+                                
                             if db_f in COLONNES_ARGENT:
                                 data[db_f] = clean_money(valeur_brute)
                             elif db_f == 'identifiant':
                                 data[db_f] = clean_identifiant(valeur_brute)
                             elif db_f == 'gestionnaire':
                                 nom_brut = str(valeur_brute).strip()
-                                agents = [u["nom"] for u in UTILISATEURS.values() if u["role"] == "agent"]
                                 nom_final = nom_brut.upper()
-                                for agent in agents:
+                                for agent in agents_noms:
                                     if agent.upper() == nom_brut.upper():
                                         nom_final = agent
                                         break
@@ -318,17 +350,12 @@ def page_import():
 
                         ident = data.get('identifiant', '')
                         if not ident: continue
-                        
-                        # Nettoyage sécurité
-                        for k in COLONNES_ARGENT:
-                            if k in data: data[k] = clean_money(data[k])
 
                         exist = session.query(Dossier).filter_by(identifiant=ident).first()
                         if exist:
+                            # LA MISE A JOUR PARFAITE EST ICI
                             for k, v in data.items():
-                                if v != "" and v != 0.0: 
-                                    if k in COLONNES_ARGENT: v = clean_money(v)
-                                    setattr(exist, k, v)
+                                setattr(exist, k, v)
                             count_upd += 1
                         else:
                             session.add(Dossier(**data))
@@ -343,37 +370,75 @@ def page_import():
 
 # --- ADMIN ---
 def page_admin():
-    st.title("📊 Tableau de Bord Général")
+    st.title("📊 Espace Administrateur")
     
-    try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
-    except: df = pd.DataFrame()
-    
-    if df.empty: 
-        st.warning("La base est vide.")
-        return
-
-    tab1, tab2 = st.tabs(["📈 Statistiques Financières", "⚙️ Gestion du Système"])
+    tab1, tab2, tab3 = st.tabs(["📈 Statistiques", "🔐 Gestion des Accès", "⚙️ Système"])
 
     with tab1:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Dossiers", len(df))
-        c2.metric("Crédit PNR Engagé", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
-        c3.metric("Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
-        c4.metric("Dette Globale", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
+        try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
+        except: df = pd.DataFrame()
         
-        col_l, col_r = st.columns(2)
-        with col_l:
-            if 'statut_dossier' in df.columns:
-                st.plotly_chart(px.pie(df, names='statut_dossier', title="Répartition par Étapes", hole=0.3), use_container_width=True)
-        with col_r:
-            st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='count', y='gestionnaire', orientation='h', title="Charge par Agent"), use_container_width=True)
+        if df.empty: 
+            st.warning("La base de dossiers est vide.")
+        else:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Dossiers", len(df))
+            c2.metric("Crédit PNR Engagé", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
+            c3.metric("Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
+            c4.metric("Dette Globale", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
+            
+            col_l, col_r = st.columns(2)
+            with col_l:
+                if 'statut_dossier' in df.columns:
+                    st.plotly_chart(px.pie(df, names='statut_dossier', title="Répartition par Étapes", hole=0.3), use_container_width=True)
+            with col_r:
+                st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='count', y='gestionnaire', orientation='h', title="Charge par Accompagnateur"), use_container_width=True)
 
     with tab2:
+        st.markdown("### 🔑 Liste des Accompagnateurs et Mots de passe")
+        st.info("Modifiez le mot de passe directement dans le tableau ci-dessous et cliquez sur Sauvegarder.")
+        
+        try: 
+            df_users = pd.read_sql_query("SELECT id, identifiant, nom, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
+        except: 
+            df_users = pd.DataFrame()
+            
+        if not df_users.empty:
+            edited_users = st.data_editor(
+                df_users,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "id": None, 
+                    "identifiant": st.column_config.TextColumn("Identifiant (Login)", disabled=True),
+                    "nom": st.column_config.TextColumn("Nom de l'Accompagnateur", disabled=True),
+                    "mot_de_passe": st.column_config.TextColumn("Mot de passe (Modifiable)")
+                }
+            )
+            
+            if st.button("💾 Sauvegarder les nouveaux mots de passe", type="primary"):
+                session = get_session()
+                try:
+                    for _, row in edited_users.iterrows():
+                        user_db = session.query(UtilisateurAuth).get(row['id'])
+                        if user_db:
+                            user_db.mot_de_passe = row['mot_de_passe']
+                    session.commit()
+                    st.success("✅ Mots de passe mis à jour avec succès dans la base de données !")
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"Erreur lors de la sauvegarde : {e}")
+                finally:
+                    session.close()
+
+    with tab3:
         st.error("Zone de danger")
-        if st.button("🗑️ Vider intégralement la base de données", type="primary"):
+        st.markdown("Attention, ce bouton supprime tous les dossiers. Les comptes accompagnateurs seront conservés.")
+        if st.button("🗑️ Vider la base de données (Dossiers uniquement)", type="primary"):
             session = get_session()
             session.query(Dossier).delete()
             session.commit()
+            session.close()
             st.rerun()
 
 # --- DEMARRAGE DE L'APPLICATION ---
