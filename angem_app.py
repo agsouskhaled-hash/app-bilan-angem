@@ -13,9 +13,9 @@ import io
 from datetime import datetime
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v7.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v8.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
-# --- STYLE CSS (Design Moderne) ---
+# --- STYLE CSS ---
 st.markdown("""
 <style>
     .stMetric {background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid #1f77b4; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
@@ -26,10 +26,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-if not os.path.exists("scans_angem"):
-    os.makedirs("scans_angem")
+if not os.path.exists("scans_angem"): os.makedirs("scans_angem")
 
-# --- CONNEXION BASE DE DONNÉES SUPABASE ---
+# --- CONNEXION BASE DE DONNÉES ---
 Base = declarative_base()
 engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
 Session = sessionmaker(bind=engine)
@@ -69,7 +68,7 @@ class Dossier(Base):
     etat_dette = Column(String)
     statut_dossier = Column(String, default="Phase dépôt du dossier")
     documents = Column(String, default="") 
-    historique_visites = Column(String, default="") # NOUVEAU POUR LE SUIVI TERRAIN
+    historique_visites = Column(String, default="") 
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -116,7 +115,7 @@ init_db_users()
 
 LISTE_STATUTS = ["Phase dépôt du dossier", "En attente de la commission d'éligibilité", "Accordé / En cours de financement", "En phase d'exploitation", "Contentieux / Retard de remboursement"]
 
-# --- FONCTIONS PDF AMELIOREES (Mise en page pro) ---
+# --- FONCTIONS PDF ---
 def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
@@ -126,12 +125,10 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.add_page()
     try: pdf.image("logo_angem.png", x=10, y=8, w=30)
     except: pass
-    
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "FICHE OFFICIELLE DE SUIVI PROMOTEUR", ln=True, align='C')
     pdf.ln(5)
     
-    # Cadre 1
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 1. IDENTIFICATION DU PROMOTEUR", border=1, ln=True, fill=True)
@@ -143,7 +140,6 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(0, 8, f" Adresse : {clean_pdf_text(dos.adresse)} - {clean_pdf_text(dos.commune)}", border='LRB', ln=True)
     pdf.ln(5)
     
-    # Cadre 2
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 2. PROJET & FINANCEMENT", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
@@ -155,7 +151,6 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(0, 8, f" Date de versement (OV) : {clean_pdf_text(dos.date_financement)}", border='LRB', ln=True)
     pdf.ln(5)
 
-    # Cadre 3
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 3. ETAT DU RECOUVREMENT", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
@@ -164,19 +159,16 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(0, 8, f" Echeances tombees (Retard) : {clean_pdf_text(dos.nb_echeance_tombee)}", border='LRB', ln=True)
     pdf.ln(8)
     
-    # Zone d'écriture
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 4. NOTES ET RAPPORT DE VISITE", ln=True)
     pdf.set_font("Arial", '', 11)
     if dos.historique_visites:
-        # Imprime l'historique numérique s'il existe
         notes = dos.historique_visites.split('\n')
-        for note in notes[-5:]: # Affiche les 5 dernières
+        for note in notes[-5:]: 
             if note.strip(): pdf.cell(0, 6, clean_pdf_text(note), ln=True)
     pdf.ln(5)
     for _ in range(5): pdf.cell(0, 8, ".............................................................................................................................................................", ln=True)
     
-    # Signatures
     pdf.ln(10)
     pdf.cell(95, 8, " Signature de l'Accompagnateur :", align='C')
     pdf.cell(95, 8, " Cachet de l'Agence :", align='C', ln=True)
@@ -228,6 +220,7 @@ def generer_bilan_global_pdf(df):
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
     return bytes_pdf
 
+# --- LE COEUR DU SAUVETAGE DES ACCOMPAGNATEURS ---
 def trouver_agent_intelligent(nom_excel, liste_officielle):
     nom_ex = str(nom_excel).strip().upper()
     if not nom_ex or nom_ex == "NAN": return ""
@@ -241,7 +234,8 @@ def trouver_agent_intelligent(nom_excel, liste_officielle):
         agent_upper = agent.upper()
         for mot in mots_excel:
             if len(mot) >= 3 and mot in agent_upper: return agent
-    return nom_excel.title()
+    # SI L'AGENT N'EST PAS DANS LA LISTE OFFICIELLE, ON LE GARDE QUAND MEME !
+    return nom_excel.strip().upper()
 
 def clean_header(val):
     if pd.isna(val): return ""
@@ -276,13 +270,12 @@ MAPPING_CONFIG = {
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
     'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
     'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
-    'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'], # IMPORTANT POUR LES DOUBLONS
+    'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'], 
 }
 COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser']
 
 if 'user' not in st.session_state: st.session_state.user = None
 
-# --- NOUVELLE CONNEXION PAR LISTE DÉROULANTE ---
 def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -293,7 +286,6 @@ def login_page():
         st.markdown("<div class='login-box'>", unsafe_allow_html=True)
         st.subheader("🔐 Accès Intra-Service")
         
-        # Récupération des noms depuis la base
         session = get_session()
         try:
             users_db = session.query(UtilisateurAuth).all()
@@ -318,7 +310,6 @@ def login_page():
 def sidebar_menu():
     try: st.sidebar.image("logo_angem.png", use_container_width=True)
     except: pass
-    
     st.sidebar.markdown(f"**👤 Connecté :** {st.session_state.user['nom']}")
     st.sidebar.markdown("---")
     
@@ -327,23 +318,18 @@ def sidebar_menu():
         options = ["📊 Espace Administrateur", "🗂️ Tous les Dossiers", "📥 Importation des Fichiers"]
         
     choix = st.sidebar.radio("📌 Navigation :", options)
-    
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Se déconnecter"):
         st.session_state.user = None
         st.rerun()
     return choix
 
-# --- FONCTION D'ALERTE POUR LE TABLEAU ---
 def calculer_alerte(row):
     ech = str(row.get('nb_echeance_tombee', '')).strip()
-    # Si la case contient un chiffre (ex: "3", "2 echeances")
     if any(char.isdigit() for char in ech):
         num = int(re.search(r'\d+', ech).group())
         if num > 0: return "🚨 Retard (Échéance)"
-    
-    if row.get('statut_dossier') == "Contentieux / Retard de remboursement":
-        return "🔴 Contentieux"
+    if row.get('statut_dossier') == "Contentieux / Retard de remboursement": return "🔴 Contentieux"
     return "✅ À jour"
 
 def page_gestion(vue_admin=False):
@@ -368,13 +354,18 @@ def page_gestion(vue_admin=False):
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
 
-    # Ajout de la colonne d'alerte pour l'affichage visuel
     df_filtered['Alerte'] = df_filtered.apply(calculer_alerte, axis=1)
 
+    # --- LA SOLUTION POUR AFFICHER TOUS LES AGENTS MEME CEUX NON OFFICIELS ---
     try:
-        df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
-        liste_agents = [""] + df_agents['nom'].tolist()
-    except: liste_agents = [""]
+        df_agents_auth = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
+        agents_officiels = df_agents_auth['nom'].tolist()
+    except: agents_officiels = []
+    
+    # On force Streamlit à accepter TOUS les noms présents dans la base de données !
+    agents_dans_base = df['gestionnaire'].unique().tolist()
+    tous_les_agents = list(set(agents_officiels + agents_dans_base))
+    liste_agents_complete = [""] + sorted([a for a in tous_les_agents if str(a).strip() != ""])
 
     st.success(f"{len(df_filtered)} dossiers affichés.")
 
@@ -387,7 +378,7 @@ def page_gestion(vue_admin=False):
             "date_financement": st.column_config.TextColumn("Date Financement (OV)", disabled=True),
             "nom": "Nom Promoteur",
             "statut_dossier": st.column_config.SelectboxColumn("🚦 Statut", options=LISTE_STATUTS, width="large"),
-            "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Accompagnateur", options=liste_agents, disabled=not vue_admin),
+            "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Accompagnateur", options=liste_agents_complete, disabled=not vue_admin),
             "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
             "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
         }
@@ -409,7 +400,6 @@ def page_gestion(vue_admin=False):
 
     st.markdown("---")
     
-    # --- ESPACE INDIVIDUEL (JAUGE & HISTORIQUE) ---
     st.subheader("📂 Gestion individuelle : Profil complet et Visites")
     options_dossiers = ["Sélectionnez un dossier..."] + df_filtered.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
     dossier_choisi = st.selectbox("Choisissez le promoteur pour voir ses détails :", options_dossiers)
@@ -417,13 +407,10 @@ def page_gestion(vue_admin=False):
     if dossier_choisi != "Sélectionnez un dossier...":
         identifiant_choisi = dossier_choisi.split(" - ")[0]
         session = get_session()
-        # On prend le premier s'il y en a plusieurs, idéalement on filtre aussi par date OV
         dos_db = session.query(Dossier).filter_by(identifiant=identifiant_choisi).first()
         
         if dos_db:
             st.markdown("<div class='doc-box'>", unsafe_allow_html=True)
-            
-            # --- JAUGE DE REMBOURSEMENT ---
             taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
             st.markdown(f"**Progression du remboursement : {taux*100:.1f}%**")
             st.progress(min(taux, 1.0))
@@ -444,8 +431,7 @@ def page_gestion(vue_admin=False):
                     session.commit()
                     st.success("Note ajoutée !")
                     st.rerun()
-                if dos_db.historique_visites:
-                    st.info(dos_db.historique_visites.replace('\n', '  \n')) # Markdown line break
+                if dos_db.historique_visites: st.info(dos_db.historique_visites.replace('\n', '  \n'))
             
             with col_scan:
                 st.markdown("#### 📎 Ajouter un scan")
@@ -469,7 +455,6 @@ def page_gestion(vue_admin=False):
             st.markdown("</div>", unsafe_allow_html=True)
         session.close()
 
-# --- IMPORTATION (ANTI-DOUBLONS INTELLIGENT) ---
 def page_import():
     st.title("📥 Moteur d'Intégration Excel")
     uploaded_file = st.file_uploader("📂 Glissez le fichier Excel", type=['xlsx', 'xls', 'csv'])
@@ -511,14 +496,10 @@ def page_import():
                         date_fin = data.get('date_financement', '')
                         if not ident: continue
 
-                        # LA LOGIQUE INTELLIGENTE DES DOUBLONS (2ème Financement)
                         exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
-                        
-                        # Si on ne trouve pas l'exacte combinaison, peut-être qu'il existe un dossier sans date OV à mettre à jour ?
                         if not exist and date_fin != "":
                             exist_empty = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
                             if exist_empty: exist = exist_empty
-                            # S'il existe déjà un dossier mais avec une AUTRE date, "exist" reste None, ça créera un 2e financement !
 
                         if exist:
                             for k, v in data.items(): setattr(exist, k, v)
@@ -548,7 +529,6 @@ def page_admin():
             c3.metric("Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
             c4.metric("Dette Globale", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
             
-            # --- EXPORTATION EXCEL ET PDF ---
             st.markdown("### 📥 Exportations")
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
@@ -589,15 +569,30 @@ def page_admin():
                     st.success("✅ Mots de passe mis à jour !")
                 except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
                 finally: session.close()
+                
+        st.markdown("---")
+        st.markdown("#### ➕ Ajouter un nouvel accompagnateur au système")
+        with st.form("ajout_agent"):
+            c1, c2 = st.columns(2)
+            new_id = c1.text_input("Identifiant (ex: benaissa)")
+            new_nom = c2.text_input("Nom Complet (ex: BENAISSA Ahmed)")
+            submit = st.form_submit_button("Ajouter cet agent")
+            if submit and new_id and new_nom:
+                session = get_session()
+                if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
+                    session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), mot_de_passe="angem2026", role="agent"))
+                    session.commit()
+                    st.success(f"Agent {new_nom} ajouté avec succès !")
+                    st.rerun()
+                else: st.error("Cet identifiant existe déjà.")
+                session.close()
 
     with tab3:
         st.markdown("### 🧹 Nettoyage de la base de données")
-        # --- NOUVEAU BOUTON : NETTOYER LES VRAIS DOUBLONS ---
         st.info("Ce bouton efface les dossiers qui ont **le même Identifiant ET la même Date OV**. Il garde les doubles financements (dates différentes).")
         if st.button("🧼 Lancer le nettoyage des doublons stricts"):
             try:
                 df_dup = pd.read_sql_query("SELECT id, identifiant, date_financement FROM dossiers", con=engine)
-                # Trouver les lignes qui ont exactement le même identifiant ET la même date
                 duplicates = df_dup[df_dup.duplicated(subset=['identifiant', 'date_financement'], keep='first')]
                 ids_to_delete = duplicates['id'].tolist()
                 
