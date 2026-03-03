@@ -9,16 +9,18 @@ import plotly.express as px
 import plotly.graph_objects as go
 from fpdf import FPDF
 import tempfile
+import io
+from datetime import datetime
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v6.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v7.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS (Design Moderne) ---
 st.markdown("""
 <style>
     .stMetric {background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid #1f77b4; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
     .stTabs [aria-selected="true"] {background-color: #f0f2f6; border-bottom: 4px solid #1f77b4; font-weight: bold;}
-    .login-box {max-width: 400px; margin: auto; padding: 30px; background-color: #ffffff; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);}
+    .login-box {max-width: 450px; margin: auto; padding: 30px; background-color: #ffffff; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);}
     .doc-box {background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; margin-top: 10px;}
     .alerte-box {background-color: #ffcccc; padding: 15px; border-radius: 8px; border-left: 6px solid #ff0000; margin-bottom: 20px;}
 </style>
@@ -67,6 +69,7 @@ class Dossier(Base):
     etat_dette = Column(String)
     statut_dossier = Column(String, default="Phase dépôt du dossier")
     documents = Column(String, default="") 
+    historique_visites = Column(String, default="") # NOUVEAU POUR LE SUIVI TERRAIN
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -82,6 +85,7 @@ try:
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS statut_dossier VARCHAR DEFAULT 'Phase dépôt du dossier'"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS documents VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS historique_visites VARCHAR DEFAULT ''"))
         conn.commit()
 except: pass
 
@@ -112,7 +116,7 @@ init_db_users()
 
 LISTE_STATUTS = ["Phase dépôt du dossier", "En attente de la commission d'éligibilité", "Accordé / En cours de financement", "En phase d'exploitation", "Contentieux / Retard de remboursement"]
 
-# --- FONCTIONS PDF ---
+# --- FONCTIONS PDF AMELIOREES (Mise en page pro) ---
 def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
@@ -124,43 +128,59 @@ def generer_fiche_promoteur_pdf(dos):
     except: pass
     
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 20, "FICHE DE SUIVI PROMOTEUR - ANGEM", ln=True, align='C')
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "1. IDENTIFICATION", ln=True, border='B')
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(100, 8, f"Identifiant : {clean_pdf_text(dos.identifiant)}")
-    pdf.cell(90, 8, f"Accompagnateur : {clean_pdf_text(dos.gestionnaire)}", ln=True)
-    pdf.cell(100, 8, f"Nom & Prenom : {clean_pdf_text(dos.nom)} {clean_pdf_text(dos.prenom)}")
-    pdf.cell(90, 8, f"Telephone : {clean_pdf_text(dos.telephone)}", ln=True)
-    pdf.cell(0, 8, f"Adresse : {clean_pdf_text(dos.adresse)} - {clean_pdf_text(dos.commune)}", ln=True)
+    pdf.cell(0, 20, "FICHE OFFICIELLE DE SUIVI PROMOTEUR", ln=True, align='C')
     pdf.ln(5)
     
+    # Cadre 1
+    pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "2. PROJET & FINANCEMENT", ln=True, border='B')
+    pdf.cell(0, 8, " 1. IDENTIFICATION DU PROMOTEUR", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(100, 8, f"Activite : {clean_pdf_text(dos.activite)}")
-    pdf.cell(90, 8, f"Secteur : {clean_pdf_text(dos.secteur)}", ln=True)
-    pdf.cell(100, 8, f"Statut du dossier : {clean_pdf_text(dos.statut_dossier)}", ln=True)
-    pdf.cell(65, 8, f"Credit PNR : {dos.montant_pnr:,.0f} DA")
-    pdf.cell(65, 8, f"Apport : {dos.apport_personnel:,.0f} DA")
-    pdf.cell(60, 8, f"Banque : {dos.credit_bancaire:,.0f} DA", ln=True)
+    pdf.cell(95, 8, f" Identifiant : {clean_pdf_text(dos.identifiant)}", border='L')
+    pdf.cell(95, 8, f" Accompagnateur : {clean_pdf_text(dos.gestionnaire)}", border='R', ln=True)
+    pdf.cell(95, 8, f" Nom/Prenom : {clean_pdf_text(dos.nom)} {clean_pdf_text(dos.prenom)}", border='L')
+    pdf.cell(95, 8, f" Telephone : {clean_pdf_text(dos.telephone)}", border='R', ln=True)
+    pdf.cell(0, 8, f" Adresse : {clean_pdf_text(dos.adresse)} - {clean_pdf_text(dos.commune)}", border='LRB', ln=True)
+    pdf.ln(5)
+    
+    # Cadre 2
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, " 2. PROJET & FINANCEMENT", border=1, ln=True, fill=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(95, 8, f" Activite : {clean_pdf_text(dos.activite)}", border='L')
+    pdf.cell(95, 8, f" Statut : {clean_pdf_text(dos.statut_dossier)}", border='R', ln=True)
+    pdf.cell(63, 8, f" Credit PNR : {dos.montant_pnr:,.0f} DA", border='L')
+    pdf.cell(63, 8, f" Apport : {dos.apport_personnel:,.0f} DA")
+    pdf.cell(64, 8, f" Banque : {dos.credit_bancaire:,.0f} DA", border='R', ln=True)
+    pdf.cell(0, 8, f" Date de versement (OV) : {clean_pdf_text(dos.date_financement)}", border='LRB', ln=True)
     pdf.ln(5)
 
+    # Cadre 3
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "3. RECOUVREMENT", ln=True, border='B')
+    pdf.cell(0, 8, " 3. ETAT DU RECOUVREMENT", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(100, 8, f"Montant Recouvre : {dos.montant_rembourse:,.0f} DA")
-    pdf.cell(90, 8, f"Reste a Rembourser : {dos.reste_rembourser:,.0f} DA", ln=True)
-    pdf.cell(0, 8, f"Echeances tombees : {clean_pdf_text(dos.nb_echeance_tombee)}", ln=True)
-    pdf.ln(10)
+    pdf.cell(95, 8, f" Montant Recouvre : {dos.montant_rembourse:,.0f} DA", border='L')
+    pdf.cell(95, 8, f" Reste a Rembourser : {dos.reste_rembourser:,.0f} DA", border='R', ln=True)
+    pdf.cell(0, 8, f" Echeances tombees (Retard) : {clean_pdf_text(dos.nb_echeance_tombee)}", border='LRB', ln=True)
+    pdf.ln(8)
     
+    # Zone d'écriture
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "4. NOTES DE VISITE SUR SITE (A remplir manuellement)", ln=True, border='B')
+    pdf.cell(0, 8, " 4. NOTES ET RAPPORT DE VISITE", ln=True)
+    pdf.set_font("Arial", '', 11)
+    if dos.historique_visites:
+        # Imprime l'historique numérique s'il existe
+        notes = dos.historique_visites.split('\n')
+        for note in notes[-5:]: # Affiche les 5 dernières
+            if note.strip(): pdf.cell(0, 6, clean_pdf_text(note), ln=True)
     pdf.ln(5)
-    for _ in range(5): pdf.cell(0, 10, "......................................................................................................................................................", ln=True)
+    for _ in range(5): pdf.cell(0, 8, ".............................................................................................................................................................", ln=True)
     
+    # Signatures
+    pdf.ln(10)
+    pdf.cell(95, 8, " Signature de l'Accompagnateur :", align='C')
+    pdf.cell(95, 8, " Cachet de l'Agence :", align='C', ln=True)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -175,7 +195,6 @@ def generer_bilan_global_pdf(df):
     pdf.cell(0, 20, "BILAN GLOBAL DE DIRECTION - ANGEM", ln=True, align='C')
     pdf.ln(5)
     
-    # Section Finance
     total_pnr = df['montant_pnr'].astype(float).sum()
     total_remb = df['montant_rembourse'].astype(float).sum()
     total_reste = df['reste_rembourser'].astype(float).sum()
@@ -188,7 +207,6 @@ def generer_bilan_global_pdf(df):
     pdf.cell(0, 8, f"Total Dette Globale (Reste a payer) : {total_reste:,.0f} DA", ln=True)
     pdf.ln(5)
 
-    # Section Pipeline
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "2. RAPPORT DU PIPELINE DES DOSSIERS", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -197,7 +215,6 @@ def generer_bilan_global_pdf(df):
         pdf.cell(0, 8, f"- {clean_pdf_text(stat)} : {count} dossiers", ln=True)
     pdf.ln(5)
     
-    # Section Banques
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "3. DOSSIERS PAR BANQUE", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -259,11 +276,13 @@ MAPPING_CONFIG = {
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
     'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
     'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
+    'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'], # IMPORTANT POUR LES DOUBLONS
 }
 COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser']
 
 if 'user' not in st.session_state: st.session_state.user = None
 
+# --- NOUVELLE CONNEXION PAR LISTE DÉROULANTE ---
 def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -273,19 +292,27 @@ def login_page():
         
         st.markdown("<div class='login-box'>", unsafe_allow_html=True)
         st.subheader("🔐 Accès Intra-Service")
-        username = st.text_input("Identifiant", placeholder="Ex: admin ou nasri")
-        password = st.text_input("Mot de passe", type="password")
+        
+        # Récupération des noms depuis la base
+        session = get_session()
+        try:
+            users_db = session.query(UtilisateurAuth).all()
+            noms_disponibles = [u.nom for u in users_db]
+        except: noms_disponibles = ["Administrateur"]
+        session.close()
+
+        nom_choisi = st.selectbox("👤 Sélectionnez votre profil :", noms_disponibles)
+        password = st.text_input("🔑 Mot de passe :", type="password")
         
         if st.button("Se connecter", type="primary", use_container_width=True):
-            user_input = username.lower().strip()
             session = get_session()
-            user_db = session.query(UtilisateurAuth).filter_by(identifiant=user_input).first()
+            user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi).first()
             session.close()
             
             if user_db and user_db.mot_de_passe == password:
                 st.session_state.user = {"identifiant": user_db.identifiant, "nom": user_db.nom, "role": user_db.role}
                 st.rerun()
-            else: st.error("Identifiant ou mot de passe incorrect.")
+            else: st.error("Mot de passe incorrect.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 def sidebar_menu():
@@ -307,6 +334,18 @@ def sidebar_menu():
         st.rerun()
     return choix
 
+# --- FONCTION D'ALERTE POUR LE TABLEAU ---
+def calculer_alerte(row):
+    ech = str(row.get('nb_echeance_tombee', '')).strip()
+    # Si la case contient un chiffre (ex: "3", "2 echeances")
+    if any(char.isdigit() for char in ech):
+        num = int(re.search(r'\d+', ech).group())
+        if num > 0: return "🚨 Retard (Échéance)"
+    
+    if row.get('statut_dossier') == "Contentieux / Retard de remboursement":
+        return "🔴 Contentieux"
+    return "✅ À jour"
+
 def page_gestion(vue_admin=False):
     st.title("🗂️ Suivi des Dossiers Promoteurs")
     
@@ -319,17 +358,18 @@ def page_gestion(vue_admin=False):
 
     if not vue_admin: 
         df = df[df['gestionnaire'] == st.session_state.user['nom']]
-        
-        # --- NOUVEAUTÉ : ÉTAT D'ALERTE CONTENTIEUX ---
         dossiers_alerte = df[df['statut_dossier'] == "Contentieux / Retard de remboursement"]
         if not dossiers_alerte.empty:
-            st.markdown(f"<div class='alerte-box'><h4>🚨 ALERTES CONTENTIEUX</h4>Vous avez <b>{len(dossiers_alerte)} dossier(s)</b> nécessitant un appel ou une intervention prioritaire aujourd'hui.</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='alerte-box'><h4>🚨 ALERTES CONTENTIEUX</h4>Vous avez <b>{len(dossiers_alerte)} dossier(s)</b> nécessitant une intervention prioritaire.</div>", unsafe_allow_html=True)
 
-    search = st.text_input("🔍 Chercher un dossier :", placeholder="Nom, Identifiant...")
+    search = st.text_input("🔍 Chercher un dossier :", placeholder="Nom, Identifiant, Activité...")
     df_filtered = df.copy()
     if search:
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
+
+    # Ajout de la colonne d'alerte pour l'affichage visuel
+    df_filtered['Alerte'] = df_filtered.apply(calculer_alerte, axis=1)
 
     try:
         df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
@@ -341,13 +381,14 @@ def page_gestion(vue_admin=False):
     edited_df = st.data_editor(
         df_filtered, use_container_width=True, hide_index=True, height=350,
         column_config={
-            "id": None, "documents": None,
+            "id": None, "documents": None, "historique_visites": None,
+            "Alerte": st.column_config.TextColumn("⚠️ Alerte", disabled=True),
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
+            "date_financement": st.column_config.TextColumn("Date Financement (OV)", disabled=True),
             "nom": "Nom Promoteur",
             "statut_dossier": st.column_config.SelectboxColumn("🚦 Statut", options=LISTE_STATUTS, width="large"),
             "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Accompagnateur", options=liste_agents, disabled=not vue_admin),
             "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
-            "montant_rembourse": st.column_config.NumberColumn("Recouvré", format="%d DA", disabled=True),
             "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
         }
     )
@@ -368,26 +409,43 @@ def page_gestion(vue_admin=False):
 
     st.markdown("---")
     
-    st.subheader("📂 Gestion individuelle : Scans et Fiche PDF")
-    options_dossiers = ["Sélectionnez un dossier..."] + df_filtered.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']}", axis=1).tolist()
+    # --- ESPACE INDIVIDUEL (JAUGE & HISTORIQUE) ---
+    st.subheader("📂 Gestion individuelle : Profil complet et Visites")
+    options_dossiers = ["Sélectionnez un dossier..."] + df_filtered.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
     dossier_choisi = st.selectbox("Choisissez le promoteur pour voir ses détails :", options_dossiers)
 
     if dossier_choisi != "Sélectionnez un dossier...":
         identifiant_choisi = dossier_choisi.split(" - ")[0]
         session = get_session()
+        # On prend le premier s'il y en a plusieurs, idéalement on filtre aussi par date OV
         dos_db = session.query(Dossier).filter_by(identifiant=identifiant_choisi).first()
         
         if dos_db:
             st.markdown("<div class='doc-box'>", unsafe_allow_html=True)
-            col_pdf, col_scan = st.columns(2)
             
+            # --- JAUGE DE REMBOURSEMENT ---
+            taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
+            st.markdown(f"**Progression du remboursement : {taux*100:.1f}%**")
+            st.progress(min(taux, 1.0))
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            col_pdf, col_scan = st.columns(2)
             with col_pdf:
                 st.markdown("#### 📄 Fiche de Suivi")
                 pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
-                st.download_button(
-                    label="📥 Imprimer la Fiche PDF pour visite sur site",
-                    data=pdf_bytes, file_name=f"Fiche_Suivi_{dos_db.identifiant}.pdf", mime="application/pdf"
-                )
+                st.download_button("📥 Imprimer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf")
+                
+                st.markdown("#### 📝 Historique des Visites")
+                nouvelle_note = st.text_area("Ajouter un compte-rendu de visite :")
+                if st.button("Enregistrer la note"):
+                    date_str = datetime.now().strftime("%d/%m/%Y")
+                    note_format = f"[{date_str}] {nouvelle_note}\n"
+                    dos_db.historique_visites = (dos_db.historique_visites or "") + note_format
+                    session.commit()
+                    st.success("Note ajoutée !")
+                    st.rerun()
+                if dos_db.historique_visites:
+                    st.info(dos_db.historique_visites.replace('\n', '  \n')) # Markdown line break
             
             with col_scan:
                 st.markdown("#### 📎 Ajouter un scan")
@@ -411,6 +469,7 @@ def page_gestion(vue_admin=False):
             st.markdown("</div>", unsafe_allow_html=True)
         session.close()
 
+# --- IMPORTATION (ANTI-DOUBLONS INTELLIGENT) ---
 def page_import():
     st.title("📥 Moteur d'Intégration Excel")
     uploaded_file = st.file_uploader("📂 Glissez le fichier Excel", type=['xlsx', 'xls', 'csv'])
@@ -421,7 +480,7 @@ def page_import():
             agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
             agents_noms = [a.nom for a in agents_db]
 
-            with st.status("Analyse et fusion des données...", expanded=True) as status:
+            with st.status("Analyse et fusion des données (Vérification OV)...", expanded=True) as status:
                 count_add, count_upd = 0, 0
                 for s_name, df_raw in xl.items():
                     df_raw = df_raw.fillna('')
@@ -449,8 +508,18 @@ def page_import():
                             else: data[db_f] = str(valeur_brute).strip().upper()
 
                         ident = data.get('identifiant', '')
+                        date_fin = data.get('date_financement', '')
                         if not ident: continue
-                        exist = session.query(Dossier).filter_by(identifiant=ident).first()
+
+                        # LA LOGIQUE INTELLIGENTE DES DOUBLONS (2ème Financement)
+                        exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
+                        
+                        # Si on ne trouve pas l'exacte combinaison, peut-être qu'il existe un dossier sans date OV à mettre à jour ?
+                        if not exist and date_fin != "":
+                            exist_empty = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
+                            if exist_empty: exist = exist_empty
+                            # S'il existe déjà un dossier mais avec une AUTRE date, "exist" reste None, ça créera un 2e financement !
+
                         if exist:
                             for k, v in data.items(): setattr(exist, k, v)
                             count_upd += 1
@@ -458,7 +527,7 @@ def page_import():
                             session.add(Dossier(**data))
                             count_add += 1
                 session.commit()
-                status.update(label=f"Opération terminée : {count_add} créés, {count_upd} mis à jour.", state="complete")
+                status.update(label=f"Opération terminée : {count_add} nouveaux financements, {count_upd} mis à jour.", state="complete")
             st.balloons()
         except Exception as e: session.rollback(); st.error(f"Erreur d'importation : {e}")
         finally: session.close()
@@ -479,17 +548,19 @@ def page_admin():
             c3.metric("Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
             c4.metric("Dette Globale", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
             
-            # --- NOUVEAUTÉ : LE BILAN PDF COMPLET ---
-            st.markdown("### Exportation pour la hiérarchie")
-            pdf_bilan = generer_bilan_global_pdf(df)
-            st.download_button(
-                label="📥 Télécharger le Rapport Complet (Finances, Pipeline, Banques) en PDF",
-                data=pdf_bilan, file_name="Rapport_Direction_ANGEM.pdf", mime="application/pdf", type="primary"
-            )
+            # --- EXPORTATION EXCEL ET PDF ---
+            st.markdown("### 📥 Exportations")
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                pdf_bilan = generer_bilan_global_pdf(df)
+                st.download_button("📄 Télécharger le Rapport PDF de la Direction", data=pdf_bilan, file_name="Rapport_Direction_ANGEM.pdf", mime="application/pdf", type="primary")
+            with col_btn2:
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df.drop(columns=['id', 'documents', 'historique_visites'], errors='ignore').to_excel(writer, index=False, sheet_name='Base_ANGEM')
+                st.download_button("📊 Exporter toute la base en Excel", data=buffer.getvalue(), file_name="Base_Complete_ANGEM.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.markdown("---")
             
-            # --- NOUVEAUTÉ : GRAPHIQUES GÉOGRAPHIQUES ET BANCAIRES ---
-            st.markdown("### Cartographie & Suivi")
             col_l, col_r = st.columns(2)
             with col_l:
                 if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)", hole=0.3), use_container_width=True)
@@ -499,7 +570,7 @@ def page_admin():
                 st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='gestionnaire', y='count', title="Charge par Accompagnateur"), use_container_width=True)
 
     with tab2:
-        st.markdown("### 🔑 Liste des Accompagnateurs et Mots de passe")
+        st.markdown("### 🔑 Liste des Accompagnateurs")
         try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
         except: df_users = pd.DataFrame()
             
@@ -520,8 +591,29 @@ def page_admin():
                 finally: session.close()
 
     with tab3:
-        st.error("Zone de danger")
-        if st.button("🗑️ Vider la base de données (Dossiers uniquement)", type="primary"):
+        st.markdown("### 🧹 Nettoyage de la base de données")
+        # --- NOUVEAU BOUTON : NETTOYER LES VRAIS DOUBLONS ---
+        st.info("Ce bouton efface les dossiers qui ont **le même Identifiant ET la même Date OV**. Il garde les doubles financements (dates différentes).")
+        if st.button("🧼 Lancer le nettoyage des doublons stricts"):
+            try:
+                df_dup = pd.read_sql_query("SELECT id, identifiant, date_financement FROM dossiers", con=engine)
+                # Trouver les lignes qui ont exactement le même identifiant ET la même date
+                duplicates = df_dup[df_dup.duplicated(subset=['identifiant', 'date_financement'], keep='first')]
+                ids_to_delete = duplicates['id'].tolist()
+                
+                if ids_to_delete:
+                    session = get_session()
+                    session.query(Dossier).filter(Dossier.id.in_(ids_to_delete)).delete(synchronize_session=False)
+                    session.commit()
+                    session.close()
+                    st.success(f"✅ {len(ids_to_delete)} vrai(s) doublon(s) supprimé(s) !")
+                    st.rerun()
+                else: st.success("Parfait, la base est propre, aucun doublon strict trouvé !")
+            except Exception as e: st.error(f"Erreur : {e}")
+        
+        st.markdown("---")
+        st.error("Zone de danger Absolu")
+        if st.button("🗑️ Vider TOUTE la base (Dossiers uniquement)", type="primary"):
             session = get_session()
             session.query(Dossier).delete(); session.commit(); session.close()
             st.rerun()
