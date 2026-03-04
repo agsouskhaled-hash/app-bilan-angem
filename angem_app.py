@@ -14,18 +14,106 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v11.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v12.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
-# --- STYLE CSS AVANCÉ ---
+# --- LE NOUVEAU STYLE CSS (Design Moderne & Épuré) ---
 st.markdown("""
 <style>
-    .stMetric {background-color: #ffffff; padding: 20px; border-radius: 12px; border-left: 6px solid #1f77b4; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
-    .stTabs [aria-selected="true"] {background-color: #f0f2f6; border-bottom: 4px solid #1f77b4; font-weight: bold;}
-    .login-box {max-width: 450px; margin: auto; padding: 30px; background-color: #ffffff; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);}
-    .doc-box {background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-top: 15px; border: 1px solid #e9ecef;}
-    .alerte-box {background-color: #ffcccc; padding: 15px; border-radius: 8px; border-left: 6px solid #ff0000; margin-bottom: 20px;}
-    .profil-header {background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 6px solid #28a745; margin-bottom: 20px;}
-    .archive-img {border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;}
+    /* Fond de la page global */
+    .stApp {
+        background-color: #f4f7f6;
+    }
+    
+    /* Design des cartes de métriques (Chiffres clés) */
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border: 1px solid #e1e5eb;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        border-left: 6px solid #1f77b4;
+        transition: transform 0.2s ease-in-out;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+    }
+    
+    /* Boutons modernes */
+    .stButton>button {
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s;
+        border: none;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }
+    
+    /* Boîte de Connexion centrale */
+    .login-container {
+        background: #ffffff;
+        padding: 40px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        text-align: center;
+        max-width: 400px;
+        margin: 0 auto;
+        border: 1px solid #f0f2f6;
+    }
+    
+    /* Cartes génériques pour les sections (Profil, Recherche, etc.) */
+    .modern-card {
+        background-color: #ffffff;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+        margin-top: 15px;
+        margin-bottom: 15px;
+        border: 1px solid #e1e5eb;
+    }
+    
+    /* Alertes et notifications */
+    .alerte-urgente {
+        background-color: #fff3f3;
+        border-left: 6px solid #dc3545;
+        padding: 15px 20px;
+        border-radius: 8px;
+        color: #b02a37;
+        font-weight: bold;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 5px rgba(220,53,69,0.1);
+    }
+    
+    /* En-tête du profil promoteur */
+    .profil-header {
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 6px solid #28a745;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .profil-header h3 {
+        margin-top: 0;
+        color: #2c3e50;
+    }
+    
+    /* Design des onglets */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding-top: 15px;
+        padding-bottom: 15px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: transparent;
+        border-bottom: 4px solid #1f77b4;
+        font-weight: bold;
+        color: #1f77b4;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -95,7 +183,6 @@ def get_session(): return Session()
 
 def init_db_users():
     session = get_session()
-    
     admin = session.query(UtilisateurAuth).filter_by(identifiant="admin").first()
     if not admin:
         session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"))
@@ -110,15 +197,13 @@ def init_db_users():
     ]
     
     for nom in noms_agents:
-        agent_existe = session.query(UtilisateurAuth).filter_by(nom=nom).first()
-        if not agent_existe:
+        if not session.query(UtilisateurAuth).filter_by(nom=nom).first():
             base_id = nom.split()[0].lower()
             identifiant = base_id
             compteur = 1
             while session.query(UtilisateurAuth).filter_by(identifiant=identifiant).first():
                 identifiant = f"{base_id}{compteur}"
                 compteur += 1
-            
             session.add(UtilisateurAuth(identifiant=identifiant, nom=nom, mot_de_passe="angem2026", role="agent"))
     
     session.commit()
@@ -132,7 +217,7 @@ def afficher_logo(largeur=250):
     try:
         with open("logo_angem.png", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
-            st.markdown(f'<div style="text-align: center;"><img src="data:image/png;base64,{encoded_string}" width="{largeur}"></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/png;base64,{encoded_string}" width="{largeur}"></div>', unsafe_allow_html=True)
     except:
         st.markdown(f'<div style="text-align: center; color: #1f77b4; font-size: 24px; font-weight: bold; border: 2px solid #1f77b4; padding: 10px; border-radius: 10px; margin-bottom: 20px;">🔵 ANGEM Intra-Service</div>', unsafe_allow_html=True)
 
@@ -140,7 +225,7 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF AMELIOREES ---
+# --- FONCTIONS PDF ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -286,7 +371,7 @@ def generer_creances_pdf(df):
     except: pass
     pdf.set_font("Arial", 'B', 16)
     pdf.set_text_color(200, 0, 0)
-    pdf.cell(0, 20, "ETAT DES CREANCES EN SOUFFRANCE (LISTE ROUGE)", ln=True, align='C')
+    pdf.cell(0, 20, "ETAT DES CREANCES EN SOUFFRANCE", ln=True, align='C')
     pdf.set_text_color(0, 0, 0)
     pdf.ln(5)
     
@@ -398,11 +483,10 @@ if 'user' not in st.session_state: st.session_state.user = None
 def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        afficher_logo(250)
-        
-        st.markdown("<div class='login-box'>", unsafe_allow_html=True)
-        st.subheader("🔐 Accès Intra-Service")
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+        afficher_logo(220)
+        st.markdown("<h3 style='color: #2c3e50; margin-bottom: 25px;'>Portail Intra-Service</h3>", unsafe_allow_html=True)
         
         session = get_session()
         try:
@@ -411,14 +495,14 @@ def login_page():
         except: noms_disponibles = ["Administrateur"]
         session.close()
 
-        nom_choisi = st.selectbox("👤 Sélectionnez votre profil :", noms_disponibles)
-        password = st.text_input("🔑 Mot de passe :", type="password")
+        nom_choisi = st.selectbox("👤 Sélectionnez votre profil", noms_disponibles, label_visibility="collapsed")
+        password = st.text_input("🔑 Mot de passe", type="password", placeholder="Votre mot de passe...", label_visibility="collapsed")
         
-        if st.button("Se connecter", type="primary", use_container_width=True):
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🚀 Se Connecter", type="primary", use_container_width=True):
             session = get_session()
             user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi).first()
             session.close()
-            
             if user_db and user_db.mot_de_passe == password:
                 st.session_state.user = {"identifiant": user_db.identifiant, "nom": user_db.nom, "role": user_db.role}
                 st.rerun()
@@ -426,17 +510,16 @@ def login_page():
         st.markdown("</div>", unsafe_allow_html=True)
 
 def sidebar_menu():
-    afficher_logo(200)
-    st.sidebar.markdown(f"**👤 Connecté :** {st.session_state.user['nom']}")
-    st.sidebar.markdown("---")
+    afficher_logo(180)
+    st.sidebar.markdown(f"<div style='text-align: center; padding: 10px; background: #e9ecef; border-radius: 8px; margin-bottom: 20px;'><b>👤 {st.session_state.user['nom']}</b></div>", unsafe_allow_html=True)
     
     options = ["🗂️ Mes Dossiers Promoteurs"]
     if st.session_state.user['role'] == "admin":
-        options = ["📊 Espace Administrateur", "🗂️ Tous les Dossiers", "📥 Importation des Fichiers"]
+        options = ["📊 Espace Direction", "🗂️ Base Globale", "📥 Intégration Fichiers"]
         
-    choix = st.sidebar.radio("📌 Navigation :", options)
+    choix = st.sidebar.radio("Navigation Menu", options, label_visibility="collapsed")
     st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Se déconnecter"):
+    if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
         st.session_state.user = None
         st.rerun()
     return choix
@@ -454,19 +537,18 @@ def calculer_alerte_texte(row):
     return "✅ À jour"
 
 def page_gestion(vue_admin=False):
-    st.title("🗂️ Suivi des Dossiers Promoteurs")
+    st.title("🗂️ Espace de Suivi & Gestion")
     
     try: df = pd.read_sql_query("SELECT * FROM dossiers ORDER BY id DESC", con=engine).fillna('')
     except: df = pd.DataFrame()
 
     if df.empty:
-        st.info("📌 Aucun dossier trouvé. Veuillez importer une base de données.")
+        st.info("📌 La base de données est actuellement vide.")
         return
 
     if not vue_admin: 
         nom_agent_connecte = str(st.session_state.user['nom']).upper()
         mots_agent = set([m for m in re.split(r'\W+', nom_agent_connecte) if len(m) >= 3])
-        
         def match_agent_flexible(val):
             val_clean = str(val).upper()
             if not val_clean: return False
@@ -475,27 +557,32 @@ def page_gestion(vue_admin=False):
             if mots_agent.intersection(mots_val): return True
             return False
             
-        mask_agent = df['gestionnaire'].apply(match_agent_flexible)
-        df = df[mask_agent]
+        df = df[df['gestionnaire'].apply(match_agent_flexible)]
 
-    # Ajout du diagnostic d'alerte pour filtrage
     df['Alerte'] = df.apply(calculer_alerte_texte, axis=1)
 
-    # --- NOUVEAU FILTRE RAPIDE CONTENTIEUX ---
+    # -- BLOC RECHERCHE & FILTRES MODERNISÉ --
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     col_recherche, col_filtre = st.columns([2, 1])
     with col_recherche:
-        search = st.text_input("🔍 Chercher dans le tableau global :", placeholder="Nom, Identifiant, Activité...")
+        search = st.text_input("🔍 Recherche rapide :", placeholder="Tapez un nom, un ID, une commune...")
     with col_filtre:
         st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-        filtre_alerte = st.radio("🚦 Affichage des dossiers :", ["🟢 Tous", "🚨 Retards & Contentieux"], horizontal=True)
+        filtre_alerte = st.radio("🚦 Filtrer l'affichage :", ["🟢 Tous les dossiers", "🚨 Contentieux & Retards"], horizontal=True, label_visibility="collapsed")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     df_filtered = df.copy()
     if search:
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
-        
-    if filtre_alerte == "🚨 Retards & Contentieux":
+    if "🚨" in filtre_alerte:
         df_filtered = df_filtered[df_filtered['Alerte'] != "✅ À jour"]
+        
+    # Alerte visuelle forte si retards
+    if not vue_admin and "🚨" not in filtre_alerte:
+        dossiers_alerte = df[df.apply(calculer_alerte_bool, axis=1)]
+        if not dossiers_alerte.empty:
+            st.markdown(f"<div class='alerte-urgente'>⚠️ Attention : Vous avez {len(dossiers_alerte)} dossier(s) nécessitant une intervention prioritaire ! (Utilisez le filtre ci-dessus)</div>", unsafe_allow_html=True)
 
     try:
         df_agents_auth = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
@@ -505,18 +592,18 @@ def page_gestion(vue_admin=False):
     agents_dans_base = df['gestionnaire'].unique().tolist()
     liste_agents_complete = [""] + sorted(list(set(agents_officiels + agents_dans_base)))
 
-    st.success(f"{len(df_filtered)} dossiers affichés dans cette vue.")
+    st.caption(f"Affichage de {len(df_filtered)} dossiers.")
 
     edited_df = st.data_editor(
-        df_filtered, use_container_width=True, hide_index=True, height=300,
+        df_filtered, use_container_width=True, hide_index=True, height=350,
         column_config={
             "id": None, "documents": None, "historique_visites": None,
-            "Alerte": st.column_config.TextColumn("⚠️ Alerte", disabled=True),
+            "Alerte": st.column_config.TextColumn("Statut", disabled=True),
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
             "date_financement": st.column_config.TextColumn("Date OV", disabled=True),
             "nom": "Nom Promoteur",
-            "statut_dossier": st.column_config.SelectboxColumn("🚦 Statut", options=LISTE_STATUTS, width="large"),
-            "gestionnaire": st.column_config.SelectboxColumn("👨‍💼 Accompagnateur", options=liste_agents_complete, disabled=not vue_admin),
+            "statut_dossier": st.column_config.SelectboxColumn("Étape Actuelle", options=LISTE_STATUTS, width="medium"),
+            "gestionnaire": st.column_config.SelectboxColumn("Accompagnateur", options=liste_agents_complete, disabled=not vue_admin),
             "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
             "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
         }
@@ -531,97 +618,99 @@ def page_gestion(vue_admin=False):
                     setattr(dos, 'statut_dossier', row['statut_dossier'])
                     if vue_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
             session.commit()
-            st.toast("✅ Modifications sauvegardées avec succès !")
+            st.toast("✅ Base de données mise à jour !")
             st.rerun()
         except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
         finally: session.close()
 
-    st.markdown("---")
+    # --- LE NOUVEAU PROFIL PROMOTEUR DESIGN ---
+    st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
     
-    st.subheader("📂 Fiche Promoteur Numérique")
-    st.markdown("Recherchez un promoteur pour ouvrir son profil, voir son avancement, noter vos visites ou gérer ses archives.")
-    
-    recherche_indiv = st.text_input("🔍 Entrez le Nom, Prénom ou l'Identifiant du promoteur :", placeholder="Ex: Metmar ou 12345...")
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    recherche_indiv = st.text_input("🔍 Ouvrir un profil spécifique (Entrez Nom ou ID) :", placeholder="Ex: Metmar ou 12345...")
     
     if recherche_indiv:
         mask_indiv = df.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
-        df_recherche = df[mask_indiv] # On cherche dans le df global, pas juste le filtré
+        df_recherche = df[mask_indiv]
         
         if not df_recherche.empty:
-            options_dossiers = ["Cliquez pour sélectionner un dossier..."] + df_recherche.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
-            dossier_choisi = st.selectbox("🎯 Résultats trouvés :", options_dossiers)
+            options_dossiers = ["Sélectionnez un profil..."] + df_recherche.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
+            dossier_choisi = st.selectbox("🎯 Profils trouvés :", options_dossiers)
 
-            if dossier_choisi != "Cliquez pour sélectionner un dossier...":
+            if dossier_choisi != "Sélectionnez un profil...":
                 identifiant_choisi = dossier_choisi.split(" - ")[0]
                 session = get_session()
                 dos_db = session.query(Dossier).filter_by(identifiant=identifiant_choisi).first()
                 
                 if dos_db:
-                    st.markdown("<div class='doc-box'>", unsafe_allow_html=True)
-                    
+                    # En-tête colorée du profil
                     taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
-                    st.markdown(f"<div class='profil-header'><h3>{dos_db.nom} {dos_db.prenom}</h3><b>ID:</b> {dos_db.identifiant} | <b>Activité:</b> {dos_db.activite} <br><b>Progression du remboursement : {taux*100:.1f}%</b></div>", unsafe_allow_html=True)
+                    st.markdown(f"""
+                    <div class='profil-header'>
+                        <h2 style='margin:0; color:#1f77b4;'>👤 {dos_db.nom} {dos_db.prenom}</h2>
+                        <p style='margin:5px 0 0 0; font-size:16px;'><b>Identifiant:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
+                        <p style='margin:10px 0 5px 0;'><b>Avancement du Remboursement : {taux*100:.1f}%</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
                     st.progress(min(taux, 1.0))
                     st.markdown("<br>", unsafe_allow_html=True)
 
-                    col_gauche, col_droite = st.columns([1.2, 1])
+                    col_gauche, col_droite = st.columns([1.3, 1])
                     
                     with col_gauche:
-                        st.markdown("#### 📝 Notes & Historique des Visites")
-                        nouvelle_note = st.text_area("Ajouter un compte-rendu après visite sur site :")
-                        if st.button("Enregistrer la note"):
+                        st.markdown("### 📝 Rapport de Visite")
+                        nouvelle_note = st.text_area("Rédiger un nouveau compte-rendu :", placeholder="Observations suite à la visite sur site...")
+                        if st.button("Enregistrer ce rapport"):
                             date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
                             note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
                             dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
                             session.commit()
-                            st.success("Note enregistrée dans le dossier !")
+                            st.success("Rapport ajouté à l'historique !")
                             st.rerun()
                         
-                        st.markdown("<div style='background-color:#f4f6f9; padding:10px; border-radius:5px; height: 350px; overflow-y: auto;'>", unsafe_allow_html=True)
+                        st.markdown("**Historique des échanges :**")
+                        st.markdown("<div style='background-color:#ffffff; border:1px solid #e1e5eb; padding:15px; border-radius:8px; height: 300px; overflow-y: auto; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);'>", unsafe_allow_html=True)
                         if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
-                        else: st.markdown("<i>Aucun historique pour le moment.</i>", unsafe_allow_html=True)
+                        else: st.markdown("<span style='color:#888;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
                         st.markdown("</div>", unsafe_allow_html=True)
                     
                     with col_droite:
-                        st.markdown("#### 📄 Fiche Officielle & Scans")
+                        st.markdown("### 📎 Dossier Administratif")
                         pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
-                        st.download_button("📥 Télécharger la Fiche de Suivi (PDF)", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
+                        st.download_button("📄 Éditer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
                         
                         st.markdown("---")
                         
-                        # --- NOUVEAUTÉ : APPAREIL PHOTO CACHÉ ---
-                        with st.expander("📸 Ouvrir l'appareil photo pour scanner en direct"):
-                            st.info("Utilisez la caméra de votre téléphone pour numériser un document.")
-                            photo_camera = st.camera_input("Prendre la photo")
+                        with st.expander("📸 Scanner un document avec l'Appareil Photo"):
+                            st.info("Autorisez l'accès à la caméra pour numériser.")
+                            photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed")
                             if photo_camera is not None:
-                                if st.button("Sauvegarder l'image", use_container_width=True):
+                                if st.button("💾 Archiver la photo", use_container_width=True):
                                     nom_fichier_propre = f"{dos_db.identifiant}_SCAN_{datetime.now().strftime('%H%M%S')}.jpg"
                                     chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
                                     with open(chemin_sauvegarde, "wb") as f: f.write(photo_camera.getbuffer())
                                     dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
                                     session.commit()
-                                    st.success("Photo archivée avec succès !")
+                                    st.success("Scan archivé avec succès !")
                                     st.rerun()
 
-                        st.markdown("#### 📎 Importer un fichier existant")
-                        nouveau_scan = st.file_uploader("Sélectionner (PDF/JPG/PNG)...", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed")
-                        if nouveau_scan is not None:
-                            if st.button("Archiver ce fichier", use_container_width=True):
-                                nom_fichier_propre = f"{dos_db.identifiant}_{nouveau_scan.name}"
-                                chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
-                                with open(chemin_sauvegarde, "wb") as f: f.write(nouveau_scan.getbuffer())
-                                dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
-                                session.commit()
-                                st.success("Fichier archivé !")
-                                st.rerun()
+                        with st.expander("📁 Importer un document existant (PDF/Image)"):
+                            nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed")
+                            if nouveau_scan is not None:
+                                if st.button("💾 Archiver le fichier", use_container_width=True):
+                                    nom_fichier_propre = f"{dos_db.identifiant}_{nouveau_scan.name}"
+                                    chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
+                                    with open(chemin_sauvegarde, "wb") as f: f.write(nouveau_scan.getbuffer())
+                                    dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
+                                    session.commit()
+                                    st.success("Fichier archivé avec succès !")
+                                    st.rerun()
                                 
-                        st.markdown("---")
-                        # --- NOUVEAUTÉ : LA GALERIE D'ARCHIVES ---
-                        st.markdown("**📂 Archives et Documents scannés :**")
+                        st.markdown("**🗄️ Pièces Jointes du Dossier :**")
                         if dos_db.documents:
                             docs_list = [d for d in dos_db.documents.split("|") if d]
                             if not docs_list:
-                                st.caption("Dossier vide.")
+                                st.caption("Aucune pièce jointe.")
                             else:
                                 for doc in docs_list:
                                     chemin_doc = os.path.join("scans_angem", doc)
@@ -630,29 +719,29 @@ def page_gestion(vue_admin=False):
                                             st.image(chemin_doc, caption=doc, use_container_width=True)
                                         elif doc.lower().endswith('.pdf'):
                                             with open(chemin_doc, "rb") as f: bytes_doc = f.read()
-                                            st.download_button(f"📥 Voir le PDF : {doc}", data=bytes_doc, file_name=doc, mime="application/pdf", key=doc, use_container_width=True)
-                                        else:
-                                            st.markdown(f"- 🗎 `{doc}`")
+                                            st.download_button(f"📥 Consulter le PDF : {doc[:15]}...", data=bytes_doc, file_name=doc, mime="application/pdf", key=doc, use_container_width=True)
                                     else:
-                                        st.warning(f"⚠️ Fichier introuvable sur le serveur : {doc}")
-                        else: st.caption("Dossier vide.")
+                                        st.caption(f"Fichier hors ligne : {doc}")
+                        else: st.caption("Aucune pièce jointe.")
                         
-                    st.markdown("</div>", unsafe_allow_html=True)
                 session.close()
         else:
             st.warning("⚠️ Aucun promoteur ne correspond à cette recherche.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def page_import():
-    st.title("📥 Moteur d'Intégration Excel")
-    uploaded_file = st.file_uploader("📂 Glissez le fichier Excel", type=['xlsx', 'xls', 'csv'])
-    if uploaded_file and st.button("🚀 Lancer l'Intégration", type="primary"):
+    st.title("📥 Intégration des Données")
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    st.info("L'outil de synchronisation met à jour les montants et crée les nouveaux financements automatiquement (Anti-Doublons activé).")
+    uploaded_file = st.file_uploader("📂 Glissez votre fichier Excel de la Banque ou du Recouvrement", type=['xlsx', 'xls', 'csv'])
+    if uploaded_file and st.button("🚀 Lancer l'Intégration Globale", type="primary"):
         session = get_session()
         try:
             xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
             agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
             agents_noms = [a.nom for a in agents_db]
 
-            with st.status("Analyse et fusion des données (Vérification OV)...", expanded=True) as status:
+            with st.status("Analyse et fusion en cours...", expanded=True) as status:
                 count_add, count_upd = 0, 0
                 for s_name, df_raw in xl.items():
                     df_raw = df_raw.fillna('')
@@ -695,14 +784,15 @@ def page_import():
                             session.add(Dossier(**data))
                             count_add += 1
                 session.commit()
-                status.update(label=f"Opération terminée : {count_add} nouveaux financements, {count_upd} mis à jour.", state="complete")
+                status.update(label=f"Traitement terminé : {count_add} nouveaux dossiers créés, {count_upd} dossiers mis à jour.", state="complete")
             st.balloons()
         except Exception as e: session.rollback(); st.error(f"Erreur d'importation : {e}")
         finally: session.close()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def page_admin():
-    st.title("📊 Espace Administrateur & Direction")
-    tab1, tab2, tab3 = st.tabs(["📈 Rapports et Bilans", "🔐 Gestion des Accès", "⚙️ Système"])
+    st.title("📊 Espace Direction (Admin)")
+    tab1, tab2, tab3 = st.tabs(["📈 Tableau de Bord & Bilans", "🔐 Gestion des Équipes", "⚙️ Maintenance Serveur"])
 
     with tab1:
         try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
@@ -710,46 +800,51 @@ def page_admin():
         
         if df.empty: st.warning("La base de dossiers est vide.")
         else:
+            # -- DESIGN DES METRIQUES ADMIN --
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Dossiers", len(df))
-            c2.metric("Crédit PNR Engagé", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
-            c3.metric("Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
-            c4.metric("Dette Globale", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
+            c1.metric("📌 Total Dossiers", len(df))
+            c2.metric("💰 Crédit PNR Engagé", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
+            c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
+            c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
             
-            st.markdown("### 📥 Exportations de Direction")
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color:#2c3e50;'>📥 Générateur de Rapports (PDF/Excel)</h4>", unsafe_allow_html=True)
             col_b1, col_b2 = st.columns(2)
             with col_b1:
                 pdf_bilan = generer_bilan_global_pdf(df)
-                st.download_button("📄 Bilan Global ANGEM (PDF)", data=pdf_bilan, file_name="Bilan_Global.pdf", mime="application/pdf", use_container_width=True)
+                st.download_button("📊 Bilan Global de l'Antenne (PDF)", data=pdf_bilan, file_name="Bilan_Global.pdf", mime="application/pdf", use_container_width=True)
                 pdf_creances = generer_creances_pdf(df)
-                st.download_button("🚨 Liste Rouge des Créances (PDF)", data=pdf_creances, file_name="Liste_Rouge_Retards.pdf", mime="application/pdf", use_container_width=True)
+                st.download_button("🔴 Exporter la Liste des Contentieux (PDF)", data=pdf_creances, file_name="Liste_Rouge.pdf", mime="application/pdf", use_container_width=True)
             with col_b2:
                 pdf_analytique = generer_analytique_pdf(df)
-                st.download_button("📊 Bilan Analytique (Zones/Secteurs)", data=pdf_analytique, file_name="Bilan_Analytique.pdf", mime="application/pdf", use_container_width=True)
+                st.download_button("🗺️ Bilan Analytique par Zone (PDF)", data=pdf_analytique, file_name="Bilan_Analytique.pdf", mime="application/pdf", use_container_width=True)
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df.drop(columns=['id', 'documents', 'historique_visites'], errors='ignore').to_excel(writer, index=False, sheet_name='Base_ANGEM')
-                st.download_button("🟢 Exporter toute la base en Excel", data=buffer.getvalue(), file_name="Base_ANGEM.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                st.download_button("🟢 Sauvegarde Complète (Excel)", data=buffer.getvalue(), file_name="Base_ANGEM.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
             st.markdown("---")
-            st.markdown("### 👨‍💼 Rapports par Accompagnateur")
+            st.markdown("<b>👨‍💼 Générer le Bilan de Performance d'un Agent :</b>", unsafe_allow_html=True)
             agents_dispo = [a for a in df['gestionnaire'].unique() if str(a).strip() != ""]
-            agent_selectionne = st.selectbox("Sélectionner un agent :", agents_dispo)
+            agent_selectionne = st.selectbox("Sélectionner l'agent", agents_dispo, label_visibility="collapsed")
             if agent_selectionne:
                 pdf_agent = generer_bilan_agent_pdf(df, agent_selectionne)
-                st.download_button(f"📄 Bilan de performance de {agent_selectionne}", data=pdf_agent, file_name=f"Bilan_Agent_{agent_selectionne}.pdf", mime="application/pdf", type="primary")
+                st.download_button(f"📄 Télécharger le bilan de {agent_selectionne}", data=pdf_agent, file_name=f"Bilan_Agent_{agent_selectionne}.pdf", mime="application/pdf")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-            st.markdown("---")
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             col_l, col_r = st.columns(2)
             with col_l:
                 if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)", hole=0.3), use_container_width=True)
                 if 'banque_nom' in df.columns: st.plotly_chart(px.bar(df[df['banque_nom'] != '']['banque_nom'].value_counts().reset_index(), x='banque_nom', y='count', title="Répartition par Banque"), use_container_width=True)
             with col_r:
-                if 'commune' in df.columns: st.plotly_chart(px.bar(df[df['commune'] != '']['commune'].value_counts().reset_index(), x='count', y='commune', orientation='h', title="Répartition Géographique (Communes)"), use_container_width=True)
+                if 'commune' in df.columns: st.plotly_chart(px.bar(df[df['commune'] != '']['commune'].value_counts().reset_index(), x='count', y='commune', orientation='h', title="Top 10 des Communes").update_yaxes(categoryorder='total ascending'), use_container_width=True)
                 st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='gestionnaire', y='count', title="Charge par Accompagnateur"), use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     with tab2:
-        st.markdown("### 🔑 Liste des Accompagnateurs")
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.markdown("### 🔑 Accès Accompagnateurs")
         try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
         except: df_users = pd.DataFrame()
             
@@ -758,38 +853,40 @@ def page_admin():
                 df_users, use_container_width=True, hide_index=True,
                 column_config={"id": None, "identifiant": st.column_config.TextColumn("Identifiant (Login)", disabled=True), "nom": st.column_config.TextColumn("Nom de l'Accompagnateur", disabled=True), "mot_de_passe": st.column_config.TextColumn("Mot de passe (Modifiable)")}
             )
-            if st.button("💾 Sauvegarder les mots de passe"):
+            if st.button("💾 Sauvegarder les nouveaux mots de passe", type="primary"):
                 session = get_session()
                 try:
                     for _, row in edited_users.iterrows():
                         user_db = session.query(UtilisateurAuth).get(row['id'])
                         if user_db: user_db.mot_de_passe = row['mot_de_passe']
                     session.commit()
-                    st.success("✅ Mots de passe mis à jour !")
+                    st.success("✅ Mots de passe sécurisés avec succès !")
                 except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
                 finally: session.close()
                 
         st.markdown("---")
-        st.markdown("#### ➕ Ajouter un nouvel accompagnateur au système")
+        st.markdown("#### ➕ Recruter un nouvel agent")
         with st.form("ajout_agent"):
             c1, c2 = st.columns(2)
             new_nom = c2.text_input("Nom Complet (ex: BENAISSA Ahmed)")
-            new_id = c1.text_input("Identifiant (ex: benaissa)")
-            submit = st.form_submit_button("Ajouter cet agent")
+            new_id = c1.text_input("Identifiant système (ex: benaissa)")
+            submit = st.form_submit_button("Créer le compte")
             if submit and new_id and new_nom:
                 session = get_session()
                 if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
                     session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), mot_de_passe="angem2026", role="agent"))
                     session.commit()
-                    st.success(f"Agent {new_nom} ajouté avec succès !")
+                    st.success(f"Agent {new_nom} configuré avec succès !")
                     st.rerun()
-                else: st.error("Cet identifiant existe déjà.")
+                else: st.error("Cet identifiant est déjà pris par un autre agent.")
                 session.close()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
-        st.markdown("### 🧹 Nettoyage de la base de données")
-        st.info("Ce bouton efface les dossiers qui ont **le même Identifiant ET la même Date OV**. Il garde les doubles financements (dates différentes).")
-        if st.button("🧼 Lancer le nettoyage des doublons stricts"):
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.markdown("### 🧹 Optimisation de la base")
+        st.info("Utilisez cette fonction si vous pensez avoir importé le même fichier plusieurs fois par erreur. Cela garde les doubles financements intacts.")
+        if st.button("🧼 Lancer l'Algorithme Anti-Doublons"):
             try:
                 df_dup = pd.read_sql_query("SELECT id, identifiant, date_financement FROM dossiers", con=engine)
                 duplicates = df_dup[df_dup.duplicated(subset=['identifiant', 'date_financement'], keep='first')]
@@ -800,23 +897,25 @@ def page_admin():
                     session.query(Dossier).filter(Dossier.id.in_(ids_to_delete)).delete(synchronize_session=False)
                     session.commit()
                     session.close()
-                    st.success(f"✅ {len(ids_to_delete)} vrai(s) doublon(s) supprimé(s) !")
+                    st.success(f"✅ Opération réussie : {len(ids_to_delete)} doublons strict effacés !")
                     st.rerun()
-                else: st.success("Parfait, la base est propre, aucun doublon strict trouvé !")
+                else: st.success("Parfait, la base est parfaitement propre !")
             except Exception as e: st.error(f"Erreur : {e}")
         
         st.markdown("---")
-        st.error("Zone de danger Absolu")
-        if st.button("🗑️ Vider TOUTE la base (Dossiers uniquement)", type="primary"):
+        st.markdown("### 🧨 Remise à Zéro")
+        st.error("Action irréversible : Supprime tous les promoteurs. Les comptes de tes agents seront conservés.")
+        if st.button("🗑️ FORMARTER LA BASE DE DONNÉES", type="primary"):
             session = get_session()
             session.query(Dossier).delete(); session.commit(); session.close()
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- DEMARRAGE DE L'APPLICATION ---
 if st.session_state.user is None: login_page()
 else:
     page = sidebar_menu()
-    if page == "🗂️ Tous les Dossiers": page_gestion(vue_admin=True)
+    if page == "🗂️ Tous les Dossiers" and st.session_state.user['role'] == "admin": page_gestion(vue_admin=True)
     elif page == "🗂️ Mes Dossiers Promoteurs": page_gestion(vue_admin=False)
-    elif page == "📥 Importation des Fichiers": page_import()
-    elif page == "📊 Espace Administrateur": page_admin()
+    elif page == "📥 Intégration Fichiers" and st.session_state.user['role'] == "admin": page_import()
+    elif page == "📊 Espace Direction" and st.session_state.user['role'] == "admin": page_admin()
