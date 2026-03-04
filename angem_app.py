@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v9.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v9.2", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS AVANCÉ ---
 st.markdown("""
@@ -357,15 +357,26 @@ def page_gestion(vue_admin=False):
         st.info("📌 Aucun dossier trouvé. Veuillez importer une base de données.")
         return
 
-    # --- LA CORRECTION MAGIQUE DU FILTRE D'AGENT ---
+    # --- LA CORRECTION MAGIQUE MOT PAR MOT ---
     if not vue_admin: 
-        nom_agent_connecte = " ".join(str(st.session_state.user['nom']).upper().split())
+        nom_agent_connecte = str(st.session_state.user['nom']).upper()
+        # On découpe le nom de l'agent en mots (ex: "SALMI", "HOUDA")
+        mots_agent = set([m for m in re.split(r'\W+', nom_agent_connecte) if len(m) >= 3])
         
         def match_agent_flexible(val):
-            val_clean = " ".join(str(val).upper().split())
+            val_clean = str(val).upper()
             if not val_clean: return False
-            # On cherche si les noms correspondent, même partiellement
-            return val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte
+            
+            # 1. Correspondance classique
+            if val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte:
+                return True
+                
+            # 2. Correspondance mot par mot (Résout le problème de l'ordre inversé ou des prénoms manquants)
+            mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
+            if mots_agent.intersection(mots_val):
+                return True
+                
+            return False
             
         mask_agent = df['gestionnaire'].apply(match_agent_flexible)
         df = df[mask_agent]
