@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v9.2", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v10.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS AVANCÉ ---
 st.markdown("""
@@ -139,6 +139,7 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
+# --- FONCTIONS PDF AMELIOREES (Bilan global, Fiche, Liste rouge, Analytique, par Agent) ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -213,6 +214,7 @@ def generer_bilan_global_pdf(df):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "1. RESUME FINANCIER GLOBAL", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 8, f"Total Dossiers : {len(df)}", ln=True)
     pdf.cell(0, 8, f"Total Credit PNR Engage : {total_pnr:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Total Montant Recouvre : {total_remb:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Total Dette Globale (Reste a payer) : {total_reste:,.0f} DA", ln=True)
@@ -224,21 +226,121 @@ def generer_bilan_global_pdf(df):
     statuts = df['statut_dossier'].value_counts()
     for stat, count in statuts.items():
         pdf.cell(0, 8, f"- {clean_pdf_text(stat)} : {count} dossiers", ln=True)
-    pdf.ln(5)
-    
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "3. DOSSIERS PAR BANQUE", ln=True, border='B')
-    pdf.set_font("Arial", '', 11)
-    if 'banque_nom' in df.columns:
-        banques = df[df['banque_nom'] != '']['banque_nom'].value_counts()
-        for bq, count in banques.items():
-            pdf.cell(0, 8, f"- {clean_pdf_text(bq)} : {count} dossiers", ln=True)
             
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
     return bytes_pdf
 
+def generer_bilan_agent_pdf(df, nom_agent):
+    pdf = FPDF()
+    pdf.add_page()
+    try: pdf.image("logo_angem.png", x=10, y=8, w=30)
+    except: pass
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 20, "BILAN DE PERFORMANCE ACCOMPAGNATEUR", ln=True, align='C')
+    pdf.ln(5)
+    
+    # Filtre intelligent pour l'agent (comme dans l'espace Accompagnateur)
+    nom_clean = str(nom_agent).upper()
+    mots_agent = set([m for m in re.split(r'\W+', nom_clean) if len(m) >= 3])
+    def match_agent(val):
+        val_clean = str(val).upper()
+        if not val_clean: return False
+        if val_clean == nom_clean or nom_clean in val_clean or val_clean in nom_clean: return True
+        mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
+        if mots_agent.intersection(mots_val): return True
+        return False
+    
+    df_agent = df[df['gestionnaire'].apply(match_agent)]
+    
+    total_pnr = df_agent['montant_pnr'].astype(float).sum()
+    total_remb = df_agent['montant_rembourse'].astype(float).sum()
+    taux = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
+
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, f"ACCOMPAGNATEUR : {clean_pdf_text(nom_agent)}", ln=True, border='B')
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 8, f"Nombre total de dossiers en charge : {len(df_agent)}", ln=True)
+    pdf.cell(0, 8, f"Total Credit PNR : {total_pnr:,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"Total Recouvre : {total_remb:,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"Taux de recouvrement global : {taux:.1f}%", ln=True)
+    pdf.ln(5)
+    
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "REPARTITION DES DOSSIERS", ln=True, border='B')
+    pdf.set_font("Arial", '', 11)
+    statuts = df_agent['statut_dossier'].value_counts()
+    for stat, count in statuts.items():
+        pdf.cell(0, 8, f"- {clean_pdf_text(stat)} : {count} dossiers", ln=True)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f: bytes_pdf = f.read()
+    return bytes_pdf
+
+def generer_creances_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    try: pdf.image("logo_angem.png", x=10, y=8, w=30)
+    except: pass
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_text_color(200, 0, 0)
+    pdf.cell(0, 20, "ETAT DES CREANCES EN SOUFFRANCE (LISTE ROUGE)", ln=True, align='C')
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(5)
+    
+    df_retard = df[df.apply(calculer_alerte_bool, axis=1)]
+    
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, f"Total des dossiers en retard ou contentieux : {len(df_retard)}", ln=True)
+    pdf.ln(5)
+    
+    pdf.set_font("Arial", '', 10)
+    for _, row in df_retard.iterrows():
+        # Raccourcir le texte pour éviter que ça ne sorte de la page
+        nom = clean_pdf_text(f"{row['nom']} {row['prenom']}")[:20] 
+        agent = clean_pdf_text(row['gestionnaire'])[:15]
+        txt = f"ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
+        pdf.cell(0, 8, txt, ln=True, border='B')
+        
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f: bytes_pdf = f.read()
+    return bytes_pdf
+
+def generer_analytique_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    try: pdf.image("logo_angem.png", x=10, y=8, w=30)
+    except: pass
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 20, "BILAN ANALYTIQUE (SECTEURS & ZONES)", ln=True, align='C')
+    pdf.ln(5)
+
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "1. REPARTITION PAR SECTEUR D'ACTIVITE", ln=True, border='B')
+    pdf.set_font("Arial", '', 11)
+    if 'secteur' in df.columns:
+        secteurs = df[df['secteur'] != '']['secteur'].value_counts()
+        for sect, count in secteurs.items():
+            pdf.cell(0, 8, f"- {clean_pdf_text(sect)} : {count} dossiers", ln=True)
+    pdf.ln(5)
+
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "2. REPARTITION GEOGRAPHIQUE (Top 10 Communes)", ln=True, border='B')
+    pdf.set_font("Arial", '', 11)
+    if 'commune' in df.columns:
+        communes = df[df['commune'] != '']['commune'].value_counts().head(10)
+        for com, count in communes.items():
+            pdf.cell(0, 8, f"- Commune de {clean_pdf_text(com)} : {count} dossiers", ln=True)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f: bytes_pdf = f.read()
+    return bytes_pdf
+
+# --- UTILITAIRES ---
 def trouver_agent_intelligent(nom_excel, liste_officielle):
     nom_ex = str(nom_excel).strip().upper()
     if not nom_ex or nom_ex == "NAN": return ""
@@ -282,6 +384,7 @@ MAPPING_CONFIG = {
     'prenom': ['PRENOM', 'PRENOMS'],
     'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVIPAR'],
     'commune': ['COMMUNE', 'APC'],
+    'secteur': ['SECTEURDACTIVITE', 'SECTEUR'],
     'banque_nom': ['BANQUEDUPROMOTEUR', 'BANQUECCP', 'BANQUE'],
     'montant_pnr': ['PNR', 'MONTANTPNR29', 'MTDUPNR', 'MONTANT'],
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
@@ -339,12 +442,16 @@ def sidebar_menu():
         st.rerun()
     return choix
 
-def calculer_alerte(row):
+def calculer_alerte_bool(row):
     ech = str(row.get('nb_echeance_tombee', '')).strip()
     if any(char.isdigit() for char in ech):
         num = int(re.search(r'\d+', ech).group())
-        if num > 0: return "🚨 Retard (Échéance)"
-    if row.get('statut_dossier') == "Contentieux / Retard de remboursement": return "🔴 Contentieux"
+        if num > 0: return True
+    if row.get('statut_dossier') == "Contentieux / Retard de remboursement": return True
+    return False
+
+def calculer_alerte_texte(row):
+    if calculer_alerte_bool(row): return "🚨 Retard (Échéance)"
     return "✅ À jour"
 
 def page_gestion(vue_admin=False):
@@ -357,31 +464,22 @@ def page_gestion(vue_admin=False):
         st.info("📌 Aucun dossier trouvé. Veuillez importer une base de données.")
         return
 
-    # --- LA CORRECTION MAGIQUE MOT PAR MOT ---
     if not vue_admin: 
         nom_agent_connecte = str(st.session_state.user['nom']).upper()
-        # On découpe le nom de l'agent en mots (ex: "SALMI", "HOUDA")
         mots_agent = set([m for m in re.split(r'\W+', nom_agent_connecte) if len(m) >= 3])
         
         def match_agent_flexible(val):
             val_clean = str(val).upper()
             if not val_clean: return False
-            
-            # 1. Correspondance classique
-            if val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte:
-                return True
-                
-            # 2. Correspondance mot par mot (Résout le problème de l'ordre inversé ou des prénoms manquants)
+            if val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte: return True
             mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
-            if mots_agent.intersection(mots_val):
-                return True
-                
+            if mots_agent.intersection(mots_val): return True
             return False
             
         mask_agent = df['gestionnaire'].apply(match_agent_flexible)
         df = df[mask_agent]
 
-        dossiers_alerte = df[df['statut_dossier'] == "Contentieux / Retard de remboursement"]
+        dossiers_alerte = df[df.apply(calculer_alerte_bool, axis=1)]
         if not dossiers_alerte.empty:
             st.markdown(f"<div class='alerte-box'><h4>🚨 ALERTES CONTENTIEUX</h4>Vous avez <b>{len(dossiers_alerte)} dossier(s)</b> nécessitant une intervention prioritaire.</div>", unsafe_allow_html=True)
 
@@ -391,7 +489,7 @@ def page_gestion(vue_admin=False):
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
 
-    df_filtered['Alerte'] = df_filtered.apply(calculer_alerte, axis=1)
+    df_filtered['Alerte'] = df_filtered.apply(calculer_alerte_texte, axis=1)
 
     try:
         df_agents_auth = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
@@ -473,7 +571,7 @@ def page_gestion(vue_admin=False):
                             st.success("Note enregistrée dans le dossier !")
                             st.rerun()
                         
-                        st.markdown("<div style='background-color:#f4f6f9; padding:10px; border-radius:5px; height: 250px; overflow-y: auto;'>", unsafe_allow_html=True)
+                        st.markdown("<div style='background-color:#f4f6f9; padding:10px; border-radius:5px; height: 350px; overflow-y: auto;'>", unsafe_allow_html=True)
                         if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
                         else: st.markdown("<i>Aucun historique pour le moment.</i>", unsafe_allow_html=True)
                         st.markdown("</div>", unsafe_allow_html=True)
@@ -484,20 +582,34 @@ def page_gestion(vue_admin=False):
                         st.download_button("📥 Télécharger la Fiche de Suivi (PDF)", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
                         
                         st.markdown("---")
-                        st.markdown("#### 📎 Scanner et Archiver")
-                        nouveau_scan = st.file_uploader("Ajouter PV, CNI, Facture (PDF/JPG)...", type=['pdf', 'jpg', 'png', 'jpeg'])
+                        # --- NOUVEAUTÉ : SCAN CAMERA MOBILE ---
+                        st.markdown("#### 📸 Scanner un document en direct")
+                        st.info("Sur mobile, cela ouvrira votre appareil photo.")
+                        photo_camera = st.camera_input("Prendre la photo")
+                        if photo_camera is not None:
+                            if st.button("Sauvegarder la photo dans le dossier", use_container_width=True):
+                                nom_fichier_propre = f"{dos_db.identifiant}_SCAN_{datetime.now().strftime('%H%M%S')}.jpg"
+                                chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
+                                with open(chemin_sauvegarde, "wb") as f: f.write(photo_camera.getbuffer())
+                                dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
+                                session.commit()
+                                st.success("Photo archivée avec succès !")
+                                st.rerun()
+
+                        st.markdown("---")
+                        st.markdown("#### 📎 Ajouter un fichier (PDF/Image)")
+                        nouveau_scan = st.file_uploader("Sélectionner depuis l'appareil", type=['pdf', 'jpg', 'png', 'jpeg'])
                         if nouveau_scan is not None:
-                            if st.button("Sauvegarder dans le coffre-fort", use_container_width=True):
+                            if st.button("Sauvegarder le fichier", use_container_width=True):
                                 nom_fichier_propre = f"{dos_db.identifiant}_{nouveau_scan.name}"
                                 chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
                                 with open(chemin_sauvegarde, "wb") as f: f.write(nouveau_scan.getbuffer())
-                                docs_actuels = dos_db.documents if dos_db.documents else ""
-                                dos_db.documents = docs_actuels + nom_fichier_propre + "|"
+                                dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
                                 session.commit()
-                                st.success("Document archivé !")
+                                st.success("Fichier archivé !")
                                 st.rerun()
 
-                        st.markdown("**Archives du promoteur :**")
+                        st.markdown("**📂 Archives du promoteur :**")
                         if dos_db.documents:
                             for doc in dos_db.documents.split("|"):
                                 if doc: st.markdown(f"- 🗎 `{doc}`")
@@ -582,18 +694,30 @@ def page_admin():
             c3.metric("Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
             c4.metric("Dette Globale", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
             
-            st.markdown("### 📥 Exportations")
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
+            st.markdown("### 📥 Exportations de Direction")
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
                 pdf_bilan = generer_bilan_global_pdf(df)
-                st.download_button("📄 Télécharger le Rapport PDF de la Direction", data=pdf_bilan, file_name="Rapport_Direction_ANGEM.pdf", mime="application/pdf", type="primary")
-            with col_btn2:
+                st.download_button("📄 Bilan Global ANGEM (PDF)", data=pdf_bilan, file_name="Bilan_Global.pdf", mime="application/pdf", use_container_width=True)
+                pdf_creances = generer_creances_pdf(df)
+                st.download_button("🚨 Liste Rouge des Créances (PDF)", data=pdf_creances, file_name="Liste_Rouge_Retards.pdf", mime="application/pdf", use_container_width=True)
+            with col_b2:
+                pdf_analytique = generer_analytique_pdf(df)
+                st.download_button("📊 Bilan Analytique (Zones/Secteurs)", data=pdf_analytique, file_name="Bilan_Analytique.pdf", mime="application/pdf", use_container_width=True)
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df.drop(columns=['id', 'documents', 'historique_visites'], errors='ignore').to_excel(writer, index=False, sheet_name='Base_ANGEM')
-                st.download_button("📊 Exporter toute la base en Excel", data=buffer.getvalue(), file_name="Base_Complete_ANGEM.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            st.markdown("---")
+                st.download_button("🟢 Exporter toute la base en Excel", data=buffer.getvalue(), file_name="Base_ANGEM.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
+            st.markdown("---")
+            st.markdown("### 👨‍💼 Rapports par Accompagnateur")
+            agents_dispo = [a for a in df['gestionnaire'].unique() if str(a).strip() != ""]
+            agent_selectionne = st.selectbox("Sélectionner un agent :", agents_dispo)
+            if agent_selectionne:
+                pdf_agent = generer_bilan_agent_pdf(df, agent_selectionne)
+                st.download_button(f"📄 Bilan de performance de {agent_selectionne}", data=pdf_agent, file_name=f"Bilan_Agent_{agent_selectionne}.pdf", mime="application/pdf", type="primary")
+
+            st.markdown("---")
             col_l, col_r = st.columns(2)
             with col_l:
                 if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)", hole=0.3), use_container_width=True)
