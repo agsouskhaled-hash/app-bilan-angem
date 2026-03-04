@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v10.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v11.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS AVANCÉ ---
 st.markdown("""
@@ -25,6 +25,7 @@ st.markdown("""
     .doc-box {background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-top: 15px; border: 1px solid #e9ecef;}
     .alerte-box {background-color: #ffcccc; padding: 15px; border-radius: 8px; border-left: 6px solid #ff0000; margin-bottom: 20px;}
     .profil-header {background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 6px solid #28a745; margin-bottom: 20px;}
+    .archive-img {border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -139,7 +140,7 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF AMELIOREES (Bilan global, Fiche, Liste rouge, Analytique, par Agent) ---
+# --- FONCTIONS PDF AMELIOREES ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -241,7 +242,6 @@ def generer_bilan_agent_pdf(df, nom_agent):
     pdf.cell(0, 20, "BILAN DE PERFORMANCE ACCOMPAGNATEUR", ln=True, align='C')
     pdf.ln(5)
     
-    # Filtre intelligent pour l'agent (comme dans l'espace Accompagnateur)
     nom_clean = str(nom_agent).upper()
     mots_agent = set([m for m in re.split(r'\W+', nom_clean) if len(m) >= 3])
     def match_agent(val):
@@ -298,7 +298,6 @@ def generer_creances_pdf(df):
     
     pdf.set_font("Arial", '', 10)
     for _, row in df_retard.iterrows():
-        # Raccourcir le texte pour éviter que ça ne sorte de la page
         nom = clean_pdf_text(f"{row['nom']} {row['prenom']}")[:20] 
         agent = clean_pdf_text(row['gestionnaire'])[:15]
         txt = f"ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
@@ -479,17 +478,24 @@ def page_gestion(vue_admin=False):
         mask_agent = df['gestionnaire'].apply(match_agent_flexible)
         df = df[mask_agent]
 
-        dossiers_alerte = df[df.apply(calculer_alerte_bool, axis=1)]
-        if not dossiers_alerte.empty:
-            st.markdown(f"<div class='alerte-box'><h4>🚨 ALERTES CONTENTIEUX</h4>Vous avez <b>{len(dossiers_alerte)} dossier(s)</b> nécessitant une intervention prioritaire.</div>", unsafe_allow_html=True)
+    # Ajout du diagnostic d'alerte pour filtrage
+    df['Alerte'] = df.apply(calculer_alerte_texte, axis=1)
 
-    search = st.text_input("🔍 Chercher dans le tableau global :", placeholder="Nom, Identifiant, Activité...")
+    # --- NOUVEAU FILTRE RAPIDE CONTENTIEUX ---
+    col_recherche, col_filtre = st.columns([2, 1])
+    with col_recherche:
+        search = st.text_input("🔍 Chercher dans le tableau global :", placeholder="Nom, Identifiant, Activité...")
+    with col_filtre:
+        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+        filtre_alerte = st.radio("🚦 Affichage des dossiers :", ["🟢 Tous", "🚨 Retards & Contentieux"], horizontal=True)
+
     df_filtered = df.copy()
     if search:
         mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
         df_filtered = df_filtered[mask]
-
-    df_filtered['Alerte'] = df_filtered.apply(calculer_alerte_texte, axis=1)
+        
+    if filtre_alerte == "🚨 Retards & Contentieux":
+        df_filtered = df_filtered[df_filtered['Alerte'] != "✅ À jour"]
 
     try:
         df_agents_auth = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
@@ -499,7 +505,7 @@ def page_gestion(vue_admin=False):
     agents_dans_base = df['gestionnaire'].unique().tolist()
     liste_agents_complete = [""] + sorted(list(set(agents_officiels + agents_dans_base)))
 
-    st.success(f"{len(df_filtered)} dossiers affichés.")
+    st.success(f"{len(df_filtered)} dossiers affichés dans cette vue.")
 
     edited_df = st.data_editor(
         df_filtered, use_container_width=True, hide_index=True, height=300,
@@ -533,13 +539,13 @@ def page_gestion(vue_admin=False):
     st.markdown("---")
     
     st.subheader("📂 Fiche Promoteur Numérique")
-    st.markdown("Recherchez un promoteur pour ouvrir son profil, voir son avancement, noter vos visites ou générer son PDF.")
+    st.markdown("Recherchez un promoteur pour ouvrir son profil, voir son avancement, noter vos visites ou gérer ses archives.")
     
     recherche_indiv = st.text_input("🔍 Entrez le Nom, Prénom ou l'Identifiant du promoteur :", placeholder="Ex: Metmar ou 12345...")
     
     if recherche_indiv:
-        mask_indiv = df_filtered.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
-        df_recherche = df_filtered[mask_indiv]
+        mask_indiv = df.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
+        df_recherche = df[mask_indiv] # On cherche dans le df global, pas juste le filtré
         
         if not df_recherche.empty:
             options_dossiers = ["Cliquez pour sélectionner un dossier..."] + df_recherche.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
@@ -577,30 +583,30 @@ def page_gestion(vue_admin=False):
                         st.markdown("</div>", unsafe_allow_html=True)
                     
                     with col_droite:
-                        st.markdown("#### 📄 Documents & Exports")
+                        st.markdown("#### 📄 Fiche Officielle & Scans")
                         pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
                         st.download_button("📥 Télécharger la Fiche de Suivi (PDF)", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
                         
                         st.markdown("---")
-                        # --- NOUVEAUTÉ : SCAN CAMERA MOBILE ---
-                        st.markdown("#### 📸 Scanner un document en direct")
-                        st.info("Sur mobile, cela ouvrira votre appareil photo.")
-                        photo_camera = st.camera_input("Prendre la photo")
-                        if photo_camera is not None:
-                            if st.button("Sauvegarder la photo dans le dossier", use_container_width=True):
-                                nom_fichier_propre = f"{dos_db.identifiant}_SCAN_{datetime.now().strftime('%H%M%S')}.jpg"
-                                chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
-                                with open(chemin_sauvegarde, "wb") as f: f.write(photo_camera.getbuffer())
-                                dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
-                                session.commit()
-                                st.success("Photo archivée avec succès !")
-                                st.rerun()
+                        
+                        # --- NOUVEAUTÉ : APPAREIL PHOTO CACHÉ ---
+                        with st.expander("📸 Ouvrir l'appareil photo pour scanner en direct"):
+                            st.info("Utilisez la caméra de votre téléphone pour numériser un document.")
+                            photo_camera = st.camera_input("Prendre la photo")
+                            if photo_camera is not None:
+                                if st.button("Sauvegarder l'image", use_container_width=True):
+                                    nom_fichier_propre = f"{dos_db.identifiant}_SCAN_{datetime.now().strftime('%H%M%S')}.jpg"
+                                    chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
+                                    with open(chemin_sauvegarde, "wb") as f: f.write(photo_camera.getbuffer())
+                                    dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
+                                    session.commit()
+                                    st.success("Photo archivée avec succès !")
+                                    st.rerun()
 
-                        st.markdown("---")
-                        st.markdown("#### 📎 Ajouter un fichier (PDF/Image)")
-                        nouveau_scan = st.file_uploader("Sélectionner depuis l'appareil", type=['pdf', 'jpg', 'png', 'jpeg'])
+                        st.markdown("#### 📎 Importer un fichier existant")
+                        nouveau_scan = st.file_uploader("Sélectionner (PDF/JPG/PNG)...", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed")
                         if nouveau_scan is not None:
-                            if st.button("Sauvegarder le fichier", use_container_width=True):
+                            if st.button("Archiver ce fichier", use_container_width=True):
                                 nom_fichier_propre = f"{dos_db.identifiant}_{nouveau_scan.name}"
                                 chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
                                 with open(chemin_sauvegarde, "wb") as f: f.write(nouveau_scan.getbuffer())
@@ -608,11 +614,27 @@ def page_gestion(vue_admin=False):
                                 session.commit()
                                 st.success("Fichier archivé !")
                                 st.rerun()
-
-                        st.markdown("**📂 Archives du promoteur :**")
+                                
+                        st.markdown("---")
+                        # --- NOUVEAUTÉ : LA GALERIE D'ARCHIVES ---
+                        st.markdown("**📂 Archives et Documents scannés :**")
                         if dos_db.documents:
-                            for doc in dos_db.documents.split("|"):
-                                if doc: st.markdown(f"- 🗎 `{doc}`")
+                            docs_list = [d for d in dos_db.documents.split("|") if d]
+                            if not docs_list:
+                                st.caption("Dossier vide.")
+                            else:
+                                for doc in docs_list:
+                                    chemin_doc = os.path.join("scans_angem", doc)
+                                    if os.path.exists(chemin_doc):
+                                        if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
+                                            st.image(chemin_doc, caption=doc, use_container_width=True)
+                                        elif doc.lower().endswith('.pdf'):
+                                            with open(chemin_doc, "rb") as f: bytes_doc = f.read()
+                                            st.download_button(f"📥 Voir le PDF : {doc}", data=bytes_doc, file_name=doc, mime="application/pdf", key=doc, use_container_width=True)
+                                        else:
+                                            st.markdown(f"- 🗎 `{doc}`")
+                                    else:
+                                        st.warning(f"⚠️ Fichier introuvable sur le serveur : {doc}")
                         else: st.caption("Dossier vide.")
                         
                     st.markdown("</div>", unsafe_allow_html=True)
