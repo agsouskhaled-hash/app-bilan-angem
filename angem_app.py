@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v9.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v9.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- STYLE CSS AVANCÉ ---
 st.markdown("""
@@ -92,16 +92,13 @@ except: pass
 
 def get_session(): return Session()
 
-# --- INITIALISATION INTELLIGENTE DES 25 ACCOMPAGNATEURS ---
 def init_db_users():
     session = get_session()
     
-    # Vérification de l'Admin
     admin = session.query(UtilisateurAuth).filter_by(identifiant="admin").first()
     if not admin:
         session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"))
     
-    # Ta liste exacte des 25 agents
     noms_agents = [
         "SALMI HOUDA", "BERRABEH DOUADI", "AIT OUAREB AMINA", "METMAR OMAR", 
         "MAASOUM SAIDA", "GUESSMIA ZAHIRA", "MAHREZ MOHAMED", "BELAID FAZIA", 
@@ -114,7 +111,6 @@ def init_db_users():
     for nom in noms_agents:
         agent_existe = session.query(UtilisateurAuth).filter_by(nom=nom).first()
         if not agent_existe:
-            # Créer un identifiant de connexion unique basé sur le premier nom (ex: salmi)
             base_id = nom.split()[0].lower()
             identifiant = base_id
             compteur = 1
@@ -131,17 +127,14 @@ init_db_users()
 
 LISTE_STATUTS = ["Phase dépôt du dossier", "En attente de la commission d'éligibilité", "Accordé / En cours de financement", "En phase d'exploitation", "Contentieux / Retard de remboursement"]
 
-# --- GESTION DU LOGO 100% GARANTIE ---
 def afficher_logo(largeur=250):
     try:
         with open("logo_angem.png", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(f'<div style="text-align: center;"><img src="data:image/png;base64,{encoded_string}" width="{largeur}"></div>', unsafe_allow_html=True)
     except:
-        # Fallback élégant si l'image est introuvable sur le serveur
         st.markdown(f'<div style="text-align: center; color: #1f77b4; font-size: 24px; font-weight: bold; border: 2px solid #1f77b4; padding: 10px; border-radius: 10px; margin-bottom: 20px;">🔵 ANGEM Intra-Service</div>', unsafe_allow_html=True)
 
-# --- FONCTIONS PDF ---
 def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
@@ -364,13 +357,23 @@ def page_gestion(vue_admin=False):
         st.info("📌 Aucun dossier trouvé. Veuillez importer une base de données.")
         return
 
+    # --- LA CORRECTION MAGIQUE DU FILTRE D'AGENT ---
     if not vue_admin: 
-        df = df[df['gestionnaire'] == st.session_state.user['nom']]
+        nom_agent_connecte = " ".join(str(st.session_state.user['nom']).upper().split())
+        
+        def match_agent_flexible(val):
+            val_clean = " ".join(str(val).upper().split())
+            if not val_clean: return False
+            # On cherche si les noms correspondent, même partiellement
+            return val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte
+            
+        mask_agent = df['gestionnaire'].apply(match_agent_flexible)
+        df = df[mask_agent]
+
         dossiers_alerte = df[df['statut_dossier'] == "Contentieux / Retard de remboursement"]
         if not dossiers_alerte.empty:
             st.markdown(f"<div class='alerte-box'><h4>🚨 ALERTES CONTENTIEUX</h4>Vous avez <b>{len(dossiers_alerte)} dossier(s)</b> nécessitant une intervention prioritaire.</div>", unsafe_allow_html=True)
 
-    # --- RECHERCHE ET FILTRE POUR LE TABLEAU ---
     search = st.text_input("🔍 Chercher dans le tableau global :", placeholder="Nom, Identifiant, Activité...")
     df_filtered = df.copy()
     if search:
@@ -420,7 +423,6 @@ def page_gestion(vue_admin=False):
 
     st.markdown("---")
     
-    # --- LA NOUVELLE GESTION INDIVIDUELLE (MOTEUR DE RECHERCHE INTELLIGENT) ---
     st.subheader("📂 Fiche Promoteur Numérique")
     st.markdown("Recherchez un promoteur pour ouvrir son profil, voir son avancement, noter vos visites ou générer son PDF.")
     
@@ -442,7 +444,6 @@ def page_gestion(vue_admin=False):
                 if dos_db:
                     st.markdown("<div class='doc-box'>", unsafe_allow_html=True)
                     
-                    # En-tête du profil
                     taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
                     st.markdown(f"<div class='profil-header'><h3>{dos_db.nom} {dos_db.prenom}</h3><b>ID:</b> {dos_db.identifiant} | <b>Activité:</b> {dos_db.activite} <br><b>Progression du remboursement : {taux*100:.1f}%</b></div>", unsafe_allow_html=True)
                     st.progress(min(taux, 1.0))
