@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v12.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v12.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 # --- LE NOUVEAU STYLE CSS (Design Moderne & Épuré) ---
 st.markdown("""
@@ -915,7 +915,7 @@ def page_admin():
 if st.session_state.user is None: login_page()
 else:
     page = sidebar_menu()
-    if page == "🗂️ Tous les Dossiers" and st.session_state.user['role'] == "admin": page_gestion(vue_admin=True)
+    if page == "🗂️ Base Globale" and st.session_state.user['role'] == "admin": page_gestion(vue_admin=True)
     elif page == "🗂️ Mes Dossiers Promoteurs": page_gestion(vue_admin=False)
     elif page == "📥 Intégration Fichiers" and st.session_state.user['role'] == "admin": page_import()
     elif page == "📊 Espace Direction" and st.session_state.user['role'] == "admin": page_admin()
