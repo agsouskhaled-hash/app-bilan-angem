@@ -14,106 +14,45 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v12.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v13.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
-# --- LE NOUVEAU STYLE CSS (Design Moderne & Épuré) ---
+LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
+
+# --- LE NOUVEAU STYLE CSS ---
 st.markdown("""
 <style>
-    /* Fond de la page global */
-    .stApp {
-        background-color: #f4f7f6;
-    }
-    
-    /* Design des cartes de métriques (Chiffres clés) */
+    .stApp { background-color: #f4f7f6; }
     div[data-testid="metric-container"] {
-        background-color: #ffffff;
-        border: 1px solid #e1e5eb;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-        border-left: 6px solid #1f77b4;
-        transition: transform 0.2s ease-in-out;
+        background-color: #ffffff; border: 1px solid #e1e5eb; padding: 20px;
+        border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        border-left: 6px solid #1f77b4; transition: transform 0.2s ease-in-out;
     }
-    div[data-testid="metric-container"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
-    }
-    
-    /* Boutons modernes */
-    .stButton>button {
-        border-radius: 8px;
-        font-weight: 600;
-        transition: all 0.3s;
-        border: none;
-    }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-    }
-    
-    /* Boîte de Connexion centrale */
+    div[data-testid="metric-container"]:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.08); }
+    .stButton>button { border-radius: 8px; font-weight: 600; transition: all 0.3s; border: none; }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
     .login-container {
-        background: #ffffff;
-        padding: 40px;
-        border-radius: 16px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-        text-align: center;
-        max-width: 400px;
-        margin: 0 auto;
-        border: 1px solid #f0f2f6;
+        background: #ffffff; padding: 40px; border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center;
+        max-width: 400px; margin: 0 auto; border: 1px solid #f0f2f6;
     }
-    
-    /* Cartes génériques pour les sections (Profil, Recherche, etc.) */
     .modern-card {
-        background-color: #ffffff;
-        padding: 25px;
-        border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
-        margin-top: 15px;
-        margin-bottom: 15px;
+        background-color: #ffffff; padding: 25px; border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-top: 15px; margin-bottom: 15px;
         border: 1px solid #e1e5eb;
     }
-    
-    /* Alertes et notifications */
     .alerte-urgente {
-        background-color: #fff3f3;
-        border-left: 6px solid #dc3545;
-        padding: 15px 20px;
-        border-radius: 8px;
-        color: #b02a37;
-        font-weight: bold;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 5px rgba(220,53,69,0.1);
+        background-color: #fff3f3; border-left: 6px solid #dc3545; padding: 15px 20px;
+        border-radius: 8px; color: #b02a37; font-weight: bold; margin-bottom: 20px;
     }
-    
-    /* En-tête du profil promoteur */
     .profil-header {
-        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 6px solid #28a745;
-        margin-bottom: 20px;
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%); padding: 20px;
+        border-radius: 10px; border-left: 6px solid #28a745; margin-bottom: 20px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     }
-    .profil-header h3 {
-        margin-top: 0;
-        color: #2c3e50;
-    }
-    
-    /* Design des onglets */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 20px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding-top: 15px;
-        padding-bottom: 15px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: transparent;
-        border-bottom: 4px solid #1f77b4;
-        font-weight: bold;
-        color: #1f77b4;
-    }
+    .profil-header h3 { margin-top: 0; color: #2c3e50; }
+    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
+    .stTabs [data-baseweb="tab"] { padding-top: 15px; padding-bottom: 15px; }
+    .stTabs [aria-selected="true"] { background-color: transparent; border-bottom: 4px solid #1f77b4; font-weight: bold; color: #1f77b4; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -168,6 +107,7 @@ class UtilisateurAuth(Base):
     nom = Column(String)
     mot_de_passe = Column(String)
     role = Column(String)
+    daira = Column(String, default="") # NOUVEAU: La cellule de l'agent
 
 Base.metadata.create_all(engine)
 
@@ -176,6 +116,7 @@ try:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS statut_dossier VARCHAR DEFAULT 'Phase dépôt du dossier'"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS documents VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS historique_visites VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE utilisateurs_auth ADD COLUMN IF NOT EXISTS daira VARCHAR DEFAULT ''"))
         conn.commit()
 except: pass
 
@@ -225,7 +166,7 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF ---
+# --- FONCTIONS PDF (Identiques) ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -467,6 +408,7 @@ MAPPING_CONFIG = {
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
     'prenom': ['PRENOM', 'PRENOMS'],
     'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVIPAR'],
+    'daira': ['DAIRA'],
     'commune': ['COMMUNE', 'APC'],
     'secteur': ['SECTEURDACTIVITE', 'SECTEUR'],
     'banque_nom': ['BANQUEDUPROMOTEUR', 'BANQUECCP', 'BANQUE'],
@@ -504,14 +446,16 @@ def login_page():
             user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi).first()
             session.close()
             if user_db and user_db.mot_de_passe == password:
-                st.session_state.user = {"identifiant": user_db.identifiant, "nom": user_db.nom, "role": user_db.role}
+                # Ajout de la daira dans la session active
+                st.session_state.user = {"identifiant": user_db.identifiant, "nom": user_db.nom, "role": user_db.role, "daira": user_db.daira}
                 st.rerun()
             else: st.error("Mot de passe incorrect.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 def sidebar_menu():
     afficher_logo(180)
-    st.sidebar.markdown(f"<div style='text-align: center; padding: 10px; background: #e9ecef; border-radius: 8px; margin-bottom: 20px;'><b>👤 {st.session_state.user['nom']}</b></div>", unsafe_allow_html=True)
+    daira_info = f" ({st.session_state.user.get('daira')})" if st.session_state.user.get('daira') else ""
+    st.sidebar.markdown(f"<div style='text-align: center; padding: 10px; background: #e9ecef; border-radius: 8px; margin-bottom: 20px;'><b>👤 {st.session_state.user['nom']}</b><br><small>{daira_info}</small></div>", unsafe_allow_html=True)
     
     options = ["🗂️ Mes Dossiers Promoteurs"]
     if st.session_state.user['role'] == "admin":
@@ -545,189 +489,249 @@ def page_gestion(vue_admin=False):
     if df.empty:
         st.info("📌 La base de données est actuellement vide.")
         return
-
-    if not vue_admin: 
-        nom_agent_connecte = str(st.session_state.user['nom']).upper()
-        mots_agent = set([m for m in re.split(r'\W+', nom_agent_connecte) if len(m) >= 3])
-        def match_agent_flexible(val):
-            val_clean = str(val).upper()
-            if not val_clean: return False
-            if val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte: return True
-            mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
-            if mots_agent.intersection(mots_val): return True
-            return False
-            
-        df = df[df['gestionnaire'].apply(match_agent_flexible)]
-
+        
     df['Alerte'] = df.apply(calculer_alerte_texte, axis=1)
 
-    # -- BLOC RECHERCHE & FILTRES MODERNISÉ --
-    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    col_recherche, col_filtre = st.columns([2, 1])
-    with col_recherche:
-        search = st.text_input("🔍 Recherche rapide :", placeholder="Tapez un nom, un ID, une commune...")
-    with col_filtre:
-        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-        filtre_alerte = st.radio("🚦 Filtrer l'affichage :", ["🟢 Tous les dossiers", "🚨 Contentieux & Retards"], horizontal=True, label_visibility="collapsed")
-    st.markdown("</div>", unsafe_allow_html=True)
+    # --- ARCHITECTURE A ONGLETS POUR L'AGENT (Tableau normal vs Corbeille) ---
+    if not vue_admin:
+        nom_daira = st.session_state.user.get('daira', '')
+        titre_corbeille = f"🔍 Corbeille de la Cellule ({nom_daira})" if nom_daira else "🔍 Corbeille des dossiers non affectés"
+        tab_main, tab_orphan = st.tabs(["🗂️ Mes Dossiers & Profil", titre_corbeille])
+    else:
+        tab_main = st.container()
+        tab_orphan = None
 
-    df_filtered = df.copy()
-    if search:
-        mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
-        df_filtered = df_filtered[mask]
-    if "🚨" in filtre_alerte:
-        df_filtered = df_filtered[df_filtered['Alerte'] != "✅ À jour"]
-        
-    # Alerte visuelle forte si retards
-    if not vue_admin and "🚨" not in filtre_alerte:
-        dossiers_alerte = df[df.apply(calculer_alerte_bool, axis=1)]
-        if not dossiers_alerte.empty:
-            st.markdown(f"<div class='alerte-urgente'>⚠️ Attention : Vous avez {len(dossiers_alerte)} dossier(s) nécessitant une intervention prioritaire ! (Utilisez le filtre ci-dessus)</div>", unsafe_allow_html=True)
+    with tab_main:
+        df_agent = df.copy()
+        if not vue_admin: 
+            nom_agent_connecte = str(st.session_state.user['nom']).upper()
+            mots_agent = set([m for m in re.split(r'\W+', nom_agent_connecte) if len(m) >= 3])
+            def match_agent_flexible(val):
+                val_clean = str(val).upper()
+                if not val_clean: return False
+                if val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte: return True
+                mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
+                if mots_agent.intersection(mots_val): return True
+                return False
+            df_agent = df_agent[df_agent['gestionnaire'].apply(match_agent_flexible)]
 
-    try:
-        df_agents_auth = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
-        agents_officiels = df_agents_auth['nom'].tolist()
-    except: agents_officiels = []
-    
-    agents_dans_base = df['gestionnaire'].unique().tolist()
-    liste_agents_complete = [""] + sorted(list(set(agents_officiels + agents_dans_base)))
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        col_recherche, col_filtre = st.columns([2, 1])
+        with col_recherche:
+            search = st.text_input("🔍 Recherche rapide :", placeholder="Tapez un nom, un ID, une commune...")
+        with col_filtre:
+            st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+            filtre_alerte = st.radio("🚦 Filtrer l'affichage :", ["🟢 Tous les dossiers", "🚨 Contentieux & Retards"], horizontal=True, label_visibility="collapsed")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.caption(f"Affichage de {len(df_filtered)} dossiers.")
+        df_filtered = df_agent.copy()
+        if search:
+            mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
+            df_filtered = df_filtered[mask]
+        if "🚨" in filtre_alerte:
+            df_filtered = df_filtered[df_filtered['Alerte'] != "✅ À jour"]
+            
+        if not vue_admin and "🚨" not in filtre_alerte:
+            dossiers_alerte = df_agent[df_agent.apply(calculer_alerte_bool, axis=1)]
+            if not dossiers_alerte.empty:
+                st.markdown(f"<div class='alerte-urgente'>⚠️ Attention : Vous avez {len(dossiers_alerte)} dossier(s) nécessitant une intervention prioritaire ! (Utilisez le filtre ci-dessus)</div>", unsafe_allow_html=True)
 
-    edited_df = st.data_editor(
-        df_filtered, use_container_width=True, hide_index=True, height=350,
-        column_config={
-            "id": None, "documents": None, "historique_visites": None,
-            "Alerte": st.column_config.TextColumn("Statut", disabled=True),
-            "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
-            "date_financement": st.column_config.TextColumn("Date OV", disabled=True),
-            "nom": "Nom Promoteur",
-            "statut_dossier": st.column_config.SelectboxColumn("Étape Actuelle", options=LISTE_STATUTS, width="medium"),
-            "gestionnaire": st.column_config.SelectboxColumn("Accompagnateur", options=liste_agents_complete, disabled=not vue_admin),
-            "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
-            "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
-        }
-    )
-
-    if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
-        session = get_session()
         try:
-            for _, row in edited_df.iterrows():
-                dos = session.query(Dossier).get(row['id'])
-                if dos:
-                    setattr(dos, 'statut_dossier', row['statut_dossier'])
-                    if vue_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
-            session.commit()
-            st.toast("✅ Base de données mise à jour !")
-            st.rerun()
-        except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
-        finally: session.close()
-
-    # --- LE NOUVEAU PROFIL PROMOTEUR DESIGN ---
-    st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
-    
-    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    recherche_indiv = st.text_input("🔍 Ouvrir un profil spécifique (Entrez Nom ou ID) :", placeholder="Ex: Metmar ou 12345...")
-    
-    if recherche_indiv:
-        mask_indiv = df.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
-        df_recherche = df[mask_indiv]
+            df_agents_auth = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
+            agents_officiels = df_agents_auth['nom'].tolist()
+        except: agents_officiels = []
         
-        if not df_recherche.empty:
-            options_dossiers = ["Sélectionnez un profil..."] + df_recherche.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
-            dossier_choisi = st.selectbox("🎯 Profils trouvés :", options_dossiers)
+        agents_dans_base = df['gestionnaire'].unique().tolist()
+        liste_agents_complete = [""] + sorted(list(set(agents_officiels + agents_dans_base)))
 
-            if dossier_choisi != "Sélectionnez un profil...":
-                identifiant_choisi = dossier_choisi.split(" - ")[0]
-                session = get_session()
-                dos_db = session.query(Dossier).filter_by(identifiant=identifiant_choisi).first()
+        st.caption(f"Affichage de {len(df_filtered)} dossiers.")
+
+        edited_df = st.data_editor(
+            df_filtered, use_container_width=True, hide_index=True, height=350,
+            column_config={
+                "id": None, "documents": None, "historique_visites": None,
+                "Alerte": st.column_config.TextColumn("Statut", disabled=True),
+                "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
+                "date_financement": st.column_config.TextColumn("Date OV", disabled=True),
+                "nom": "Nom Promoteur",
+                "statut_dossier": st.column_config.SelectboxColumn("Étape Actuelle", options=LISTE_STATUTS, width="medium"),
+                "gestionnaire": st.column_config.SelectboxColumn("Accompagnateur", options=liste_agents_complete, disabled=not vue_admin),
+                "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
+                "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
+            }
+        )
+
+        if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
+            session = get_session()
+            try:
+                for _, row in edited_df.iterrows():
+                    dos = session.query(Dossier).get(row['id'])
+                    if dos:
+                        setattr(dos, 'statut_dossier', row['statut_dossier'])
+                        if vue_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
+                session.commit()
+                st.toast("✅ Base de données mise à jour !")
+                st.rerun()
+            except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
+            finally: session.close()
+
+        # --- LE NOUVEAU PROFIL PROMOTEUR DESIGN ---
+        st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
+        
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        recherche_indiv = st.text_input("🔍 Ouvrir un profil spécifique (Entrez Nom ou ID) :", placeholder="Ex: Metmar ou 12345...")
+        
+        if recherche_indiv:
+            # On cherche dans toute la base affichée (df global pour admin, df_agent pour agent)
+            base_recherche = df if vue_admin else df_agent
+            mask_indiv = base_recherche.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
+            df_recherche = base_recherche[mask_indiv]
+            
+            if not df_recherche.empty:
+                options_dossiers = ["Sélectionnez un profil..."] + df_recherche.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
+                dossier_choisi = st.selectbox("🎯 Profils trouvés :", options_dossiers)
+
+                if dossier_choisi != "Sélectionnez un profil...":
+                    identifiant_choisi = dossier_choisi.split(" - ")[0]
+                    session = get_session()
+                    dos_db = session.query(Dossier).filter_by(identifiant=identifiant_choisi).first()
+                    
+                    if dos_db:
+                        taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
+                        st.markdown(f"""
+                        <div class='profil-header'>
+                            <h2 style='margin:0; color:#1f77b4;'>👤 {dos_db.nom} {dos_db.prenom}</h2>
+                            <p style='margin:5px 0 0 0; font-size:16px;'><b>Identifiant:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
+                            <p style='margin:10px 0 5px 0;'><b>Avancement du Remboursement : {taux*100:.1f}%</b></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.progress(min(taux, 1.0))
+                        st.markdown("<br>", unsafe_allow_html=True)
+
+                        col_gauche, col_droite = st.columns([1.3, 1])
+                        
+                        with col_gauche:
+                            st.markdown("### 📝 Rapport de Visite")
+                            nouvelle_note = st.text_area("Rédiger un nouveau compte-rendu :", placeholder="Observations suite à la visite sur site...")
+                            if st.button("Enregistrer ce rapport"):
+                                date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
+                                note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
+                                dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
+                                session.commit()
+                                st.success("Rapport ajouté à l'historique !")
+                                st.rerun()
+                            
+                            st.markdown("**Historique des échanges :**")
+                            st.markdown("<div style='background-color:#ffffff; border:1px solid #e1e5eb; padding:15px; border-radius:8px; height: 300px; overflow-y: auto; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);'>", unsafe_allow_html=True)
+                            if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
+                            else: st.markdown("<span style='color:#888;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
+                            st.markdown("</div>", unsafe_allow_html=True)
+                        
+                        with col_droite:
+                            st.markdown("### 📎 Dossier Administratif")
+                            pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
+                            st.download_button("📄 Éditer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
+                            
+                            st.markdown("---")
+                            
+                            with st.expander("📸 Scanner un document avec l'Appareil Photo"):
+                                st.info("Autorisez l'accès à la caméra pour numériser.")
+                                photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed")
+                                if photo_camera is not None:
+                                    if st.button("💾 Archiver la photo", use_container_width=True):
+                                        nom_fichier_propre = f"{dos_db.identifiant}_SCAN_{datetime.now().strftime('%H%M%S')}.jpg"
+                                        chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
+                                        with open(chemin_sauvegarde, "wb") as f: f.write(photo_camera.getbuffer())
+                                        dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
+                                        session.commit()
+                                        st.success("Scan archivé avec succès !")
+                                        st.rerun()
+
+                            with st.expander("📁 Importer un document existant (PDF/Image)"):
+                                nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed")
+                                if nouveau_scan is not None:
+                                    if st.button("💾 Archiver le fichier", use_container_width=True):
+                                        nom_fichier_propre = f"{dos_db.identifiant}_{nouveau_scan.name}"
+                                        chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
+                                        with open(chemin_sauvegarde, "wb") as f: f.write(nouveau_scan.getbuffer())
+                                        dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
+                                        session.commit()
+                                        st.success("Fichier archivé avec succès !")
+                                        st.rerun()
+                                    
+                            st.markdown("**🗄️ Pièces Jointes du Dossier :**")
+                            if dos_db.documents:
+                                docs_list = [d for d in dos_db.documents.split("|") if d]
+                                if not docs_list:
+                                    st.caption("Aucune pièce jointe.")
+                                else:
+                                    for doc in docs_list:
+                                        chemin_doc = os.path.join("scans_angem", doc)
+                                        if os.path.exists(chemin_doc):
+                                            if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
+                                                st.image(chemin_doc, caption=doc, use_container_width=True)
+                                            elif doc.lower().endswith('.pdf'):
+                                                with open(chemin_doc, "rb") as f: bytes_doc = f.read()
+                                                st.download_button(f"📥 Consulter le PDF : {doc[:15]}...", data=bytes_doc, file_name=doc, mime="application/pdf", key=doc, use_container_width=True)
+                                        else:
+                                            st.caption(f"Fichier hors ligne : {doc}")
+                            else: st.caption("Aucune pièce jointe.")
+                            
+                    session.close()
+            else:
+                st.warning("⚠️ Aucun promoteur ne correspond à cette recherche.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- L'ONGLET MAGIQUE DE LA CORBEILLE (Pour les agents uniquement) ---
+    if tab_orphan is not None:
+        with tab_orphan:
+            agent_daira = st.session_state.user.get('daira', '')
+            if not agent_daira:
+                st.warning("⚠️ L'administrateur ne vous a pas encore assigné à une Cellule d'Accompagnement (Daïra). Veuillez le contacter pour qu'il mette à jour votre profil.")
+            else:
+                st.info(f"💡 Voici la liste des dossiers importés qui n'ont pas encore d'Accompagnateur et qui se trouvent dans les communes de la **Daïra de {agent_daira}**. Cochez ceux qui vous appartiennent pour les récupérer dans votre liste !")
                 
-                if dos_db:
-                    # En-tête colorée du profil
-                    taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
-                    st.markdown(f"""
-                    <div class='profil-header'>
-                        <h2 style='margin:0; color:#1f77b4;'>👤 {dos_db.nom} {dos_db.prenom}</h2>
-                        <p style='margin:5px 0 0 0; font-size:16px;'><b>Identifiant:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
-                        <p style='margin:10px 0 5px 0;'><b>Avancement du Remboursement : {taux*100:.1f}%</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.progress(min(taux, 1.0))
-                    st.markdown("<br>", unsafe_allow_html=True)
-
-                    col_gauche, col_droite = st.columns([1.3, 1])
+                # On cherche les dossiers où le gestionnaire est vide
+                mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
+                # On filtre sur la Daïra de l'agent OU sur sa commune (si la colonne Daïra est vide dans l'Excel)
+                mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
+                
+                df_orphans = df[mask_vide & mask_cellule].copy()
+                
+                if df_orphans.empty:
+                    st.success(f"🎉 Bonne nouvelle ! Il n'y a aucun dossier orphelin dans la Cellule de {agent_daira} pour le moment.")
+                else:
+                    # Ajout d'une fausse colonne checkbox pour le widget
+                    df_orphans["C'est mon dossier !"] = False
                     
-                    with col_gauche:
-                        st.markdown("### 📝 Rapport de Visite")
-                        nouvelle_note = st.text_area("Rédiger un nouveau compte-rendu :", placeholder="Observations suite à la visite sur site...")
-                        if st.button("Enregistrer ce rapport"):
-                            date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
-                            note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
-                            dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
+                    edited_orphans = st.data_editor(
+                        df_orphans,
+                        column_config={
+                            "C'est mon dossier !": st.column_config.CheckboxColumn("S'attribuer", default=False),
+                            "id": None, "documents": None, "historique_visites": None, "Alerte": None
+                        },
+                        disabled=["identifiant", "nom", "prenom", "commune", "activite", "date_financement", "montant_pnr"],
+                        hide_index=True,
+                        use_container_width=True
+                    )
+                    
+                    # On récupère les IDs cochés
+                    ids_a_recuperer = edited_orphans[edited_orphans["C'est mon dossier !"] == True]['id'].tolist()
+                    
+                    if st.button(f"📥 Récupérer ces {len(ids_a_recuperer)} dossier(s) dans mon espace", type="primary", disabled=(len(ids_a_recuperer)==0)):
+                        session = get_session()
+                        nom_agent_connecte = st.session_state.user['nom']
+                        try:
+                            for cid in ids_a_recuperer:
+                                dos = session.query(Dossier).get(cid)
+                                if dos: dos.gestionnaire = nom_agent_connecte
                             session.commit()
-                            st.success("Rapport ajouté à l'historique !")
+                            st.success(f"✅ Félicitations ! {len(ids_a_recuperer)} dossier(s) ajouté(s) à votre espace personnel.")
                             st.rerun()
-                        
-                        st.markdown("**Historique des échanges :**")
-                        st.markdown("<div style='background-color:#ffffff; border:1px solid #e1e5eb; padding:15px; border-radius:8px; height: 300px; overflow-y: auto; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);'>", unsafe_allow_html=True)
-                        if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
-                        else: st.markdown("<span style='color:#888;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    with col_droite:
-                        st.markdown("### 📎 Dossier Administratif")
-                        pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
-                        st.download_button("📄 Éditer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
-                        
-                        st.markdown("---")
-                        
-                        with st.expander("📸 Scanner un document avec l'Appareil Photo"):
-                            st.info("Autorisez l'accès à la caméra pour numériser.")
-                            photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed")
-                            if photo_camera is not None:
-                                if st.button("💾 Archiver la photo", use_container_width=True):
-                                    nom_fichier_propre = f"{dos_db.identifiant}_SCAN_{datetime.now().strftime('%H%M%S')}.jpg"
-                                    chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
-                                    with open(chemin_sauvegarde, "wb") as f: f.write(photo_camera.getbuffer())
-                                    dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
-                                    session.commit()
-                                    st.success("Scan archivé avec succès !")
-                                    st.rerun()
-
-                        with st.expander("📁 Importer un document existant (PDF/Image)"):
-                            nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed")
-                            if nouveau_scan is not None:
-                                if st.button("💾 Archiver le fichier", use_container_width=True):
-                                    nom_fichier_propre = f"{dos_db.identifiant}_{nouveau_scan.name}"
-                                    chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
-                                    with open(chemin_sauvegarde, "wb") as f: f.write(nouveau_scan.getbuffer())
-                                    dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
-                                    session.commit()
-                                    st.success("Fichier archivé avec succès !")
-                                    st.rerun()
-                                
-                        st.markdown("**🗄️ Pièces Jointes du Dossier :**")
-                        if dos_db.documents:
-                            docs_list = [d for d in dos_db.documents.split("|") if d]
-                            if not docs_list:
-                                st.caption("Aucune pièce jointe.")
-                            else:
-                                for doc in docs_list:
-                                    chemin_doc = os.path.join("scans_angem", doc)
-                                    if os.path.exists(chemin_doc):
-                                        if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
-                                            st.image(chemin_doc, caption=doc, use_container_width=True)
-                                        elif doc.lower().endswith('.pdf'):
-                                            with open(chemin_doc, "rb") as f: bytes_doc = f.read()
-                                            st.download_button(f"📥 Consulter le PDF : {doc[:15]}...", data=bytes_doc, file_name=doc, mime="application/pdf", key=doc, use_container_width=True)
-                                    else:
-                                        st.caption(f"Fichier hors ligne : {doc}")
-                        else: st.caption("Aucune pièce jointe.")
-                        
-                session.close()
-        else:
-            st.warning("⚠️ Aucun promoteur ne correspond à cette recherche.")
-    st.markdown("</div>", unsafe_allow_html=True)
+                        except Exception as e:
+                            session.rollback(); st.error(f"Erreur : {e}")
+                        finally:
+                            session.close()
 
 def page_import():
     st.title("📥 Intégration des Données")
@@ -800,7 +804,6 @@ def page_admin():
         
         if df.empty: st.warning("La base de dossiers est vide.")
         else:
-            # -- DESIGN DES METRIQUES ADMIN --
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("📌 Total Dossiers", len(df))
             c2.metric("💰 Crédit PNR Engagé", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
@@ -844,37 +847,47 @@ def page_admin():
 
     with tab2:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.markdown("### 🔑 Accès Accompagnateurs")
-        try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
+        st.markdown("### 🔑 Accès Accompagnateurs et Affectation Cellules")
+        st.info("Ici, vous pouvez modifier les mots de passe et affecter chaque agent à sa Daïra.")
+        try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
         except: df_users = pd.DataFrame()
             
         if not df_users.empty:
             edited_users = st.data_editor(
                 df_users, use_container_width=True, hide_index=True,
-                column_config={"id": None, "identifiant": st.column_config.TextColumn("Identifiant (Login)", disabled=True), "nom": st.column_config.TextColumn("Nom de l'Accompagnateur", disabled=True), "mot_de_passe": st.column_config.TextColumn("Mot de passe (Modifiable)")}
+                column_config={
+                    "id": None, 
+                    "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
+                    "nom": st.column_config.TextColumn("Nom de l'Accompagnateur", disabled=True), 
+                    "daira": st.column_config.SelectboxColumn("Cellule (Daïra)", options=LISTE_DAIRAS),
+                    "mot_de_passe": st.column_config.TextColumn("Mot de passe")
+                }
             )
-            if st.button("💾 Sauvegarder les nouveaux mots de passe", type="primary"):
+            if st.button("💾 Sauvegarder les accès et affectations", type="primary"):
                 session = get_session()
                 try:
                     for _, row in edited_users.iterrows():
                         user_db = session.query(UtilisateurAuth).get(row['id'])
-                        if user_db: user_db.mot_de_passe = row['mot_de_passe']
+                        if user_db: 
+                            user_db.mot_de_passe = row['mot_de_passe']
+                            user_db.daira = row.get('daira', '')
                     session.commit()
-                    st.success("✅ Mots de passe sécurisés avec succès !")
+                    st.success("✅ Affectations et Mots de passe sécurisés avec succès !")
                 except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
                 finally: session.close()
                 
         st.markdown("---")
         st.markdown("#### ➕ Recruter un nouvel agent")
         with st.form("ajout_agent"):
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns([1, 1.5, 1])
+            new_id = c1.text_input("Identifiant (ex: benaissa)")
             new_nom = c2.text_input("Nom Complet (ex: BENAISSA Ahmed)")
-            new_id = c1.text_input("Identifiant système (ex: benaissa)")
+            new_daira = c3.selectbox("Cellule", LISTE_DAIRAS)
             submit = st.form_submit_button("Créer le compte")
             if submit and new_id and new_nom:
                 session = get_session()
                 if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
-                    session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), mot_de_passe="angem2026", role="agent"))
+                    session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
                     session.commit()
                     st.success(f"Agent {new_nom} configuré avec succès !")
                     st.rerun()
