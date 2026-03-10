@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v13.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v13.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -107,7 +107,7 @@ class UtilisateurAuth(Base):
     nom = Column(String)
     mot_de_passe = Column(String)
     role = Column(String)
-    daira = Column(String, default="") # NOUVEAU: La cellule de l'agent
+    daira = Column(String, default="")
 
 Base.metadata.create_all(engine)
 
@@ -166,7 +166,7 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF (Identiques) ---
+# --- FONCTIONS PDF ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -446,7 +446,6 @@ def login_page():
             user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi).first()
             session.close()
             if user_db and user_db.mot_de_passe == password:
-                # Ajout de la daira dans la session active
                 st.session_state.user = {"identifiant": user_db.identifiant, "nom": user_db.nom, "role": user_db.role, "daira": user_db.daira}
                 st.rerun()
             else: st.error("Mot de passe incorrect.")
@@ -492,7 +491,6 @@ def page_gestion(vue_admin=False):
         
     df['Alerte'] = df.apply(calculer_alerte_texte, axis=1)
 
-    # --- ARCHITECTURE A ONGLETS POUR L'AGENT (Tableau normal vs Corbeille) ---
     if not vue_admin:
         nom_daira = st.session_state.user.get('daira', '')
         titre_corbeille = f"🔍 Corbeille de la Cellule ({nom_daira})" if nom_daira else "🔍 Corbeille des dossiers non affectés"
@@ -582,7 +580,6 @@ def page_gestion(vue_admin=False):
         recherche_indiv = st.text_input("🔍 Ouvrir un profil spécifique (Entrez Nom ou ID) :", placeholder="Ex: Metmar ou 12345...")
         
         if recherche_indiv:
-            # On cherche dans toute la base affichée (df global pour admin, df_agent pour agent)
             base_recherche = df if vue_admin else df_agent
             mask_indiv = base_recherche.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
             df_recherche = base_recherche[mask_indiv]
@@ -682,7 +679,7 @@ def page_gestion(vue_admin=False):
                 st.warning("⚠️ Aucun promoteur ne correspond à cette recherche.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- L'ONGLET MAGIQUE DE LA CORBEILLE (Pour les agents uniquement) ---
+    # --- L'ONGLET MAGIQUE DE LA CORBEILLE ---
     if tab_orphan is not None:
         with tab_orphan:
             agent_daira = st.session_state.user.get('daira', '')
@@ -691,19 +688,14 @@ def page_gestion(vue_admin=False):
             else:
                 st.info(f"💡 Voici la liste des dossiers importés qui n'ont pas encore d'Accompagnateur et qui se trouvent dans les communes de la **Daïra de {agent_daira}**. Cochez ceux qui vous appartiennent pour les récupérer dans votre liste !")
                 
-                # On cherche les dossiers où le gestionnaire est vide
                 mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
-                # On filtre sur la Daïra de l'agent OU sur sa commune (si la colonne Daïra est vide dans l'Excel)
                 mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
-                
                 df_orphans = df[mask_vide & mask_cellule].copy()
                 
                 if df_orphans.empty:
                     st.success(f"🎉 Bonne nouvelle ! Il n'y a aucun dossier orphelin dans la Cellule de {agent_daira} pour le moment.")
                 else:
-                    # Ajout d'une fausse colonne checkbox pour le widget
                     df_orphans["C'est mon dossier !"] = False
-                    
                     edited_orphans = st.data_editor(
                         df_orphans,
                         column_config={
@@ -714,8 +706,6 @@ def page_gestion(vue_admin=False):
                         hide_index=True,
                         use_container_width=True
                     )
-                    
-                    # On récupère les IDs cochés
                     ids_a_recuperer = edited_orphans[edited_orphans["C'est mon dossier !"] == True]['id'].tolist()
                     
                     if st.button(f"📥 Récupérer ces {len(ids_a_recuperer)} dossier(s) dans mon espace", type="primary", disabled=(len(ids_a_recuperer)==0)):
@@ -847,8 +837,34 @@ def page_admin():
 
     with tab2:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.markdown("### 🔑 Accès Accompagnateurs et Affectation Cellules")
-        st.info("Ici, vous pouvez modifier les mots de passe et affecter chaque agent à sa Daïra.")
+        st.markdown("### 🔄 Assigner un Accompagnateur à une Cellule")
+        st.info("Utilisez ces deux menus déroulants pour affecter facilement un agent à sa zone.")
+        
+        session = get_session()
+        try:
+            utilisateurs_agents = session.query(UtilisateurAuth).filter_by(role='agent').order_by(UtilisateurAuth.nom).all()
+            noms_agents_form = [a.nom for a in utilisateurs_agents]
+        except:
+            noms_agents_form = []
+            
+        if noms_agents_form:
+            with st.form("affectation_rapide"):
+                col_a, col_d = st.columns(2)
+                agent_a_modifier = col_a.selectbox("👤 Choisir l'accompagnateur :", noms_agents_form)
+                nouvelle_daira = col_d.selectbox("📍 Choisir sa Daïra :", LISTE_DAIRAS)
+                submit_affectation = st.form_submit_button("✅ Valider l'affectation", type="primary")
+                
+                if submit_affectation:
+                    agent_db = session.query(UtilisateurAuth).filter_by(nom=agent_a_modifier).first()
+                    if agent_db:
+                        agent_db.daira = nouvelle_daira
+                        session.commit()
+                        st.success(f"L'agent {agent_a_modifier} est maintenant affecté à la Cellule de {nouvelle_daira} !")
+                        st.rerun()
+        session.close()
+
+        st.markdown("---")
+        st.markdown("### 🔑 Mots de passe et Recrutement")
         try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
         except: df_users = pd.DataFrame()
             
@@ -859,20 +875,18 @@ def page_admin():
                     "id": None, 
                     "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
                     "nom": st.column_config.TextColumn("Nom de l'Accompagnateur", disabled=True), 
-                    "daira": st.column_config.SelectboxColumn("Cellule (Daïra)", options=LISTE_DAIRAS),
+                    "daira": st.column_config.TextColumn("Cellule actuelle", disabled=True),
                     "mot_de_passe": st.column_config.TextColumn("Mot de passe")
                 }
             )
-            if st.button("💾 Sauvegarder les accès et affectations", type="primary"):
+            if st.button("💾 Sauvegarder les mots de passe", type="secondary"):
                 session = get_session()
                 try:
                     for _, row in edited_users.iterrows():
                         user_db = session.query(UtilisateurAuth).get(row['id'])
-                        if user_db: 
-                            user_db.mot_de_passe = row['mot_de_passe']
-                            user_db.daira = row.get('daira', '')
+                        if user_db: user_db.mot_de_passe = row['mot_de_passe']
                     session.commit()
-                    st.success("✅ Affectations et Mots de passe sécurisés avec succès !")
+                    st.success("✅ Mots de passe sécurisés avec succès !")
                 except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
                 finally: session.close()
                 
