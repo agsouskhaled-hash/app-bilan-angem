@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v13.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v14.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -907,6 +907,37 @@ def page_admin():
                     st.rerun()
                 else: st.error("Cet identifiant est déjà pris par un autre agent.")
                 session.close()
+
+        # --- LE NOUVEAU NETTOYEUR DE COMPTES EN DOUBLE ---
+        st.markdown("---")
+        st.markdown("### 🗑️ Supprimer un compte en double")
+        st.warning("Si vous supprimez un agent, ses dossiers ne seront pas effacés. Ils retourneront simplement dans la 'Corbeille' pour être récupérés.")
+        
+        session_suppr = get_session()
+        try:
+            agents_pour_suppr = session_suppr.query(UtilisateurAuth).filter_by(role='agent').order_by(UtilisateurAuth.nom).all()
+            # On ajoute l'ID entre parenthèses pour différencier les vrais doubles
+            options_suppression = [f"{a.nom} (ID: {a.identifiant})" for a in agents_pour_suppr]
+        except:
+            options_suppression = []
+        finally:
+            session_suppr.close()
+            
+        if options_suppression:
+            with st.form("suppression_agent"):
+                agent_a_effacer = st.selectbox("Sélectionnez le compte à supprimer :", options_suppression)
+                btn_suppr = st.form_submit_button("🗑️ Supprimer définitivement")
+                
+                if btn_suppr and agent_a_effacer:
+                    # On découpe le texte pour retrouver l'identifiant caché entre les parenthèses
+                    id_to_delete = agent_a_effacer.split("(ID: ")[1].replace(")", "")
+                    sess_del = get_session()
+                    sess_del.query(UtilisateurAuth).filter_by(identifiant=id_to_delete).delete()
+                    sess_del.commit()
+                    sess_del.close()
+                    st.success("✅ L'agent a été supprimé de la liste !")
+                    st.rerun()
+                    
         st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
