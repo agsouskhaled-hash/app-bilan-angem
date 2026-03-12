@@ -15,7 +15,7 @@ import base64
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v16.0 Cloud", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v17.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -65,10 +65,12 @@ st.markdown("""
     .btn-call:hover, .btn-wa:hover { opacity: 0.8; color: white; }
     .doc-link { display: block; background-color: #f0f2f6; padding: 12px; border-radius: 8px; text-decoration: none; color: #1f77b4; font-weight: bold; margin-bottom: 8px; border: 1px solid #e1e5eb; transition: 0.2s;}
     .doc-link:hover { background-color: #e1e5eb; color: #0d47a1; }
+    .badge-projet { background-color: #1f77b4; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; vertical-align: middle; margin-left: 10px; }
+    .badge-amp { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; vertical-align: middle; margin-left: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONNEXION BASE DE DONNÉES (POSTGRESQL) ---
+# --- CONNEXION BASE DE DONNÉES ---
 Base = declarative_base()
 engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
 Session = sessionmaker(bind=engine)
@@ -77,6 +79,7 @@ class Dossier(Base):
     __tablename__ = 'dossiers'
     id = Column(Integer, primary_key=True)
     identifiant = Column(String, index=True)
+    type_dispositif = Column(String, default="PNR PROJET") # NOUVEAU: PROJET ou AMP
     nom = Column(String)
     prenom = Column(String)
     genre = Column(String)
@@ -128,7 +131,11 @@ try:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS documents VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS historique_visites VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS prochaine_visite VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS type_dispositif VARCHAR DEFAULT 'PNR PROJET'"))
         conn.execute(text("ALTER TABLE utilisateurs_auth ADD COLUMN IF NOT EXISTS daira VARCHAR DEFAULT ''"))
+        
+        # Mise à jour des anciens dossiers pour ne rien perdre
+        conn.execute(text("UPDATE dossiers SET type_dispositif = 'PNR PROJET' WHERE type_dispositif IS NULL OR type_dispositif = ''"))
         conn.commit()
 except: pass
 
@@ -189,7 +196,7 @@ def get_lat_lon(commune_name):
     if "BIRTOUTA" in c or "TESSALA" in c: return 36.6500, 2.9833
     return 36.7300, 3.0000
 
-# --- FONCTIONS PDF ---
+# --- FONCTIONS PDF AMÉLIORÉES POUR AMP ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -198,6 +205,7 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "FICHE OFFICIELLE DE SUIVI PROMOTEUR", ln=True, align='C')
     pdf.ln(5)
+    
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 1. IDENTIFICATION DU PROMOTEUR", border=1, ln=True, fill=True)
@@ -208,16 +216,20 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(95, 8, f" Telephone : {clean_pdf_text(dos.telephone)}", border='R', ln=True)
     pdf.cell(0, 8, f" Adresse : {clean_pdf_text(dos.adresse)} - {clean_pdf_text(dos.commune)}", border='LRB', ln=True)
     pdf.ln(5)
+    
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 2. PROJET & FINANCEMENT", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(95, 8, f" Activite : {clean_pdf_text(dos.activite)}", border='L')
+    pdf.cell(95, 8, f" Dispositif : {clean_pdf_text(dos.type_dispositif)}", border='L')
     pdf.cell(95, 8, f" Statut : {clean_pdf_text(dos.statut_dossier)}", border='R', ln=True)
+    pdf.cell(95, 8, f" Activite : {clean_pdf_text(dos.activite)}", border='L')
+    pdf.cell(95, 8, f" Date de versement (OV) : {clean_pdf_text(dos.date_financement)}", border='R', ln=True)
     pdf.cell(63, 8, f" Credit PNR : {dos.montant_pnr:,.0f} DA", border='L')
     pdf.cell(63, 8, f" Apport : {dos.apport_personnel:,.0f} DA")
     pdf.cell(64, 8, f" Banque : {dos.credit_bancaire:,.0f} DA", border='R', ln=True)
-    pdf.cell(0, 8, f" Date de versement (OV) : {clean_pdf_text(dos.date_financement)}", border='LRB', ln=True)
-    pdf.ln(5)
+    pdf.cell(0, 8, "", border='T', ln=True) # close border
+    pdf.ln(2)
+
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 3. ETAT DU RECOUVREMENT", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
@@ -225,6 +237,7 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(95, 8, f" Reste a Rembourser : {dos.reste_rembourser:,.0f} DA", border='R', ln=True)
     pdf.cell(0, 8, f" Echeances tombees (Retard) : {clean_pdf_text(dos.nb_echeance_tombee)}", border='LRB', ln=True)
     pdf.ln(8)
+    
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 4. NOTES ET RAPPORT DE VISITE", ln=True)
     pdf.set_font("Arial", '', 11)
@@ -250,17 +263,25 @@ def generer_bilan_global_pdf(df):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "BILAN GLOBAL DE DIRECTION - ANGEM", ln=True, align='C')
     pdf.ln(5)
+    
     total_pnr = df['montant_pnr'].astype(float).sum()
     total_remb = df['montant_rembourse'].astype(float).sum()
     total_reste = df['reste_rembourser'].astype(float).sum()
+    
+    df_projet = df[df['type_dispositif'] == 'PNR PROJET']
+    df_amp = df[df['type_dispositif'] == 'PNR AMP']
+
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "1. RESUME FINANCIER GLOBAL", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 8, f"Total Dossiers : {len(df)}", ln=True)
+    pdf.cell(0, 8, f"Total Dossiers : {len(df)} (Projets: {len(df_projet)} | AMP: {len(df_amp)})", ln=True)
     pdf.cell(0, 8, f"Total Credit PNR Engage : {total_pnr:,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"  -> PNR Projets : {df_projet['montant_pnr'].astype(float).sum():,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"  -> PNR AMP : {df_amp['montant_pnr'].astype(float).sum():,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Total Montant Recouvre : {total_remb:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Total Dette Globale (Reste a payer) : {total_reste:,.0f} DA", ln=True)
     pdf.ln(5)
+
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "2. RAPPORT DU PIPELINE DES DOSSIERS", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -293,14 +314,20 @@ def generer_bilan_agent_pdf(df, nom_agent):
     total_pnr = df_agent['montant_pnr'].astype(float).sum()
     total_remb = df_agent['montant_rembourse'].astype(float).sum()
     taux = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
+    
+    df_projet = df_agent[df_agent['type_dispositif'] == 'PNR PROJET']
+    df_amp = df_agent[df_agent['type_dispositif'] == 'PNR AMP']
+
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, f"ACCOMPAGNATEUR : {clean_pdf_text(nom_agent)}", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 8, f"Nombre total de dossiers en charge : {len(df_agent)}", ln=True)
+    pdf.cell(0, 8, f"  -> Projets : {len(df_projet)} dossiers | AMP : {len(df_amp)} dossiers", ln=True)
     pdf.cell(0, 8, f"Total Credit PNR : {total_pnr:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Total Recouvre : {total_remb:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Taux de recouvrement global : {taux:.1f}%", ln=True)
     pdf.ln(5)
+    
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "REPARTITION DES DOSSIERS", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -330,7 +357,8 @@ def generer_creances_pdf(df):
     for _, row in df_retard.iterrows():
         nom = clean_pdf_text(f"{row['nom']} {row['prenom']}")[:20] 
         agent = clean_pdf_text(row['gestionnaire'])[:15]
-        txt = f"ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
+        dispo = "AMP" if row['type_dispositif'] == "PNR AMP" else "PROJET"
+        txt = f"[{dispo}] ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
         pdf.cell(0, 8, txt, ln=True, border='B')
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
@@ -403,6 +431,7 @@ def clean_identifiant(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
+# MISE A JOUR DU MAPPING POUR SUPPORTER LES FICHIERS AMP
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
@@ -418,6 +447,7 @@ MAPPING_CONFIG = {
     'telephone': ['TEL', 'TELEPHONE', 'MOB', 'MOBILE'],
     'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
     'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'], 
+    'activite': ['ACTIVITE', 'PROJET'],
 }
 COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser']
 
@@ -520,18 +550,22 @@ def page_gestion(vue_admin=False):
                     st.dataframe(df_visites[['identifiant', 'nom', 'commune', 'prochaine_visite', 'telephone']], hide_index=True, use_container_width=True)
 
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        col_recherche, col_filtre = st.columns([2, 1])
+        col_recherche, col_dispo, col_filtre = st.columns([2, 1, 1.5])
         with col_recherche:
-            search = st.text_input("🔍 Recherche rapide :", placeholder="Tapez un nom, un ID, une commune...")
+            search = st.text_input("🔍 Recherche rapide :", placeholder="Nom, ID, commune...")
+        with col_dispo:
+            filtre_dispo = st.selectbox("📂 Type :", ["Tous les dispositifs", "PNR PROJET", "PNR AMP"])
         with col_filtre:
             st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-            filtre_alerte = st.radio("🚦 Filtrer l'affichage :", ["🟢 Tous les dossiers", "🚨 Contentieux & Retards"], horizontal=True, label_visibility="collapsed")
+            filtre_alerte = st.radio("🚦 Alertes :", ["🟢 Tous", "🚨 Contentieux & Retards"], horizontal=True, label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
 
         df_filtered = df_agent.copy()
         if search:
             mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
             df_filtered = df_filtered[mask]
+        if filtre_dispo != "Tous les dispositifs":
+            df_filtered = df_filtered[df_filtered['type_dispositif'] == filtre_dispo]
         if "🚨" in filtre_alerte:
             df_filtered = df_filtered[df_filtered['Alerte'] != "✅ À jour"]
             
@@ -554,6 +588,7 @@ def page_gestion(vue_admin=False):
             df_filtered, use_container_width=True, hide_index=True, height=350,
             column_config={
                 "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None,
+                "type_dispositif": st.column_config.TextColumn("Formule", disabled=True),
                 "Alerte": st.column_config.TextColumn("Statut", disabled=True),
                 "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
                 "date_financement": st.column_config.TextColumn("Date OV", disabled=True),
@@ -579,7 +614,7 @@ def page_gestion(vue_admin=False):
             except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
             finally: session.close()
 
-        # --- LE PROFIL PROMOTEUR (AVEC CLOUD STORAGE) ---
+        # --- LE PROFIL PROMOTEUR ---
         st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
         
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -601,10 +636,11 @@ def page_gestion(vue_admin=False):
                     
                     if dos_db:
                         taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
+                        badge_html = f"<span class='badge-projet'>🔵 PROJET</span>" if dos_db.type_dispositif == "PNR PROJET" else f"<span class='badge-amp'>🟢 AMP</span>"
                         st.markdown(f"""
                         <div class='profil-header'>
-                            <h2 style='margin:0; color:#1f77b4;'>👤 {dos_db.nom} {dos_db.prenom}</h2>
-                            <p style='margin:5px 0 0 0; font-size:16px;'><b>Identifiant:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
+                            <h2 style='margin:0; color:#1f77b4;'>👤 {dos_db.nom} {dos_db.prenom} {badge_html}</h2>
+                            <p style='margin:5px 0 0 0; font-size:16px;'><b>Identifiant:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Activité:</b> {dos_db.activite} ({dos_db.commune})</p>
                             <p style='margin:10px 0 5px 0;'><b>Avancement du Remboursement : {taux*100:.1f}%</b></p>
                         </div>
                         """, unsafe_allow_html=True)
@@ -668,7 +704,6 @@ def page_gestion(vue_admin=False):
                             st.download_button("📄 Éditer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
                             
                             st.markdown("---")
-                            # --- UPLOAD CLOUD SUPABASE ---
                             with st.expander("☁️ 📸 Scanner vers le Cloud sécurisé"):
                                 st.info("Vos photos seront sauvegardées à vie sur le serveur ANGEM.")
                                 photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed")
@@ -708,7 +743,6 @@ def page_gestion(vue_admin=False):
                                     st.caption("Aucune pièce jointe.")
                                 else:
                                     for doc in docs_list:
-                                        # Récupération du lien public depuis Supabase
                                         public_url = supabase_client.storage.from_("scans_angem").get_public_url(doc)
                                         if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
                                             st.image(public_url, caption=doc, use_container_width=True)
@@ -768,7 +802,13 @@ def page_import():
     st.title("📥 Intégration des Données")
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.info("L'outil de synchronisation met à jour les montants et crée les nouveaux financements automatiquement (Anti-Doublons activé).")
-    uploaded_file = st.file_uploader("📂 Glissez votre fichier Excel de la Banque ou du Recouvrement", type=['xlsx', 'xls', 'csv'])
+    
+    # NOUVEAU : CHOIX DU DISPOSITIF AVANT IMPORTATION
+    type_import = st.radio("Quel dispositif souhaitez-vous importer ?", ["🔵 PNR PROJET (Création d'activité)", "🟢 PNR AMP (Achat de Matière Première)"], horizontal=True)
+    type_dispo_val = "PNR PROJET" if "PROJET" in type_import else "PNR AMP"
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    uploaded_file = st.file_uploader(f"📂 Glissez votre fichier Excel pour {type_dispo_val}", type=['xlsx', 'xls', 'csv'])
     if uploaded_file and st.button("🚀 Lancer l'Intégration Globale", type="primary"):
         session = get_session()
         try:
@@ -776,7 +816,7 @@ def page_import():
             agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
             agents_noms = [a.nom for a in agents_db]
 
-            with st.status("Analyse et fusion en cours...", expanded=True) as status:
+            with st.status(f"Analyse et fusion en cours (Mode : {type_dispo_val})...", expanded=True) as status:
                 count_add, count_upd = 0, 0
                 for s_name, df_raw in xl.items():
                     df_raw = df_raw.fillna('')
@@ -806,6 +846,9 @@ def page_import():
                         ident = data.get('identifiant', '')
                         date_fin = data.get('date_financement', '')
                         if not ident: continue
+
+                        # Application de l'étiquette PROJET ou AMP
+                        data['type_dispositif'] = type_dispo_val
 
                         exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
                         if not exist and date_fin != "":
@@ -841,6 +884,7 @@ def page_admin():
             c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
             c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
             
+            # --- CARTOGRAPHIE ---
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("<h4 style='color:#2c3e50;'>🗺️ Cartographie des Dossiers & Contentieux</h4>", unsafe_allow_html=True)
             df_map = df.copy()
@@ -865,8 +909,9 @@ def page_admin():
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             col_l, col_r = st.columns(2)
             with col_l:
-                if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)", hole=0.3), use_container_width=True)
-                if 'banque_nom' in df.columns: st.plotly_chart(px.bar(df[df['banque_nom'] != '']['banque_nom'].value_counts().reset_index(), x='banque_nom', y='count', title="Répartition par Banque"), use_container_width=True)
+                # NOUVEAU GRAPHIQUE POUR AMP VS PROJET
+                if 'type_dispositif' in df.columns: st.plotly_chart(px.pie(df, names='type_dispositif', title="Répartition PROJET / AMP", hole=0.3, color_discrete_sequence=['#1f77b4', '#28a745']), use_container_width=True)
+                if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)"), use_container_width=True)
             with col_r:
                 if 'commune' in df.columns: st.plotly_chart(px.bar(df[df['commune'] != '']['commune'].value_counts().reset_index(), x='count', y='commune', orientation='h', title="Top 10 des Communes").update_yaxes(categoryorder='total ascending'), use_container_width=True)
                 st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='gestionnaire', y='count', title="Charge par Accompagnateur"), use_container_width=True)
@@ -885,7 +930,7 @@ def page_admin():
                 st.download_button("🗺️ Bilan Analytique par Zone (PDF)", data=pdf_analytique, file_name="Bilan_Analytique.pdf", mime="application/pdf", use_container_width=True)
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df.drop(columns=['id', 'documents', 'historique_visites'], errors='ignore').to_excel(writer, index=False, sheet_name='Base_ANGEM')
+                    df.drop(columns=['id', 'documents', 'historique_visites', 'prochaine_visite'], errors='ignore').to_excel(writer, index=False, sheet_name='Base_ANGEM')
                 st.download_button("🟢 Sauvegarde Complète (Excel)", data=buffer.getvalue(), file_name="Base_ANGEM.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
             st.markdown("---")
