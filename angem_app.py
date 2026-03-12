@@ -12,13 +12,19 @@ import tempfile
 import io
 from datetime import datetime
 import base64
+from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v15.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v16.0 Cloud", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
-# --- LE NOUVEAU STYLE CSS ---
+# --- CONNEXION CLOUD SUPABASE (STORAGE) ---
+SUPABASE_URL = "https://greyjhgiytajxpvucbrk.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyZXlqaGdpeXRhanhwdnVjYnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMTU0MjksImV4cCI6MjA4NzU5MTQyOX0.jCNan1Y1hvfGog6Zcu8Rr8d5PkeFRFvipAGGB09ztxo"
+supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# --- LE STYLE CSS ---
 st.markdown("""
 <style>
     .stApp { background-color: #f4f7f6; }
@@ -57,12 +63,12 @@ st.markdown("""
     .btn-call { background-color: #007bff; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; }
     .btn-wa { background-color: #25D366; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; }
     .btn-call:hover, .btn-wa:hover { opacity: 0.8; color: white; }
+    .doc-link { display: block; background-color: #f0f2f6; padding: 12px; border-radius: 8px; text-decoration: none; color: #1f77b4; font-weight: bold; margin-bottom: 8px; border: 1px solid #e1e5eb; transition: 0.2s;}
+    .doc-link:hover { background-color: #e1e5eb; color: #0d47a1; }
 </style>
 """, unsafe_allow_html=True)
 
-if not os.path.exists("scans_angem"): os.makedirs("scans_angem")
-
-# --- CONNEXION BASE DE DONNÉES ---
+# --- CONNEXION BASE DE DONNÉES (POSTGRESQL) ---
 Base = declarative_base()
 engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
 Session = sessionmaker(bind=engine)
@@ -103,7 +109,7 @@ class Dossier(Base):
     statut_dossier = Column(String, default="Phase dépôt du dossier")
     documents = Column(String, default="") 
     historique_visites = Column(String, default="") 
-    prochaine_visite = Column(String, default="") # NOUVEAU: Agenda
+    prochaine_visite = Column(String, default="")
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -181,10 +187,9 @@ def get_lat_lon(commune_name):
     if "BIR MOURAD RAIS" in c or "BIR MOURAD" in c: return 36.7333, 3.0500
     if "BOUZAREAH" in c or "BEN AKNOUN" in c: return 36.7833, 3.0167
     if "BIRTOUTA" in c or "TESSALA" in c: return 36.6500, 2.9833
-    # Coordonnées par défaut (Centre Alger)
     return 36.7300, 3.0000
 
-# --- FONCTIONS PDF (identiques) ---
+# --- FONCTIONS PDF ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -509,7 +514,6 @@ def page_gestion(vue_admin=False):
                 return False
             df_agent = df_agent[df_agent['gestionnaire'].apply(match_agent_flexible)]
 
-            # --- NOUVEAUTÉ : L'AGENDA INTELLIGENT ---
             df_visites = df_agent[df_agent['prochaine_visite'].str.strip() != ''].copy()
             if not df_visites.empty:
                 with st.expander(f"🗓️ Mon Agenda : {len(df_visites)} visite(s) programmée(s)", expanded=True):
@@ -575,7 +579,7 @@ def page_gestion(vue_admin=False):
             except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
             finally: session.close()
 
-        # --- LE PROFIL PROMOTEUR ---
+        # --- LE PROFIL PROMOTEUR (AVEC CLOUD STORAGE) ---
         st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
         
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -606,7 +610,6 @@ def page_gestion(vue_admin=False):
                         """, unsafe_allow_html=True)
                         st.progress(min(taux, 1.0))
                         
-                        # --- NOUVEAUTÉ : BOUTONS D'ACTION APPEL & WHATSAPP ---
                         tel_brut = str(dos_db.telephone).strip()
                         if tel_brut and len(tel_brut) >= 9:
                             tel_clean = re.sub(r'\D', '', tel_brut)
@@ -625,7 +628,6 @@ def page_gestion(vue_admin=False):
                         col_gauche, col_droite = st.columns([1.3, 1])
                         
                         with col_gauche:
-                            # --- NOUVEAUTÉ : AGENDA & PLANIFICATION ---
                             st.markdown("### 🗓️ Agenda : Planifier une visite")
                             col_d1, col_d2 = st.columns([2,1])
                             date_visite = col_d1.date_input("Date prévue :")
@@ -649,7 +651,7 @@ def page_gestion(vue_admin=False):
                                 date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
                                 note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
                                 dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
-                                dos_db.prochaine_visite = "" # Efface la visite prévue une fois le rapport fait
+                                dos_db.prochaine_visite = "" 
                                 session.commit()
                                 st.success("Rapport ajouté à l'historique !")
                                 st.rerun()
@@ -666,47 +668,52 @@ def page_gestion(vue_admin=False):
                             st.download_button("📄 Éditer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
                             
                             st.markdown("---")
-                            with st.expander("📸 Scanner un document avec l'Appareil Photo"):
-                                st.info("Autorisez l'accès à la caméra pour numériser.")
+                            # --- UPLOAD CLOUD SUPABASE ---
+                            with st.expander("☁️ 📸 Scanner vers le Cloud sécurisé"):
+                                st.info("Vos photos seront sauvegardées à vie sur le serveur ANGEM.")
                                 photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed")
                                 if photo_camera is not None:
-                                    if st.button("💾 Archiver la photo", use_container_width=True):
-                                        nom_fichier_propre = f"{dos_db.identifiant}_SCAN_{datetime.now().strftime('%H%M%S')}.jpg"
-                                        chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
-                                        with open(chemin_sauvegarde, "wb") as f: f.write(photo_camera.getbuffer())
-                                        dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
-                                        session.commit()
-                                        st.success("Scan archivé avec succès !")
-                                        st.rerun()
+                                    if st.button("☁️ Envoyer sur le Cloud", use_container_width=True):
+                                        file_bytes = photo_camera.getvalue()
+                                        nom_fichier = f"{dos_db.identifiant}_SCAN_{int(datetime.now().timestamp())}.jpg"
+                                        try:
+                                            supabase_client.storage.from_("scans_angem").upload(file=file_bytes, path=nom_fichier, file_options={"content-type": "image/jpeg"})
+                                            dos_db.documents = (dos_db.documents or "") + nom_fichier + "|"
+                                            session.commit()
+                                            st.success("✅ Photo archivée sur le Cloud avec succès !")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erreur de connexion au Cloud : {e}")
 
-                            with st.expander("📁 Importer un document existant (PDF/Image)"):
+                            with st.expander("☁️ 📁 Importer un document (PDF/Image)"):
                                 nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed")
                                 if nouveau_scan is not None:
-                                    if st.button("💾 Archiver le fichier", use_container_width=True):
-                                        nom_fichier_propre = f"{dos_db.identifiant}_{nouveau_scan.name}"
-                                        chemin_sauvegarde = os.path.join("scans_angem", nom_fichier_propre)
-                                        with open(chemin_sauvegarde, "wb") as f: f.write(nouveau_scan.getbuffer())
-                                        dos_db.documents = (dos_db.documents or "") + nom_fichier_propre + "|"
-                                        session.commit()
-                                        st.success("Fichier archivé avec succès !")
-                                        st.rerun()
+                                    if st.button("☁️ Envoyer le fichier sur le Cloud", use_container_width=True):
+                                        file_bytes = nouveau_scan.getvalue()
+                                        nom_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', nouveau_scan.name)
+                                        nom_fichier = f"{dos_db.identifiant}_{int(datetime.now().timestamp())}_{nom_safe}"
+                                        try:
+                                            supabase_client.storage.from_("scans_angem").upload(file=file_bytes, path=nom_fichier, file_options={"content-type": nouveau_scan.type})
+                                            dos_db.documents = (dos_db.documents or "") + nom_fichier + "|"
+                                            session.commit()
+                                            st.success("✅ Fichier archivé sur le Cloud avec succès !")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erreur de connexion au Cloud : {e}")
                                     
-                            st.markdown("**🗄️ Pièces Jointes du Dossier :**")
+                            st.markdown("**🗄️ Archives Cloud du Dossier :**")
                             if dos_db.documents:
                                 docs_list = [d for d in dos_db.documents.split("|") if d]
                                 if not docs_list:
                                     st.caption("Aucune pièce jointe.")
                                 else:
                                     for doc in docs_list:
-                                        chemin_doc = os.path.join("scans_angem", doc)
-                                        if os.path.exists(chemin_doc):
-                                            if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
-                                                st.image(chemin_doc, caption=doc, use_container_width=True)
-                                            elif doc.lower().endswith('.pdf'):
-                                                with open(chemin_doc, "rb") as f: bytes_doc = f.read()
-                                                st.download_button(f"📥 Consulter le PDF : {doc[:15]}...", data=bytes_doc, file_name=doc, mime="application/pdf", key=doc, use_container_width=True)
+                                        # Récupération du lien public depuis Supabase
+                                        public_url = supabase_client.storage.from_("scans_angem").get_public_url(doc)
+                                        if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
+                                            st.image(public_url, caption=doc, use_container_width=True)
                                         else:
-                                            st.caption(f"Fichier local supprimé : {doc}")
+                                            st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Consulter le document PDF</a>", unsafe_allow_html=True)
                             else: st.caption("Aucune pièce jointe.")
                             
                     session.close()
@@ -834,7 +841,6 @@ def page_admin():
             c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
             c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
             
-            # --- NOUVEAUTÉ : CARTOGRAPHIE ---
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("<h4 style='color:#2c3e50;'>🗺️ Cartographie des Dossiers & Contentieux</h4>", unsafe_allow_html=True)
             df_map = df.copy()
