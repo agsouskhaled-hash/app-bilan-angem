@@ -14,7 +14,7 @@ from datetime import datetime
 import base64
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v14.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Intra-Service ANGEM v15.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -53,6 +53,10 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 20px; }
     .stTabs [data-baseweb="tab"] { padding-top: 15px; padding-bottom: 15px; }
     .stTabs [aria-selected="true"] { background-color: transparent; border-bottom: 4px solid #1f77b4; font-weight: bold; color: #1f77b4; }
+    .action-btn-container { display: flex; gap: 10px; margin-top: 10px; margin-bottom: 20px; }
+    .btn-call { background-color: #007bff; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; }
+    .btn-wa { background-color: #25D366; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; }
+    .btn-call:hover, .btn-wa:hover { opacity: 0.8; color: white; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -99,6 +103,7 @@ class Dossier(Base):
     statut_dossier = Column(String, default="Phase dépôt du dossier")
     documents = Column(String, default="") 
     historique_visites = Column(String, default="") 
+    prochaine_visite = Column(String, default="") # NOUVEAU: Agenda
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -116,6 +121,7 @@ try:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS statut_dossier VARCHAR DEFAULT 'Phase dépôt du dossier'"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS documents VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS historique_visites VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS prochaine_visite VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE utilisateurs_auth ADD COLUMN IF NOT EXISTS daira VARCHAR DEFAULT ''"))
         conn.commit()
 except: pass
@@ -166,7 +172,19 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF ---
+# --- COORDONNÉES GPS POUR CARTOGRAPHIE ---
+def get_lat_lon(commune_name):
+    c = str(commune_name).upper().strip()
+    if "ZÉRALDA" in c or "ZERALDA" in c or "STAOUELI" in c: return 36.7115, 2.8425
+    if "CHÉRAGA" in c or "CHERAGA" in c or "AIN BENIAN" in c: return 36.7667, 2.9500
+    if "DRARIA" in c or "BABA HASSEN" in c: return 36.7167, 2.9833
+    if "BIR MOURAD RAIS" in c or "BIR MOURAD" in c: return 36.7333, 3.0500
+    if "BOUZAREAH" in c or "BEN AKNOUN" in c: return 36.7833, 3.0167
+    if "BIRTOUTA" in c or "TESSALA" in c: return 36.6500, 2.9833
+    # Coordonnées par défaut (Centre Alger)
+    return 36.7300, 3.0000
+
+# --- FONCTIONS PDF (identiques) ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -175,7 +193,6 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "FICHE OFFICIELLE DE SUIVI PROMOTEUR", ln=True, align='C')
     pdf.ln(5)
-    
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 1. IDENTIFICATION DU PROMOTEUR", border=1, ln=True, fill=True)
@@ -186,7 +203,6 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(95, 8, f" Telephone : {clean_pdf_text(dos.telephone)}", border='R', ln=True)
     pdf.cell(0, 8, f" Adresse : {clean_pdf_text(dos.adresse)} - {clean_pdf_text(dos.commune)}", border='LRB', ln=True)
     pdf.ln(5)
-    
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 2. PROJET & FINANCEMENT", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
@@ -197,7 +213,6 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(64, 8, f" Banque : {dos.credit_bancaire:,.0f} DA", border='R', ln=True)
     pdf.cell(0, 8, f" Date de versement (OV) : {clean_pdf_text(dos.date_financement)}", border='LRB', ln=True)
     pdf.ln(5)
-
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 3. ETAT DU RECOUVREMENT", border=1, ln=True, fill=True)
     pdf.set_font("Arial", '', 11)
@@ -205,7 +220,6 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(95, 8, f" Reste a Rembourser : {dos.reste_rembourser:,.0f} DA", border='R', ln=True)
     pdf.cell(0, 8, f" Echeances tombees (Retard) : {clean_pdf_text(dos.nb_echeance_tombee)}", border='LRB', ln=True)
     pdf.ln(8)
-    
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 4. NOTES ET RAPPORT DE VISITE", ln=True)
     pdf.set_font("Arial", '', 11)
@@ -215,11 +229,9 @@ def generer_fiche_promoteur_pdf(dos):
             if note.strip(): pdf.cell(0, 6, clean_pdf_text(note), ln=True)
     pdf.ln(5)
     for _ in range(5): pdf.cell(0, 8, ".............................................................................................................................................................", ln=True)
-    
     pdf.ln(10)
     pdf.cell(95, 8, " Signature de l'Accompagnateur :", align='C')
     pdf.cell(95, 8, " Cachet de l'Agence :", align='C', ln=True)
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -233,11 +245,9 @@ def generer_bilan_global_pdf(df):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "BILAN GLOBAL DE DIRECTION - ANGEM", ln=True, align='C')
     pdf.ln(5)
-    
     total_pnr = df['montant_pnr'].astype(float).sum()
     total_remb = df['montant_rembourse'].astype(float).sum()
     total_reste = df['reste_rembourser'].astype(float).sum()
-    
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "1. RESUME FINANCIER GLOBAL", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -246,14 +256,12 @@ def generer_bilan_global_pdf(df):
     pdf.cell(0, 8, f"Total Montant Recouvre : {total_remb:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Total Dette Globale (Reste a payer) : {total_reste:,.0f} DA", ln=True)
     pdf.ln(5)
-
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "2. RAPPORT DU PIPELINE DES DOSSIERS", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
     statuts = df['statut_dossier'].value_counts()
     for stat, count in statuts.items():
         pdf.cell(0, 8, f"- {clean_pdf_text(stat)} : {count} dossiers", ln=True)
-            
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -267,7 +275,6 @@ def generer_bilan_agent_pdf(df, nom_agent):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "BILAN DE PERFORMANCE ACCOMPAGNATEUR", ln=True, align='C')
     pdf.ln(5)
-    
     nom_clean = str(nom_agent).upper()
     mots_agent = set([m for m in re.split(r'\W+', nom_clean) if len(m) >= 3])
     def match_agent(val):
@@ -277,13 +284,10 @@ def generer_bilan_agent_pdf(df, nom_agent):
         mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
         if mots_agent.intersection(mots_val): return True
         return False
-    
     df_agent = df[df['gestionnaire'].apply(match_agent)]
-    
     total_pnr = df_agent['montant_pnr'].astype(float).sum()
     total_remb = df_agent['montant_rembourse'].astype(float).sum()
     taux = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
-
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, f"ACCOMPAGNATEUR : {clean_pdf_text(nom_agent)}", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -292,14 +296,12 @@ def generer_bilan_agent_pdf(df, nom_agent):
     pdf.cell(0, 8, f"Total Recouvre : {total_remb:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Taux de recouvrement global : {taux:.1f}%", ln=True)
     pdf.ln(5)
-    
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "REPARTITION DES DOSSIERS", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
     statuts = df_agent['statut_dossier'].value_counts()
     for stat, count in statuts.items():
         pdf.cell(0, 8, f"- {clean_pdf_text(stat)} : {count} dossiers", ln=True)
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -315,20 +317,16 @@ def generer_creances_pdf(df):
     pdf.cell(0, 20, "ETAT DES CREANCES EN SOUFFRANCE", ln=True, align='C')
     pdf.set_text_color(0, 0, 0)
     pdf.ln(5)
-    
     df_retard = df[df.apply(calculer_alerte_bool, axis=1)]
-    
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, f"Total des dossiers en retard ou contentieux : {len(df_retard)}", ln=True)
     pdf.ln(5)
-    
     pdf.set_font("Arial", '', 10)
     for _, row in df_retard.iterrows():
         nom = clean_pdf_text(f"{row['nom']} {row['prenom']}")[:20] 
         agent = clean_pdf_text(row['gestionnaire'])[:15]
         txt = f"ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
         pdf.cell(0, 8, txt, ln=True, border='B')
-        
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -342,7 +340,6 @@ def generer_analytique_pdf(df):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "BILAN ANALYTIQUE (SECTEURS & ZONES)", ln=True, align='C')
     pdf.ln(5)
-
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "1. REPARTITION PAR SECTEUR D'ACTIVITE", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -351,7 +348,6 @@ def generer_analytique_pdf(df):
         for sect, count in secteurs.items():
             pdf.cell(0, 8, f"- {clean_pdf_text(sect)} : {count} dossiers", ln=True)
     pdf.ln(5)
-
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "2. REPARTITION GEOGRAPHIQUE (Top 10 Communes)", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -359,7 +355,6 @@ def generer_analytique_pdf(df):
         communes = df[df['commune'] != '']['commune'].value_counts().head(10)
         for com, count in communes.items():
             pdf.cell(0, 8, f"- Commune de {clean_pdf_text(com)} : {count} dossiers", ln=True)
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -415,6 +410,7 @@ MAPPING_CONFIG = {
     'montant_pnr': ['PNR', 'MONTANTPNR29', 'MTDUPNR', 'MONTANT'],
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
     'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
+    'telephone': ['TEL', 'TELEPHONE', 'MOB', 'MOBILE'],
     'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
     'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'], 
 }
@@ -493,7 +489,7 @@ def page_gestion(vue_admin=False):
 
     if not vue_admin:
         nom_daira = st.session_state.user.get('daira', '')
-        titre_corbeille = f"🔍 Corbeille de la Cellule ({nom_daira})" if nom_daira else "🔍 Corbeille des dossiers non affectés"
+        titre_corbeille = f"🔍 Corbeille ({nom_daira})" if nom_daira else "🔍 Corbeille dossiers non affectés"
         tab_main, tab_orphan = st.tabs(["🗂️ Mes Dossiers & Profil", titre_corbeille])
     else:
         tab_main = st.container()
@@ -512,6 +508,12 @@ def page_gestion(vue_admin=False):
                 if mots_agent.intersection(mots_val): return True
                 return False
             df_agent = df_agent[df_agent['gestionnaire'].apply(match_agent_flexible)]
+
+            # --- NOUVEAUTÉ : L'AGENDA INTELLIGENT ---
+            df_visites = df_agent[df_agent['prochaine_visite'].str.strip() != ''].copy()
+            if not df_visites.empty:
+                with st.expander(f"🗓️ Mon Agenda : {len(df_visites)} visite(s) programmée(s)", expanded=True):
+                    st.dataframe(df_visites[['identifiant', 'nom', 'commune', 'prochaine_visite', 'telephone']], hide_index=True, use_container_width=True)
 
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         col_recherche, col_filtre = st.columns([2, 1])
@@ -547,7 +549,7 @@ def page_gestion(vue_admin=False):
         edited_df = st.data_editor(
             df_filtered, use_container_width=True, hide_index=True, height=350,
             column_config={
-                "id": None, "documents": None, "historique_visites": None,
+                "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None,
                 "Alerte": st.column_config.TextColumn("Statut", disabled=True),
                 "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
                 "date_financement": st.column_config.TextColumn("Date OV", disabled=True),
@@ -573,7 +575,7 @@ def page_gestion(vue_admin=False):
             except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
             finally: session.close()
 
-        # --- LE NOUVEAU PROFIL PROMOTEUR DESIGN ---
+        # --- LE PROFIL PROMOTEUR ---
         st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
         
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -603,17 +605,51 @@ def page_gestion(vue_admin=False):
                         </div>
                         """, unsafe_allow_html=True)
                         st.progress(min(taux, 1.0))
-                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        # --- NOUVEAUTÉ : BOUTONS D'ACTION APPEL & WHATSAPP ---
+                        tel_brut = str(dos_db.telephone).strip()
+                        if tel_brut and len(tel_brut) >= 9:
+                            tel_clean = re.sub(r'\D', '', tel_brut)
+                            tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
+                            msg_wa = f"Bonjour {clean_pdf_text(dos_db.nom)}, c'est votre accompagnateur ANGEM."
+                            st.markdown(f"""
+                            <div class='action-btn-container'>
+                                <a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler le {tel_brut}</a>
+                                <a href='https://wa.me/{tel_wa}?text={msg_wa}' class='btn-wa' target='_blank'>💬 Envoyer un WhatsApp</a>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.caption("⚠️ Pas de numéro de téléphone valide enregistré pour les raccourcis d'appel.")
 
+                        st.markdown("<br>", unsafe_allow_html=True)
                         col_gauche, col_droite = st.columns([1.3, 1])
                         
                         with col_gauche:
+                            # --- NOUVEAUTÉ : AGENDA & PLANIFICATION ---
+                            st.markdown("### 🗓️ Agenda : Planifier une visite")
+                            col_d1, col_d2 = st.columns([2,1])
+                            date_visite = col_d1.date_input("Date prévue :")
+                            if col_d2.button("💾 Fixer la date"):
+                                dos_db.prochaine_visite = date_visite.strftime("%d/%m/%Y")
+                                session.commit()
+                                st.success("Visite planifiée et ajoutée à votre agenda !")
+                                st.rerun()
+                                
+                            if dos_db.prochaine_visite:
+                                st.info(f"📍 Prochaine visite sur site programmée le : **{dos_db.prochaine_visite}**")
+                                if st.button("❌ Annuler cette visite"):
+                                    dos_db.prochaine_visite = ""
+                                    session.commit()
+                                    st.rerun()
+                                    
+                            st.markdown("---")
                             st.markdown("### 📝 Rapport de Visite")
                             nouvelle_note = st.text_area("Rédiger un nouveau compte-rendu :", placeholder="Observations suite à la visite sur site...")
                             if st.button("Enregistrer ce rapport"):
                                 date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
                                 note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
                                 dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
+                                dos_db.prochaine_visite = "" # Efface la visite prévue une fois le rapport fait
                                 session.commit()
                                 st.success("Rapport ajouté à l'historique !")
                                 st.rerun()
@@ -630,7 +666,6 @@ def page_gestion(vue_admin=False):
                             st.download_button("📄 Éditer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
                             
                             st.markdown("---")
-                            
                             with st.expander("📸 Scanner un document avec l'Appareil Photo"):
                                 st.info("Autorisez l'accès à la caméra pour numériser.")
                                 photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed")
@@ -671,7 +706,7 @@ def page_gestion(vue_admin=False):
                                                 with open(chemin_doc, "rb") as f: bytes_doc = f.read()
                                                 st.download_button(f"📥 Consulter le PDF : {doc[:15]}...", data=bytes_doc, file_name=doc, mime="application/pdf", key=doc, use_container_width=True)
                                         else:
-                                            st.caption(f"Fichier hors ligne : {doc}")
+                                            st.caption(f"Fichier local supprimé : {doc}")
                             else: st.caption("Aucune pièce jointe.")
                             
                     session.close()
@@ -679,7 +714,6 @@ def page_gestion(vue_admin=False):
                 st.warning("⚠️ Aucun promoteur ne correspond à cette recherche.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- L'ONGLET MAGIQUE DE LA CORBEILLE ---
     if tab_orphan is not None:
         with tab_orphan:
             agent_daira = st.session_state.user.get('daira', '')
@@ -700,7 +734,7 @@ def page_gestion(vue_admin=False):
                         df_orphans,
                         column_config={
                             "C'est mon dossier !": st.column_config.CheckboxColumn("S'attribuer", default=False),
-                            "id": None, "documents": None, "historique_visites": None, "Alerte": None
+                            "id": None, "documents": None, "historique_visites": None, "Alerte": None, "prochaine_visite": None
                         },
                         disabled=["identifiant", "nom", "prenom", "commune", "activite", "date_financement", "montant_pnr"],
                         hide_index=True,
@@ -800,6 +834,38 @@ def page_admin():
             c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
             c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
             
+            # --- NOUVEAUTÉ : CARTOGRAPHIE ---
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color:#2c3e50;'>🗺️ Cartographie des Dossiers & Contentieux</h4>", unsafe_allow_html=True)
+            df_map = df.copy()
+            df_map['lat'] = df_map['commune'].apply(lambda x: get_lat_lon(x)[0])
+            df_map['lon'] = df_map['commune'].apply(lambda x: get_lat_lon(x)[1])
+            df_map_grouped = df_map.groupby(['commune', 'lat', 'lon']).size().reset_index(name='Total Dossiers')
+            df_retards = df_map[df_map.apply(calculer_alerte_bool, axis=1)]
+            retards_counts = df_retards.groupby('commune').size().reset_index(name='Dossiers en Retard')
+            df_map_grouped = df_map_grouped.merge(retards_counts, on='commune', how='left').fillna(0)
+            
+            fig_map = px.scatter_mapbox(
+                df_map_grouped, lat="lat", lon="lon", hover_name="commune", 
+                hover_data=["Total Dossiers", "Dossiers en Retard"],
+                size="Total Dossiers", color="Dossiers en Retard",
+                color_continuous_scale="Reds", size_max=40, zoom=9,
+                mapbox_style="carto-positron"
+            )
+            fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+            st.plotly_chart(fig_map, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            col_l, col_r = st.columns(2)
+            with col_l:
+                if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)", hole=0.3), use_container_width=True)
+                if 'banque_nom' in df.columns: st.plotly_chart(px.bar(df[df['banque_nom'] != '']['banque_nom'].value_counts().reset_index(), x='banque_nom', y='count', title="Répartition par Banque"), use_container_width=True)
+            with col_r:
+                if 'commune' in df.columns: st.plotly_chart(px.bar(df[df['commune'] != '']['commune'].value_counts().reset_index(), x='count', y='commune', orientation='h', title="Top 10 des Communes").update_yaxes(categoryorder='total ascending'), use_container_width=True)
+                st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='gestionnaire', y='count', title="Charge par Accompagnateur"), use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("<h4 style='color:#2c3e50;'>📥 Générateur de Rapports (PDF/Excel)</h4>", unsafe_allow_html=True)
             col_b1, col_b2 = st.columns(2)
@@ -823,16 +889,6 @@ def page_admin():
             if agent_selectionne:
                 pdf_agent = generer_bilan_agent_pdf(df, agent_selectionne)
                 st.download_button(f"📄 Télécharger le bilan de {agent_selectionne}", data=pdf_agent, file_name=f"Bilan_Agent_{agent_selectionne}.pdf", mime="application/pdf")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            col_l, col_r = st.columns(2)
-            with col_l:
-                if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)", hole=0.3), use_container_width=True)
-                if 'banque_nom' in df.columns: st.plotly_chart(px.bar(df[df['banque_nom'] != '']['banque_nom'].value_counts().reset_index(), x='banque_nom', y='count', title="Répartition par Banque"), use_container_width=True)
-            with col_r:
-                if 'commune' in df.columns: st.plotly_chart(px.bar(df[df['commune'] != '']['commune'].value_counts().reset_index(), x='count', y='commune', orientation='h', title="Top 10 des Communes").update_yaxes(categoryorder='total ascending'), use_container_width=True)
-                st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='gestionnaire', y='count', title="Charge par Accompagnateur"), use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
     with tab2:
@@ -908,7 +964,6 @@ def page_admin():
                 else: st.error("Cet identifiant est déjà pris par un autre agent.")
                 session.close()
 
-        # --- LE NOUVEAU NETTOYEUR DE COMPTES EN DOUBLE ---
         st.markdown("---")
         st.markdown("### 🗑️ Supprimer un compte en double")
         st.warning("Si vous supprimez un agent, ses dossiers ne seront pas effacés. Ils retourneront simplement dans la 'Corbeille' pour être récupérés.")
@@ -916,7 +971,6 @@ def page_admin():
         session_suppr = get_session()
         try:
             agents_pour_suppr = session_suppr.query(UtilisateurAuth).filter_by(role='agent').order_by(UtilisateurAuth.nom).all()
-            # On ajoute l'ID entre parenthèses pour différencier les vrais doubles
             options_suppression = [f"{a.nom} (ID: {a.identifiant})" for a in agents_pour_suppr]
         except:
             options_suppression = []
@@ -927,9 +981,7 @@ def page_admin():
             with st.form("suppression_agent"):
                 agent_a_effacer = st.selectbox("Sélectionnez le compte à supprimer :", options_suppression)
                 btn_suppr = st.form_submit_button("🗑️ Supprimer définitivement")
-                
                 if btn_suppr and agent_a_effacer:
-                    # On découpe le texte pour retrouver l'identifiant caché entre les parenthèses
                     id_to_delete = agent_a_effacer.split("(ID: ")[1].replace(")", "")
                     sess_del = get_session()
                     sess_del.query(UtilisateurAuth).filter_by(identifiant=id_to_delete).delete()
@@ -937,7 +989,6 @@ def page_admin():
                     sess_del.close()
                     st.success("✅ L'agent a été supprimé de la liste !")
                     st.rerun()
-                    
         st.markdown("</div>", unsafe_allow_html=True)
 
     with tab3:
