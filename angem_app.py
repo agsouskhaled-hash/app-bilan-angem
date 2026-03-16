@@ -15,7 +15,7 @@ import base64
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Intra-Service v18.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Intra-Service v18.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -24,7 +24,7 @@ SUPABASE_URL = "https://greyjhgiytajxpvucbrk.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyZXlqaGdpeXRhanhwdnVjYnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMTU0MjksImV4cCI6MjA4NzU5MTQyOX0.jCNan1Y1hvfGog6Zcu8Rr8d5PkeFRFvipAGGB09ztxo"
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- LE STYLE CSS ÉPURÉ ---
+# --- LE STYLE CSS ---
 st.markdown("""
 <style>
     .stApp { background-color: #f4f7f6; }
@@ -51,7 +51,6 @@ st.markdown("""
     .doc-link:hover { background-color: #e1e5eb; color: #0d47a1; }
     .badge-projet { background-color: #1f77b4; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; vertical-align: middle; margin-left: 10px; }
     .badge-amp { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; vertical-align: middle; margin-left: 10px; }
-    .search-box { font-size: 20px !important; padding: 15px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -378,16 +377,16 @@ def sidebar_menu():
     st.sidebar.markdown(f"<div style='text-align: center; padding: 10px; background: #e9ecef; border-radius: 8px; margin-bottom: 20px;'><b>👤 {st.session_state.user['nom']}</b><br><small>{daira_info}</small></div>", unsafe_allow_html=True)
     
     options = [
-        "🔍 Recherche Promoteur", 
         "🔵 Mes Dossiers (PROJET)", 
         "🟢 Mes Dossiers (AMP)", 
+        "🔍 Recherche Globale",
         "🗑️ Corbeille Cellule"
     ]
     if st.session_state.user['role'] == "admin":
         options = [
-            "🔍 Recherche Promoteur",
             "🔵 Tous les Dossiers (PROJET)",
             "🟢 Tous les Dossiers (AMP)",
+            "🔍 Recherche Globale",
             "📊 Supervision & Extractions", 
             "⚙️ Équipes & Intégration"
         ]
@@ -399,7 +398,7 @@ def sidebar_menu():
         st.rerun()
     return choix
 
-# --- AFFICHAGE DU PROFIL (RÉUTILISABLE) ---
+# --- AFFICHAGE DU PROFIL COMPLET ---
 def afficher_profil_promoteur(dos_db, session):
     taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
     badge_html = f"<span class='badge-projet'>🔵 PROJET</span>" if dos_db.type_dispositif == "PNR PROJET" else f"<span class='badge-amp'>🟢 AMP</span>"
@@ -483,7 +482,7 @@ def afficher_profil_promoteur(dos_db, session):
                         st.rerun()
                     except Exception as e: st.error(f"Erreur Cloud : {e}")
 
-        with st.expander("☁️ 📁 Importer un document (PDF/Image)"):
+        with st.expander("☁️ 📁 Importer un document"):
             nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed", key=f"file_{dos_db.id}")
             if nouveau_scan is not None:
                 if st.button("☁️ Envoyer le fichier", use_container_width=True, key=f"up_file_{dos_db.id}"):
@@ -511,12 +510,13 @@ def afficher_profil_promoteur(dos_db, session):
                         st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Consulter le document</a>", unsafe_allow_html=True)
         else: st.caption("Aucune pièce jointe.")
 
+
 # --- PAGES DE L'APPLICATION ---
 
 def page_recherche():
-    st.title("🔍 Moteur de Recherche Promoteur")
+    st.title("🔍 Moteur de Recherche Global")
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    recherche = st.text_input("Recherchez un promoteur (Nom, Prénom, Identifiant, Téléphone...) :", placeholder="Tapez ici...", key="main_search")
+    recherche = st.text_input("Chercher un promoteur dans TOUTE la base (Nom, ID, Téléphone...) :", placeholder="Tapez ici...")
     st.markdown("</div>", unsafe_allow_html=True)
 
     if recherche:
@@ -530,7 +530,7 @@ def page_recherche():
             if not df_recherche.empty:
                 st.success(f"🎯 {len(df_recherche)} résultat(s) trouvé(s)")
                 for _, row in df_recherche.iterrows():
-                    with st.expander(f"Ouvrir le dossier de : {row['nom']} {row['prenom']} ({row['identifiant']}) - {row['type_dispositif']}"):
+                    with st.expander(f"Ouvrir le dossier : {row['nom']} {row['prenom']} ({row['identifiant']}) - {row['type_dispositif']}"):
                         session = get_session()
                         dos_db = session.query(Dossier).get(row['id'])
                         if dos_db: afficher_profil_promoteur(dos_db, session)
@@ -549,7 +549,6 @@ def page_dossiers_liste(type_dispo, vue_admin=False):
         st.info("📌 Aucun dossier de ce type dans la base de données.")
         return
 
-    # Attribution de l'agent connecté
     if not vue_admin:
         nom_agent = str(st.session_state.user['nom']).upper()
         mots_agent = set([m for m in re.split(r'\W+', nom_agent) if len(m) >= 3])
@@ -569,7 +568,7 @@ def page_dossiers_liste(type_dispo, vue_admin=False):
             st.dataframe(df_visites[['identifiant', 'nom', 'commune', 'prochaine_visite', 'telephone']], hide_index=True, use_container_width=True)
 
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    filtre_badge = st.radio("Filtrer par état :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True)
+    filtre_badge = st.radio("Filtrer l'affichage du tableau :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     df_filtered = df.copy()
@@ -610,6 +609,30 @@ def page_dossiers_liste(type_dispo, vue_admin=False):
             st.rerun()
         except Exception as e: session.rollback(); st.error(e)
         finally: session.close()
+
+    # LE RETOUR DE LA FICHE PROMOTEUR SOUS LE TABLEAU !
+    st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    recherche_indiv = st.text_input(f"🔍 Ouvrir le profil détaillé d'un promoteur {type_dispo.replace('PNR ', '')} :", placeholder="Tapez son nom ou son ID...")
+    
+    if recherche_indiv:
+        mask_indiv = df.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
+        df_recherche = df[mask_indiv]
+        
+        if not df_recherche.empty:
+            options_dossiers = ["Sélectionnez un profil..."] + df_recherche.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']}", axis=1).tolist()
+            dossier_choisi = st.selectbox("🎯 Profils trouvés :", options_dossiers)
+
+            if dossier_choisi != "Sélectionnez un profil...":
+                identifiant_choisi = dossier_choisi.split(" - ")[0]
+                session = get_session()
+                dos_db = session.query(Dossier).filter_by(identifiant=identifiant_choisi).first()
+                if dos_db:
+                    afficher_profil_promoteur(dos_db, session)
+                session.close()
+        else:
+            st.warning("⚠️ Aucun promoteur ne correspond à cette recherche dans ce tableau.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def page_corbeille():
     st.title("🗑️ Corbeille des Dossiers Non Affectés")
@@ -815,7 +838,7 @@ if st.session_state.user is None: login_page()
 else:
     page = sidebar_menu()
     
-    if page == "🔍 Recherche Promoteur": page_recherche()
+    if page == "🔍 Recherche Globale": page_recherche()
     elif page == "🔵 Mes Dossiers (PROJET)": page_dossiers_liste("PNR PROJET", vue_admin=False)
     elif page == "🟢 Mes Dossiers (AMP)": page_dossiers_liste("PNR AMP", vue_admin=False)
     elif page == "🔵 Tous les Dossiers (PROJET)": page_dossiers_liste("PNR PROJET", vue_admin=True)
