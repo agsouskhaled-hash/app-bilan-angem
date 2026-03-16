@@ -15,7 +15,7 @@ import base64
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Intra-Service ANGEM v17.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Intra-Service v18.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -24,7 +24,7 @@ SUPABASE_URL = "https://greyjhgiytajxpvucbrk.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyZXlqaGdpeXRhanhwdnVjYnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMTU0MjksImV4cCI6MjA4NzU5MTQyOX0.jCNan1Y1hvfGog6Zcu8Rr8d5PkeFRFvipAGGB09ztxo"
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- LE STYLE CSS ---
+# --- LE STYLE CSS ÉPURÉ ---
 st.markdown("""
 <style>
     .stApp { background-color: #f4f7f6; }
@@ -33,32 +33,16 @@ st.markdown("""
         border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02);
         border-left: 6px solid #1f77b4; transition: transform 0.2s ease-in-out;
     }
-    div[data-testid="metric-container"]:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.08); }
-    .stButton>button { border-radius: 8px; font-weight: 600; transition: all 0.3s; border: none; }
-    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
-    .login-container {
-        background: #ffffff; padding: 40px; border-radius: 16px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center;
-        max-width: 400px; margin: 0 auto; border: 1px solid #f0f2f6;
-    }
     .modern-card {
         background-color: #ffffff; padding: 25px; border-radius: 12px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-top: 15px; margin-bottom: 15px;
         border: 1px solid #e1e5eb;
-    }
-    .alerte-urgente {
-        background-color: #fff3f3; border-left: 6px solid #dc3545; padding: 15px 20px;
-        border-radius: 8px; color: #b02a37; font-weight: bold; margin-bottom: 20px;
     }
     .profil-header {
         background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%); padding: 20px;
         border-radius: 10px; border-left: 6px solid #28a745; margin-bottom: 20px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     }
-    .profil-header h3 { margin-top: 0; color: #2c3e50; }
-    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
-    .stTabs [data-baseweb="tab"] { padding-top: 15px; padding-bottom: 15px; }
-    .stTabs [aria-selected="true"] { background-color: transparent; border-bottom: 4px solid #1f77b4; font-weight: bold; color: #1f77b4; }
     .action-btn-container { display: flex; gap: 10px; margin-top: 10px; margin-bottom: 20px; }
     .btn-call { background-color: #007bff; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; }
     .btn-wa { background-color: #25D366; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; }
@@ -67,6 +51,7 @@ st.markdown("""
     .doc-link:hover { background-color: #e1e5eb; color: #0d47a1; }
     .badge-projet { background-color: #1f77b4; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; vertical-align: middle; margin-left: 10px; }
     .badge-amp { background-color: #28a745; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; vertical-align: middle; margin-left: 10px; }
+    .search-box { font-size: 20px !important; padding: 15px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -79,7 +64,7 @@ class Dossier(Base):
     __tablename__ = 'dossiers'
     id = Column(Integer, primary_key=True)
     identifiant = Column(String, index=True)
-    type_dispositif = Column(String, default="PNR PROJET") # NOUVEAU: PROJET ou AMP
+    type_dispositif = Column(String, default="PNR PROJET") 
     nom = Column(String)
     prenom = Column(String)
     genre = Column(String)
@@ -127,15 +112,8 @@ Base.metadata.create_all(engine)
 
 try:
     with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS statut_dossier VARCHAR DEFAULT 'Phase dépôt du dossier'"))
-        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS documents VARCHAR DEFAULT ''"))
-        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS historique_visites VARCHAR DEFAULT ''"))
-        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS prochaine_visite VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS type_dispositif VARCHAR DEFAULT 'PNR PROJET'"))
-        conn.execute(text("ALTER TABLE utilisateurs_auth ADD COLUMN IF NOT EXISTS daira VARCHAR DEFAULT ''"))
-        
-        # Mise à jour des anciens dossiers pour ne rien perdre
-        conn.execute(text("UPDATE dossiers SET type_dispositif = 'PNR PROJET' WHERE type_dispositif IS NULL OR type_dispositif = ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS apport_personnel FLOAT DEFAULT 0.0"))
         conn.commit()
 except: pass
 
@@ -146,32 +124,12 @@ def init_db_users():
     admin = session.query(UtilisateurAuth).filter_by(identifiant="admin").first()
     if not admin:
         session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"))
-    
-    noms_agents = [
-        "SALMI HOUDA", "BERRABEH DOUADI", "AIT OUAREB AMINA", "METMAR OMAR", 
-        "MAASOUM SAIDA", "GUESSMIA ZAHIRA", "MAHREZ MOHAMED", "BELAID FAZIA", 
-        "BEN AICHE MOUNIRA", "MEDJEDOUB AMEL", "BOUCHAREB MOUNIA", "MERAKEB FAIZA", 
-        "MILOUDI AMEL", "BERROUANE SAMIRA", "MEDJHOUM RAOUIA", "FELFOUL SAMIRA", 
-        "SAHNOUNE IMENE", "BOULAHLIB REDOUANE", "NASRI RYM", "BENSAHNOUN LILA", 
-        "DJAOUDI SARAH", "MECHALIKHE FATMA", "KADRI SIHEM", "TALAMALI IMAD", "TOUAKNI SARAH"
-    ]
-    
-    for nom in noms_agents:
-        if not session.query(UtilisateurAuth).filter_by(nom=nom).first():
-            base_id = nom.split()[0].lower()
-            identifiant = base_id
-            compteur = 1
-            while session.query(UtilisateurAuth).filter_by(identifiant=identifiant).first():
-                identifiant = f"{base_id}{compteur}"
-                compteur += 1
-            session.add(UtilisateurAuth(identifiant=identifiant, nom=nom, mot_de_passe="angem2026", role="agent"))
-    
     session.commit()
     session.close()
 
 init_db_users()
 
-LISTE_STATUTS = ["Phase dépôt du dossier", "En attente de la commission d'éligibilité", "Accordé / En cours de financement", "En phase d'exploitation", "Contentieux / Retard de remboursement"]
+LISTE_STATUTS = ["Phase dépôt du dossier", "En attente de la commission", "Accordé / En cours", "En phase d'exploitation", "Contentieux / Retard"]
 
 def afficher_logo(largeur=250):
     try:
@@ -185,7 +143,6 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- COORDONNÉES GPS POUR CARTOGRAPHIE ---
 def get_lat_lon(commune_name):
     c = str(commune_name).upper().strip()
     if "ZÉRALDA" in c or "ZERALDA" in c or "STAOUELI" in c: return 36.7115, 2.8425
@@ -196,14 +153,14 @@ def get_lat_lon(commune_name):
     if "BIRTOUTA" in c or "TESSALA" in c: return 36.6500, 2.9833
     return 36.7300, 3.0000
 
-# --- FONCTIONS PDF AMÉLIORÉES POUR AMP ---
+# --- FONCTIONS DOSSIERS ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
     try: pdf.image("logo_angem.png", x=10, y=8, w=30)
     except: pass
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 20, "FICHE OFFICIELLE DE SUIVI PROMOTEUR", ln=True, align='C')
+    pdf.cell(0, 20, "DOSSIER OFFICIEL DU PROMOTEUR", ln=True, align='C')
     pdf.ln(5)
     
     pdf.set_fill_color(240, 240, 240)
@@ -227,7 +184,7 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(63, 8, f" Credit PNR : {dos.montant_pnr:,.0f} DA", border='L')
     pdf.cell(63, 8, f" Apport : {dos.apport_personnel:,.0f} DA")
     pdf.cell(64, 8, f" Banque : {dos.credit_bancaire:,.0f} DA", border='R', ln=True)
-    pdf.cell(0, 8, "", border='T', ln=True) # close border
+    pdf.cell(0, 8, "", border='T', ln=True) 
     pdf.ln(2)
 
     pdf.set_font("Arial", 'B', 12)
@@ -255,13 +212,13 @@ def generer_fiche_promoteur_pdf(dos):
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
     return bytes_pdf
 
-def generer_bilan_global_pdf(df):
+def generer_rapport_global_pdf(df):
     pdf = FPDF()
     pdf.add_page()
     try: pdf.image("logo_angem.png", x=10, y=8, w=30)
     except: pass
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 20, "BILAN GLOBAL DE DIRECTION - ANGEM", ln=True, align='C')
+    pdf.cell(0, 20, "ETAT GLOBAL DES DOSSIERS - ANGEM", ln=True, align='C')
     pdf.ln(5)
     
     total_pnr = df['montant_pnr'].astype(float).sum()
@@ -272,7 +229,7 @@ def generer_bilan_global_pdf(df):
     df_amp = df[df['type_dispositif'] == 'PNR AMP']
 
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "1. RESUME FINANCIER GLOBAL", ln=True, border='B')
+    pdf.cell(0, 10, "1. VOLUME DES DOSSIERS", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 8, f"Total Dossiers : {len(df)} (Projets: {len(df_projet)} | AMP: {len(df_amp)})", ln=True)
     pdf.cell(0, 8, f"Total Credit PNR Engage : {total_pnr:,.0f} DA", ln=True)
@@ -282,58 +239,6 @@ def generer_bilan_global_pdf(df):
     pdf.cell(0, 8, f"Total Dette Globale (Reste a payer) : {total_reste:,.0f} DA", ln=True)
     pdf.ln(5)
 
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "2. RAPPORT DU PIPELINE DES DOSSIERS", ln=True, border='B')
-    pdf.set_font("Arial", '', 11)
-    statuts = df['statut_dossier'].value_counts()
-    for stat, count in statuts.items():
-        pdf.cell(0, 8, f"- {clean_pdf_text(stat)} : {count} dossiers", ln=True)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        pdf.output(tmp.name)
-        with open(tmp.name, "rb") as f: bytes_pdf = f.read()
-    return bytes_pdf
-
-def generer_bilan_agent_pdf(df, nom_agent):
-    pdf = FPDF()
-    pdf.add_page()
-    try: pdf.image("logo_angem.png", x=10, y=8, w=30)
-    except: pass
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 20, "BILAN DE PERFORMANCE ACCOMPAGNATEUR", ln=True, align='C')
-    pdf.ln(5)
-    nom_clean = str(nom_agent).upper()
-    mots_agent = set([m for m in re.split(r'\W+', nom_clean) if len(m) >= 3])
-    def match_agent(val):
-        val_clean = str(val).upper()
-        if not val_clean: return False
-        if val_clean == nom_clean or nom_clean in val_clean or val_clean in nom_clean: return True
-        mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
-        if mots_agent.intersection(mots_val): return True
-        return False
-    df_agent = df[df['gestionnaire'].apply(match_agent)]
-    total_pnr = df_agent['montant_pnr'].astype(float).sum()
-    total_remb = df_agent['montant_rembourse'].astype(float).sum()
-    taux = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
-    
-    df_projet = df_agent[df_agent['type_dispositif'] == 'PNR PROJET']
-    df_amp = df_agent[df_agent['type_dispositif'] == 'PNR AMP']
-
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, f"ACCOMPAGNATEUR : {clean_pdf_text(nom_agent)}", ln=True, border='B')
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(0, 8, f"Nombre total de dossiers en charge : {len(df_agent)}", ln=True)
-    pdf.cell(0, 8, f"  -> Projets : {len(df_projet)} dossiers | AMP : {len(df_amp)} dossiers", ln=True)
-    pdf.cell(0, 8, f"Total Credit PNR : {total_pnr:,.0f} DA", ln=True)
-    pdf.cell(0, 8, f"Total Recouvre : {total_remb:,.0f} DA", ln=True)
-    pdf.cell(0, 8, f"Taux de recouvrement global : {taux:.1f}%", ln=True)
-    pdf.ln(5)
-    
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "REPARTITION DES DOSSIERS", ln=True, border='B')
-    pdf.set_font("Arial", '', 11)
-    statuts = df_agent['statut_dossier'].value_counts()
-    for stat, count in statuts.items():
-        pdf.cell(0, 8, f"- {clean_pdf_text(stat)} : {count} dossiers", ln=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -346,7 +251,7 @@ def generer_creances_pdf(df):
     except: pass
     pdf.set_font("Arial", 'B', 16)
     pdf.set_text_color(200, 0, 0)
-    pdf.cell(0, 20, "ETAT DES CREANCES EN SOUFFRANCE", ln=True, align='C')
+    pdf.cell(0, 20, "EXTRACTION DES DOSSIERS EN SOUFFRANCE", ln=True, align='C')
     pdf.set_text_color(0, 0, 0)
     pdf.ln(5)
     df_retard = df[df.apply(calculer_alerte_bool, axis=1)]
@@ -360,34 +265,6 @@ def generer_creances_pdf(df):
         dispo = "AMP" if row['type_dispositif'] == "PNR AMP" else "PROJET"
         txt = f"[{dispo}] ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
         pdf.cell(0, 8, txt, ln=True, border='B')
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        pdf.output(tmp.name)
-        with open(tmp.name, "rb") as f: bytes_pdf = f.read()
-    return bytes_pdf
-
-def generer_analytique_pdf(df):
-    pdf = FPDF()
-    pdf.add_page()
-    try: pdf.image("logo_angem.png", x=10, y=8, w=30)
-    except: pass
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 20, "BILAN ANALYTIQUE (SECTEURS & ZONES)", ln=True, align='C')
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "1. REPARTITION PAR SECTEUR D'ACTIVITE", ln=True, border='B')
-    pdf.set_font("Arial", '', 11)
-    if 'secteur' in df.columns:
-        secteurs = df[df['secteur'] != '']['secteur'].value_counts()
-        for sect, count in secteurs.items():
-            pdf.cell(0, 8, f"- {clean_pdf_text(sect)} : {count} dossiers", ln=True)
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "2. REPARTITION GEOGRAPHIQUE (Top 10 Communes)", ln=True, border='B')
-    pdf.set_font("Arial", '', 11)
-    if 'commune' in df.columns:
-        communes = df[df['commune'] != '']['commune'].value_counts().head(10)
-        for com, count in communes.items():
-            pdf.cell(0, 8, f"- Commune de {clean_pdf_text(com)} : {count} dossiers", ln=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -431,17 +308,17 @@ def clean_identifiant(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
-# MISE A JOUR DU MAPPING POUR SUPPORTER LES FICHIERS AMP
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
     'prenom': ['PRENOM', 'PRENOMS'],
     'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVIPAR'],
     'daira': ['DAIRA'],
-    'commune': ['COMMUNE', 'APC'],
+    'commune': ['COMMUNE', 'APC', 'ADRESSE'],
     'secteur': ['SECTEURDACTIVITE', 'SECTEUR'],
     'banque_nom': ['BANQUEDUPROMOTEUR', 'BANQUECCP', 'BANQUE'],
     'montant_pnr': ['PNR', 'MONTANTPNR29', 'MTDUPNR', 'MONTANT'],
+    'apport_personnel': ['APPORT', 'APPORTPERSONNEL'], 
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
     'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
     'telephone': ['TEL', 'TELEPHONE', 'MOB', 'MOBILE'],
@@ -449,7 +326,20 @@ MAPPING_CONFIG = {
     'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'], 
     'activite': ['ACTIVITE', 'PROJET'],
 }
-COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser']
+COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel']
+
+def calculer_alerte_bool(row):
+    ech = str(row.get('nb_echeance_tombee', '')).strip()
+    if any(char.isdigit() for char in ech):
+        num = int(re.search(r'\d+', ech).group())
+        if num > 0: return True
+    if row.get('statut_dossier') == "Contentieux / Retard": return True
+    return False
+
+def get_badge(row):
+    if calculer_alerte_bool(row): return "🔴 Retard"
+    elif float(row.get('reste_rembourser', 0)) > 0: return "🟡 En cours"
+    else: return "🟢 À jour"
 
 if 'user' not in st.session_state: st.session_state.user = None
 
@@ -459,7 +349,7 @@ def login_page():
         st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.markdown("<div class='login-container'>", unsafe_allow_html=True)
         afficher_logo(220)
-        st.markdown("<h3 style='color: #2c3e50; margin-bottom: 25px;'>Portail Intra-Service</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color: #2c3e50; margin-bottom: 25px;'>Portail Dossiers ANGEM</h3>", unsafe_allow_html=True)
         
         session = get_session()
         try:
@@ -487,9 +377,20 @@ def sidebar_menu():
     daira_info = f" ({st.session_state.user.get('daira')})" if st.session_state.user.get('daira') else ""
     st.sidebar.markdown(f"<div style='text-align: center; padding: 10px; background: #e9ecef; border-radius: 8px; margin-bottom: 20px;'><b>👤 {st.session_state.user['nom']}</b><br><small>{daira_info}</small></div>", unsafe_allow_html=True)
     
-    options = ["🗂️ Mes Dossiers Promoteurs"]
+    options = [
+        "🔍 Recherche Promoteur", 
+        "🔵 Mes Dossiers (PROJET)", 
+        "🟢 Mes Dossiers (AMP)", 
+        "🗑️ Corbeille Cellule"
+    ]
     if st.session_state.user['role'] == "admin":
-        options = ["📊 Espace Direction", "🗂️ Base Globale", "📥 Intégration Fichiers"]
+        options = [
+            "🔍 Recherche Promoteur",
+            "🔵 Tous les Dossiers (PROJET)",
+            "🟢 Tous les Dossiers (AMP)",
+            "📊 Supervision & Extractions", 
+            "⚙️ Équipes & Intégration"
+        ]
         
     choix = st.sidebar.radio("Navigation Menu", options, label_visibility="collapsed")
     st.sidebar.markdown("---")
@@ -498,584 +399,427 @@ def sidebar_menu():
         st.rerun()
     return choix
 
-def calculer_alerte_bool(row):
-    ech = str(row.get('nb_echeance_tombee', '')).strip()
-    if any(char.isdigit() for char in ech):
-        num = int(re.search(r'\d+', ech).group())
-        if num > 0: return True
-    if row.get('statut_dossier') == "Contentieux / Retard de remboursement": return True
-    return False
-
-def calculer_alerte_texte(row):
-    if calculer_alerte_bool(row): return "🚨 Retard (Échéance)"
-    return "✅ À jour"
-
-def page_gestion(vue_admin=False):
-    st.title("🗂️ Espace de Suivi & Gestion")
+# --- AFFICHAGE DU PROFIL (RÉUTILISABLE) ---
+def afficher_profil_promoteur(dos_db, session):
+    taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
+    badge_html = f"<span class='badge-projet'>🔵 PROJET</span>" if dos_db.type_dispositif == "PNR PROJET" else f"<span class='badge-amp'>🟢 AMP</span>"
+    st.markdown(f"""
+    <div class='profil-header'>
+        <h2 style='margin:0; color:#1f77b4;'>👤 {dos_db.nom} {dos_db.prenom} {badge_html}</h2>
+        <p style='margin:5px 0 0 0; font-size:16px;'><b>Identifiant:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Activité:</b> {dos_db.activite} ({dos_db.commune})</p>
+        <p style='margin:10px 0 5px 0;'><b>Remboursement ({dos_db.montant_rembourse:,.0f} / {dos_db.montant_pnr:,.0f} DA) : {taux*100:.1f}%</b></p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.progress(min(taux, 1.0))
     
-    try: df = pd.read_sql_query("SELECT * FROM dossiers ORDER BY id DESC", con=engine).fillna('')
-    except: df = pd.DataFrame()
-
-    if df.empty:
-        st.info("📌 La base de données est actuellement vide.")
-        return
-        
-    df['Alerte'] = df.apply(calculer_alerte_texte, axis=1)
-
-    if not vue_admin:
-        nom_daira = st.session_state.user.get('daira', '')
-        titre_corbeille = f"🔍 Corbeille ({nom_daira})" if nom_daira else "🔍 Corbeille dossiers non affectés"
-        tab_main, tab_orphan = st.tabs(["🗂️ Mes Dossiers & Profil", titre_corbeille])
+    tel_brut = str(dos_db.telephone).strip()
+    if tel_brut and len(tel_brut) >= 9:
+        tel_clean = re.sub(r'\D', '', tel_brut)
+        tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
+        msg_wa = f"Bonjour {clean_pdf_text(dos_db.nom)}, c'est votre accompagnateur ANGEM."
+        st.markdown(f"""
+        <div class='action-btn-container'>
+            <a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler le {tel_brut}</a>
+            <a href='https://wa.me/{tel_wa}?text={msg_wa}' class='btn-wa' target='_blank'>💬 Envoyer un WhatsApp</a>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        tab_main = st.container()
-        tab_orphan = None
+        st.caption("⚠️ Pas de numéro de téléphone valide enregistré.")
 
-    with tab_main:
-        df_agent = df.copy()
-        if not vue_admin: 
-            nom_agent_connecte = str(st.session_state.user['nom']).upper()
-            mots_agent = set([m for m in re.split(r'\W+', nom_agent_connecte) if len(m) >= 3])
-            def match_agent_flexible(val):
-                val_clean = str(val).upper()
-                if not val_clean: return False
-                if val_clean == nom_agent_connecte or nom_agent_connecte in val_clean or val_clean in nom_agent_connecte: return True
-                mots_val = set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])
-                if mots_agent.intersection(mots_val): return True
-                return False
-            df_agent = df_agent[df_agent['gestionnaire'].apply(match_agent_flexible)]
-
-            df_visites = df_agent[df_agent['prochaine_visite'].str.strip() != ''].copy()
-            if not df_visites.empty:
-                with st.expander(f"🗓️ Mon Agenda : {len(df_visites)} visite(s) programmée(s)", expanded=True):
-                    st.dataframe(df_visites[['identifiant', 'nom', 'commune', 'prochaine_visite', 'telephone']], hide_index=True, use_container_width=True)
-
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        col_recherche, col_dispo, col_filtre = st.columns([2, 1, 1.5])
-        with col_recherche:
-            search = st.text_input("🔍 Recherche rapide :", placeholder="Nom, ID, commune...")
-        with col_dispo:
-            filtre_dispo = st.selectbox("📂 Type :", ["Tous les dispositifs", "PNR PROJET", "PNR AMP"])
-        with col_filtre:
-            st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-            filtre_alerte = st.radio("🚦 Alertes :", ["🟢 Tous", "🚨 Contentieux & Retards"], horizontal=True, label_visibility="collapsed")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        df_filtered = df_agent.copy()
-        if search:
-            mask = df_filtered.apply(lambda x: x.astype(str).str.contains(search, case=False).any(), axis=1)
-            df_filtered = df_filtered[mask]
-        if filtre_dispo != "Tous les dispositifs":
-            df_filtered = df_filtered[df_filtered['type_dispositif'] == filtre_dispo]
-        if "🚨" in filtre_alerte:
-            df_filtered = df_filtered[df_filtered['Alerte'] != "✅ À jour"]
-            
-        if not vue_admin and "🚨" not in filtre_alerte:
-            dossiers_alerte = df_agent[df_agent.apply(calculer_alerte_bool, axis=1)]
-            if not dossiers_alerte.empty:
-                st.markdown(f"<div class='alerte-urgente'>⚠️ Attention : Vous avez {len(dossiers_alerte)} dossier(s) nécessitant une intervention prioritaire ! (Utilisez le filtre ci-dessus)</div>", unsafe_allow_html=True)
-
-        try:
-            df_agents_auth = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
-            agents_officiels = df_agents_auth['nom'].tolist()
-        except: agents_officiels = []
-        
-        agents_dans_base = df['gestionnaire'].unique().tolist()
-        liste_agents_complete = [""] + sorted(list(set(agents_officiels + agents_dans_base)))
-
-        st.caption(f"Affichage de {len(df_filtered)} dossiers.")
-
-        edited_df = st.data_editor(
-            df_filtered, use_container_width=True, hide_index=True, height=350,
-            column_config={
-                "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None,
-                "type_dispositif": st.column_config.TextColumn("Formule", disabled=True),
-                "Alerte": st.column_config.TextColumn("Statut", disabled=True),
-                "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
-                "date_financement": st.column_config.TextColumn("Date OV", disabled=True),
-                "nom": "Nom Promoteur",
-                "statut_dossier": st.column_config.SelectboxColumn("Étape Actuelle", options=LISTE_STATUTS, width="medium"),
-                "gestionnaire": st.column_config.SelectboxColumn("Accompagnateur", options=liste_agents_complete, disabled=not vue_admin),
-                "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
-                "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
-            }
-        )
-
-        if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
-            session = get_session()
-            try:
-                for _, row in edited_df.iterrows():
-                    dos = session.query(Dossier).get(row['id'])
-                    if dos:
-                        setattr(dos, 'statut_dossier', row['statut_dossier'])
-                        if vue_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
-                session.commit()
-                st.toast("✅ Base de données mise à jour !")
-                st.rerun()
-            except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
-            finally: session.close()
-
-        # --- LE PROFIL PROMOTEUR ---
-        st.markdown("<br><h2 style='color: #2c3e50; border-bottom: 2px solid #1f77b4; padding-bottom: 10px;'>📂 Profil Numérique du Promoteur</h2>", unsafe_allow_html=True)
-        
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        recherche_indiv = st.text_input("🔍 Ouvrir un profil spécifique (Entrez Nom ou ID) :", placeholder="Ex: Metmar ou 12345...")
-        
-        if recherche_indiv:
-            base_recherche = df if vue_admin else df_agent
-            mask_indiv = base_recherche.apply(lambda x: x.astype(str).str.contains(recherche_indiv, case=False).any(), axis=1)
-            df_recherche = base_recherche[mask_indiv]
-            
-            if not df_recherche.empty:
-                options_dossiers = ["Sélectionnez un profil..."] + df_recherche.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']} (OV: {x['date_financement']})", axis=1).tolist()
-                dossier_choisi = st.selectbox("🎯 Profils trouvés :", options_dossiers)
-
-                if dossier_choisi != "Sélectionnez un profil...":
-                    identifiant_choisi = dossier_choisi.split(" - ")[0]
-                    session = get_session()
-                    dos_db = session.query(Dossier).filter_by(identifiant=identifiant_choisi).first()
-                    
-                    if dos_db:
-                        taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
-                        badge_html = f"<span class='badge-projet'>🔵 PROJET</span>" if dos_db.type_dispositif == "PNR PROJET" else f"<span class='badge-amp'>🟢 AMP</span>"
-                        st.markdown(f"""
-                        <div class='profil-header'>
-                            <h2 style='margin:0; color:#1f77b4;'>👤 {dos_db.nom} {dos_db.prenom} {badge_html}</h2>
-                            <p style='margin:5px 0 0 0; font-size:16px;'><b>Identifiant:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Activité:</b> {dos_db.activite} ({dos_db.commune})</p>
-                            <p style='margin:10px 0 5px 0;'><b>Avancement du Remboursement : {taux*100:.1f}%</b></p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        st.progress(min(taux, 1.0))
-                        
-                        tel_brut = str(dos_db.telephone).strip()
-                        if tel_brut and len(tel_brut) >= 9:
-                            tel_clean = re.sub(r'\D', '', tel_brut)
-                            tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
-                            msg_wa = f"Bonjour {clean_pdf_text(dos_db.nom)}, c'est votre accompagnateur ANGEM."
-                            st.markdown(f"""
-                            <div class='action-btn-container'>
-                                <a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler le {tel_brut}</a>
-                                <a href='https://wa.me/{tel_wa}?text={msg_wa}' class='btn-wa' target='_blank'>💬 Envoyer un WhatsApp</a>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.caption("⚠️ Pas de numéro de téléphone valide enregistré pour les raccourcis d'appel.")
-
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        col_gauche, col_droite = st.columns([1.3, 1])
-                        
-                        with col_gauche:
-                            st.markdown("### 🗓️ Agenda : Planifier une visite")
-                            col_d1, col_d2 = st.columns([2,1])
-                            date_visite = col_d1.date_input("Date prévue :")
-                            if col_d2.button("💾 Fixer la date"):
-                                dos_db.prochaine_visite = date_visite.strftime("%d/%m/%Y")
-                                session.commit()
-                                st.success("Visite planifiée et ajoutée à votre agenda !")
-                                st.rerun()
-                                
-                            if dos_db.prochaine_visite:
-                                st.info(f"📍 Prochaine visite sur site programmée le : **{dos_db.prochaine_visite}**")
-                                if st.button("❌ Annuler cette visite"):
-                                    dos_db.prochaine_visite = ""
-                                    session.commit()
-                                    st.rerun()
-                                    
-                            st.markdown("---")
-                            st.markdown("### 📝 Rapport de Visite")
-                            nouvelle_note = st.text_area("Rédiger un nouveau compte-rendu :", placeholder="Observations suite à la visite sur site...")
-                            if st.button("Enregistrer ce rapport"):
-                                date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
-                                note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
-                                dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
-                                dos_db.prochaine_visite = "" 
-                                session.commit()
-                                st.success("Rapport ajouté à l'historique !")
-                                st.rerun()
-                            
-                            st.markdown("**Historique des échanges :**")
-                            st.markdown("<div style='background-color:#ffffff; border:1px solid #e1e5eb; padding:15px; border-radius:8px; height: 300px; overflow-y: auto; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);'>", unsafe_allow_html=True)
-                            if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
-                            else: st.markdown("<span style='color:#888;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
-                            st.markdown("</div>", unsafe_allow_html=True)
-                        
-                        with col_droite:
-                            st.markdown("### 📎 Dossier Administratif")
-                            pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
-                            st.download_button("📄 Éditer la Fiche PDF Officielle", data=pdf_bytes, file_name=f"Fiche_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True)
-                            
-                            st.markdown("---")
-                            with st.expander("☁️ 📸 Scanner vers le Cloud sécurisé"):
-                                st.info("Vos photos seront sauvegardées à vie sur le serveur ANGEM.")
-                                photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed")
-                                if photo_camera is not None:
-                                    if st.button("☁️ Envoyer sur le Cloud", use_container_width=True):
-                                        file_bytes = photo_camera.getvalue()
-                                        nom_fichier = f"{dos_db.identifiant}_SCAN_{int(datetime.now().timestamp())}.jpg"
-                                        try:
-                                            supabase_client.storage.from_("scans_angem").upload(file=file_bytes, path=nom_fichier, file_options={"content-type": "image/jpeg"})
-                                            dos_db.documents = (dos_db.documents or "") + nom_fichier + "|"
-                                            session.commit()
-                                            st.success("✅ Photo archivée sur le Cloud avec succès !")
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erreur de connexion au Cloud : {e}")
-
-                            with st.expander("☁️ 📁 Importer un document (PDF/Image)"):
-                                nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed")
-                                if nouveau_scan is not None:
-                                    if st.button("☁️ Envoyer le fichier sur le Cloud", use_container_width=True):
-                                        file_bytes = nouveau_scan.getvalue()
-                                        nom_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', nouveau_scan.name)
-                                        nom_fichier = f"{dos_db.identifiant}_{int(datetime.now().timestamp())}_{nom_safe}"
-                                        try:
-                                            supabase_client.storage.from_("scans_angem").upload(file=file_bytes, path=nom_fichier, file_options={"content-type": nouveau_scan.type})
-                                            dos_db.documents = (dos_db.documents or "") + nom_fichier + "|"
-                                            session.commit()
-                                            st.success("✅ Fichier archivé sur le Cloud avec succès !")
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erreur de connexion au Cloud : {e}")
-                                    
-                            st.markdown("**🗄️ Archives Cloud du Dossier :**")
-                            if dos_db.documents:
-                                docs_list = [d for d in dos_db.documents.split("|") if d]
-                                if not docs_list:
-                                    st.caption("Aucune pièce jointe.")
-                                else:
-                                    for doc in docs_list:
-                                        public_url = supabase_client.storage.from_("scans_angem").get_public_url(doc)
-                                        if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
-                                            st.image(public_url, caption=doc, use_container_width=True)
-                                        else:
-                                            st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Consulter le document PDF</a>", unsafe_allow_html=True)
-                            else: st.caption("Aucune pièce jointe.")
-                            
-                    session.close()
-            else:
-                st.warning("⚠️ Aucun promoteur ne correspond à cette recherche.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    if tab_orphan is not None:
-        with tab_orphan:
-            agent_daira = st.session_state.user.get('daira', '')
-            if not agent_daira:
-                st.warning("⚠️ L'administrateur ne vous a pas encore assigné à une Cellule d'Accompagnement (Daïra). Veuillez le contacter pour qu'il mette à jour votre profil.")
-            else:
-                st.info(f"💡 Voici la liste des dossiers importés qui n'ont pas encore d'Accompagnateur et qui se trouvent dans les communes de la **Daïra de {agent_daira}**. Cochez ceux qui vous appartiennent pour les récupérer dans votre liste !")
-                
-                mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
-                mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
-                df_orphans = df[mask_vide & mask_cellule].copy()
-                
-                if df_orphans.empty:
-                    st.success(f"🎉 Bonne nouvelle ! Il n'y a aucun dossier orphelin dans la Cellule de {agent_daira} pour le moment.")
-                else:
-                    df_orphans["C'est mon dossier !"] = False
-                    edited_orphans = st.data_editor(
-                        df_orphans,
-                        column_config={
-                            "C'est mon dossier !": st.column_config.CheckboxColumn("S'attribuer", default=False),
-                            "id": None, "documents": None, "historique_visites": None, "Alerte": None, "prochaine_visite": None
-                        },
-                        disabled=["identifiant", "nom", "prenom", "commune", "activite", "date_financement", "montant_pnr"],
-                        hide_index=True,
-                        use_container_width=True
-                    )
-                    ids_a_recuperer = edited_orphans[edited_orphans["C'est mon dossier !"] == True]['id'].tolist()
-                    
-                    if st.button(f"📥 Récupérer ces {len(ids_a_recuperer)} dossier(s) dans mon espace", type="primary", disabled=(len(ids_a_recuperer)==0)):
-                        session = get_session()
-                        nom_agent_connecte = st.session_state.user['nom']
-                        try:
-                            for cid in ids_a_recuperer:
-                                dos = session.query(Dossier).get(cid)
-                                if dos: dos.gestionnaire = nom_agent_connecte
-                            session.commit()
-                            st.success(f"✅ Félicitations ! {len(ids_a_recuperer)} dossier(s) ajouté(s) à votre espace personnel.")
-                            st.rerun()
-                        except Exception as e:
-                            session.rollback(); st.error(f"Erreur : {e}")
-                        finally:
-                            session.close()
-
-def page_import():
-    st.title("📥 Intégration des Données")
-    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    st.info("L'outil de synchronisation met à jour les montants et crée les nouveaux financements automatiquement (Anti-Doublons activé).")
-    
-    # NOUVEAU : CHOIX DU DISPOSITIF AVANT IMPORTATION
-    type_import = st.radio("Quel dispositif souhaitez-vous importer ?", ["🔵 PNR PROJET (Création d'activité)", "🟢 PNR AMP (Achat de Matière Première)"], horizontal=True)
-    type_dispo_val = "PNR PROJET" if "PROJET" in type_import else "PNR AMP"
     st.markdown("<br>", unsafe_allow_html=True)
+    col_gauche, col_droite = st.columns([1.3, 1])
     
-    uploaded_file = st.file_uploader(f"📂 Glissez votre fichier Excel pour {type_dispo_val}", type=['xlsx', 'xls', 'csv'])
-    if uploaded_file and st.button("🚀 Lancer l'Intégration Globale", type="primary"):
-        session = get_session()
-        try:
-            xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
-            agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
-            agents_noms = [a.nom for a in agents_db]
-
-            with st.status(f"Analyse et fusion en cours (Mode : {type_dispo_val})...", expanded=True) as status:
-                count_add, count_upd = 0, 0
-                for s_name, df_raw in xl.items():
-                    df_raw = df_raw.fillna('')
-                    header_idx = -1
-                    for i in range(min(30, len(df_raw))):
-                        row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
-                        score = sum([1 for k in ["IDENTIFIANT", "CNI", "REF", "NOM", "GEST"] if k in row_cl])
-                        if score >= 2: header_idx = i; break
-                    if header_idx == -1: continue
-                    
-                    df = df_raw.iloc[header_idx:].copy()
-                    df.columns = df.iloc[0].astype(str).tolist()
-                    df = df.iloc[1:].reset_index(drop=True)
-                    df_cols = [clean_header(c) for c in df.columns]
-                    col_map = {db_f: df.columns[df_cols.index(clean_header(v))] for db_f, variants in MAPPING_CONFIG.items() for v in variants if clean_header(v) in df_cols}
-                    
-                    for _, row in df.iterrows():
-                        data = {}
-                        for db_f, xl_c in col_map.items():
-                            valeur_brute = row[xl_c]
-                            if pd.isna(valeur_brute) or str(valeur_brute).strip() == "" or str(valeur_brute).strip().upper() == "NAN": continue 
-                            if db_f in COLONNES_ARGENT: data[db_f] = clean_money(valeur_brute)
-                            elif db_f == 'identifiant': data[db_f] = clean_identifiant(valeur_brute)
-                            elif db_f == 'gestionnaire': data[db_f] = trouver_agent_intelligent(valeur_brute, agents_noms)
-                            else: data[db_f] = str(valeur_brute).strip().upper()
-
-                        ident = data.get('identifiant', '')
-                        date_fin = data.get('date_financement', '')
-                        if not ident: continue
-
-                        # Application de l'étiquette PROJET ou AMP
-                        data['type_dispositif'] = type_dispo_val
-
-                        exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
-                        if not exist and date_fin != "":
-                            exist_empty = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
-                            if exist_empty: exist = exist_empty
-
-                        if exist:
-                            for k, v in data.items(): setattr(exist, k, v)
-                            count_upd += 1
-                        else:
-                            session.add(Dossier(**data))
-                            count_add += 1
+    with col_gauche:
+        st.markdown("### 🗓️ Planifier une visite")
+        col_d1, col_d2 = st.columns([2,1])
+        date_visite = col_d1.date_input("Date prévue :", key=f"date_{dos_db.id}")
+        if col_d2.button("💾 Fixer la date", key=f"btn_date_{dos_db.id}"):
+            dos_db.prochaine_visite = date_visite.strftime("%d/%m/%Y")
+            session.commit()
+            st.success("Visite planifiée !")
+            st.rerun()
+            
+        if dos_db.prochaine_visite:
+            st.info(f"📍 Prochaine visite prévue le : **{dos_db.prochaine_visite}**")
+            if st.button("❌ Annuler cette visite", key=f"annul_{dos_db.id}"):
+                dos_db.prochaine_visite = ""
                 session.commit()
-                status.update(label=f"Traitement terminé : {count_add} nouveaux dossiers créés, {count_upd} dossiers mis à jour.", state="complete")
-            st.balloons()
-        except Exception as e: session.rollback(); st.error(f"Erreur d'importation : {e}")
-        finally: session.close()
+                st.rerun()
+                
+        st.markdown("---")
+        st.markdown("### 📝 Rapport & Historique")
+        nouvelle_note = st.text_area("Rédiger un compte-rendu :", placeholder="Observations...", key=f"note_{dos_db.id}")
+        if st.button("Enregistrer le rapport", key=f"btn_note_{dos_db.id}"):
+            date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
+            note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
+            dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
+            dos_db.prochaine_visite = "" 
+            session.commit()
+            st.success("Rapport ajouté !")
+            st.rerun()
+        
+        st.markdown("<div style='background-color:#ffffff; border:1px solid #e1e5eb; padding:15px; border-radius:8px; height: 300px; overflow-y: auto;'>", unsafe_allow_html=True)
+        if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
+        else: st.markdown("<span style='color:#888;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with col_droite:
+        st.markdown("### 📎 Dossier du Promoteur")
+        pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
+        st.download_button("📄 Exporter le Dossier PDF", data=pdf_bytes, file_name=f"Dossier_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True, key=f"pdf_{dos_db.id}")
+        
+        st.markdown("---")
+        with st.expander("☁️ 📸 Scanner vers le Cloud"):
+            photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed", key=f"cam_{dos_db.id}")
+            if photo_camera is not None:
+                if st.button("☁️ Envoyer sur le Cloud", use_container_width=True, key=f"up_cam_{dos_db.id}"):
+                    file_bytes = photo_camera.getvalue()
+                    nom_fichier = f"{dos_db.identifiant}_SCAN_{int(datetime.now().timestamp())}.jpg"
+                    try:
+                        supabase_client.storage.from_("scans_angem").upload(file=file_bytes, path=nom_fichier, file_options={"content-type": "image/jpeg"})
+                        dos_db.documents = (dos_db.documents or "") + nom_fichier + "|"
+                        session.commit()
+                        st.success("✅ Archivé sur le Cloud !")
+                        st.rerun()
+                    except Exception as e: st.error(f"Erreur Cloud : {e}")
+
+        with st.expander("☁️ 📁 Importer un document (PDF/Image)"):
+            nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed", key=f"file_{dos_db.id}")
+            if nouveau_scan is not None:
+                if st.button("☁️ Envoyer le fichier", use_container_width=True, key=f"up_file_{dos_db.id}"):
+                    file_bytes = nouveau_scan.getvalue()
+                    nom_safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', nouveau_scan.name)
+                    nom_fichier = f"{dos_db.identifiant}_{int(datetime.now().timestamp())}_{nom_safe}"
+                    try:
+                        supabase_client.storage.from_("scans_angem").upload(file=file_bytes, path=nom_fichier, file_options={"content-type": nouveau_scan.type})
+                        dos_db.documents = (dos_db.documents or "") + nom_fichier + "|"
+                        session.commit()
+                        st.success("✅ Archivé sur le Cloud !")
+                        st.rerun()
+                    except Exception as e: st.error(f"Erreur Cloud : {e}")
+                
+        st.markdown("**🗄️ Archives Cloud :**")
+        if dos_db.documents:
+            docs_list = [d for d in dos_db.documents.split("|") if d]
+            if not docs_list: st.caption("Aucune pièce jointe.")
+            else:
+                for doc in docs_list:
+                    public_url = supabase_client.storage.from_("scans_angem").get_public_url(doc)
+                    if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        st.image(public_url, caption=doc, use_container_width=True)
+                    else:
+                        st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Consulter le document</a>", unsafe_allow_html=True)
+        else: st.caption("Aucune pièce jointe.")
+
+# --- PAGES DE L'APPLICATION ---
+
+def page_recherche():
+    st.title("🔍 Moteur de Recherche Promoteur")
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    recherche = st.text_input("Recherchez un promoteur (Nom, Prénom, Identifiant, Téléphone...) :", placeholder="Tapez ici...", key="main_search")
     st.markdown("</div>", unsafe_allow_html=True)
 
-def page_admin():
-    st.title("📊 Espace Direction (Admin)")
-    tab1, tab2, tab3 = st.tabs(["📈 Tableau de Bord & Bilans", "🔐 Gestion des Équipes", "⚙️ Maintenance Serveur"])
-
-    with tab1:
+    if recherche:
         try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
         except: df = pd.DataFrame()
         
-        if df.empty: st.warning("La base de dossiers est vide.")
-        else:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("📌 Total Dossiers", len(df))
-            c2.metric("💰 Crédit PNR Engagé", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
-            c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
-            c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
+        if not df.empty:
+            mask = df.apply(lambda x: x.astype(str).str.contains(recherche, case=False).any(), axis=1)
+            df_recherche = df[mask]
             
-            # --- CARTOGRAPHIE ---
-            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.markdown("<h4 style='color:#2c3e50;'>🗺️ Cartographie des Dossiers & Contentieux</h4>", unsafe_allow_html=True)
-            df_map = df.copy()
-            df_map['lat'] = df_map['commune'].apply(lambda x: get_lat_lon(x)[0])
-            df_map['lon'] = df_map['commune'].apply(lambda x: get_lat_lon(x)[1])
-            df_map_grouped = df_map.groupby(['commune', 'lat', 'lon']).size().reset_index(name='Total Dossiers')
-            df_retards = df_map[df_map.apply(calculer_alerte_bool, axis=1)]
-            retards_counts = df_retards.groupby('commune').size().reset_index(name='Dossiers en Retard')
-            df_map_grouped = df_map_grouped.merge(retards_counts, on='commune', how='left').fillna(0)
-            
-            fig_map = px.scatter_mapbox(
-                df_map_grouped, lat="lat", lon="lon", hover_name="commune", 
-                hover_data=["Total Dossiers", "Dossiers en Retard"],
-                size="Total Dossiers", color="Dossiers en Retard",
-                color_continuous_scale="Reds", size_max=40, zoom=9,
-                mapbox_style="carto-positron"
-            )
-            fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-            st.plotly_chart(fig_map, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+            if not df_recherche.empty:
+                st.success(f"🎯 {len(df_recherche)} résultat(s) trouvé(s)")
+                for _, row in df_recherche.iterrows():
+                    with st.expander(f"Ouvrir le dossier de : {row['nom']} {row['prenom']} ({row['identifiant']}) - {row['type_dispositif']}"):
+                        session = get_session()
+                        dos_db = session.query(Dossier).get(row['id'])
+                        if dos_db: afficher_profil_promoteur(dos_db, session)
+                        session.close()
+            else:
+                st.warning("Aucun promoteur ne correspond à cette recherche.")
 
-            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            col_l, col_r = st.columns(2)
-            with col_l:
-                # NOUVEAU GRAPHIQUE POUR AMP VS PROJET
-                if 'type_dispositif' in df.columns: st.plotly_chart(px.pie(df, names='type_dispositif', title="Répartition PROJET / AMP", hole=0.3, color_discrete_sequence=['#1f77b4', '#28a745']), use_container_width=True)
-                if 'statut_dossier' in df.columns: st.plotly_chart(px.pie(df, names='statut_dossier', title="Le Pipeline (Statuts)"), use_container_width=True)
-            with col_r:
-                if 'commune' in df.columns: st.plotly_chart(px.bar(df[df['commune'] != '']['commune'].value_counts().reset_index(), x='count', y='commune', orientation='h', title="Top 10 des Communes").update_yaxes(categoryorder='total ascending'), use_container_width=True)
-                st.plotly_chart(px.bar(df[df['gestionnaire'] != '']['gestionnaire'].value_counts().reset_index(), x='gestionnaire', y='count', title="Charge par Accompagnateur"), use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.markdown("<h4 style='color:#2c3e50;'>📥 Générateur de Rapports (PDF/Excel)</h4>", unsafe_allow_html=True)
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                pdf_bilan = generer_bilan_global_pdf(df)
-                st.download_button("📊 Bilan Global de l'Antenne (PDF)", data=pdf_bilan, file_name="Bilan_Global.pdf", mime="application/pdf", use_container_width=True)
-                pdf_creances = generer_creances_pdf(df)
-                st.download_button("🔴 Exporter la Liste des Contentieux (PDF)", data=pdf_creances, file_name="Liste_Rouge.pdf", mime="application/pdf", use_container_width=True)
-            with col_b2:
-                pdf_analytique = generer_analytique_pdf(df)
-                st.download_button("🗺️ Bilan Analytique par Zone (PDF)", data=pdf_analytique, file_name="Bilan_Analytique.pdf", mime="application/pdf", use_container_width=True)
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df.drop(columns=['id', 'documents', 'historique_visites', 'prochaine_visite'], errors='ignore').to_excel(writer, index=False, sheet_name='Base_ANGEM')
-                st.download_button("🟢 Sauvegarde Complète (Excel)", data=buffer.getvalue(), file_name="Base_ANGEM.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("<b>👨‍💼 Générer le Bilan de Performance d'un Agent :</b>", unsafe_allow_html=True)
-            agents_dispo = [a for a in df['gestionnaire'].unique() if str(a).strip() != ""]
-            agent_selectionne = st.selectbox("Sélectionner l'agent", agents_dispo, label_visibility="collapsed")
-            if agent_selectionne:
-                pdf_agent = generer_bilan_agent_pdf(df, agent_selectionne)
-                st.download_button(f"📄 Télécharger le bilan de {agent_selectionne}", data=pdf_agent, file_name=f"Bilan_Agent_{agent_selectionne}.pdf", mime="application/pdf")
-            st.markdown("</div>", unsafe_allow_html=True)
+def page_dossiers_liste(type_dispo, vue_admin=False):
+    titre = "🔵 Dossiers PNR PROJET" if type_dispo == "PNR PROJET" else "🟢 Dossiers PNR AMP"
+    st.title(titre)
+    
+    try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{type_dispo}' ORDER BY id DESC", con=engine).fillna('')
+    except: df = pd.DataFrame()
 
-    with tab2:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.markdown("### 🔄 Assigner un Accompagnateur à une Cellule")
-        st.info("Utilisez ces deux menus déroulants pour affecter facilement un agent à sa zone.")
-        
+    if df.empty:
+        st.info("📌 Aucun dossier de ce type dans la base de données.")
+        return
+
+    # Attribution de l'agent connecté
+    if not vue_admin:
+        nom_agent = str(st.session_state.user['nom']).upper()
+        mots_agent = set([m for m in re.split(r'\W+', nom_agent) if len(m) >= 3])
+        def match_agent(val):
+            val_clean = str(val).upper()
+            if not val_clean: return False
+            if val_clean == nom_agent or nom_agent in val_clean or val_clean in nom_agent: return True
+            if mots_agent.intersection(set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])): return True
+            return False
+        df = df[df['gestionnaire'].apply(match_agent)]
+
+    df['Badge'] = df.apply(get_badge, axis=1)
+
+    df_visites = df[df['prochaine_visite'].str.strip() != ''].copy()
+    if not df_visites.empty:
+        with st.expander(f"🗓️ Agenda : {len(df_visites)} visite(s) programmée(s)", expanded=True):
+            st.dataframe(df_visites[['identifiant', 'nom', 'commune', 'prochaine_visite', 'telephone']], hide_index=True, use_container_width=True)
+
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    filtre_badge = st.radio("Filtrer par état :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    df_filtered = df.copy()
+    if filtre_badge != "Tous":
+        df_filtered = df_filtered[df_filtered['Badge'].str.contains(filtre_badge.split(" ")[0])]
+
+    try:
+        df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
+        liste_agents = [""] + sorted(list(set(df_agents['nom'].tolist() + df['gestionnaire'].unique().tolist())))
+    except: liste_agents = [""]
+
+    st.caption(f"Affichage de {len(df_filtered)} dossiers.")
+
+    edited_df = st.data_editor(
+        df_filtered, use_container_width=True, hide_index=True, height=450,
+        column_config={
+            "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None,
+            "Badge": st.column_config.TextColumn("État", disabled=True),
+            "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
+            "nom": "Nom Promoteur",
+            "statut_dossier": st.column_config.SelectboxColumn("Étape", options=LISTE_STATUTS, width="medium"),
+            "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=not vue_admin),
+            "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
+            "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
+        }
+    )
+
+    if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
         session = get_session()
         try:
-            utilisateurs_agents = session.query(UtilisateurAuth).filter_by(role='agent').order_by(UtilisateurAuth.nom).all()
-            noms_agents_form = [a.nom for a in utilisateurs_agents]
-        except:
-            noms_agents_form = []
-            
-        if noms_agents_form:
-            with st.form("affectation_rapide"):
-                col_a, col_d = st.columns(2)
-                agent_a_modifier = col_a.selectbox("👤 Choisir l'accompagnateur :", noms_agents_form)
-                nouvelle_daira = col_d.selectbox("📍 Choisir sa Daïra :", LISTE_DAIRAS)
-                submit_affectation = st.form_submit_button("✅ Valider l'affectation", type="primary")
-                
-                if submit_affectation:
-                    agent_db = session.query(UtilisateurAuth).filter_by(nom=agent_a_modifier).first()
-                    if agent_db:
-                        agent_db.daira = nouvelle_daira
-                        session.commit()
-                        st.success(f"L'agent {agent_a_modifier} est maintenant affecté à la Cellule de {nouvelle_daira} !")
-                        st.rerun()
-        session.close()
+            for _, row in edited_df.iterrows():
+                dos = session.query(Dossier).get(row['id'])
+                if dos:
+                    setattr(dos, 'statut_dossier', row['statut_dossier'])
+                    if vue_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
+            session.commit()
+            st.toast("✅ Base mise à jour !")
+            st.rerun()
+        except Exception as e: session.rollback(); st.error(e)
+        finally: session.close()
 
-        st.markdown("---")
-        st.markdown("### 🔑 Mots de passe et Recrutement")
-        try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
-        except: df_users = pd.DataFrame()
-            
-        if not df_users.empty:
-            edited_users = st.data_editor(
-                df_users, use_container_width=True, hide_index=True,
-                column_config={
-                    "id": None, 
-                    "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
-                    "nom": st.column_config.TextColumn("Nom de l'Accompagnateur", disabled=True), 
-                    "daira": st.column_config.TextColumn("Cellule actuelle", disabled=True),
-                    "mot_de_passe": st.column_config.TextColumn("Mot de passe")
-                }
-            )
-            if st.button("💾 Sauvegarder les mots de passe", type="secondary"):
-                session = get_session()
-                try:
-                    for _, row in edited_users.iterrows():
-                        user_db = session.query(UtilisateurAuth).get(row['id'])
-                        if user_db: user_db.mot_de_passe = row['mot_de_passe']
-                    session.commit()
-                    st.success("✅ Mots de passe sécurisés avec succès !")
-                except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
-                finally: session.close()
-                
-        st.markdown("---")
-        st.markdown("#### ➕ Recruter un nouvel agent")
-        with st.form("ajout_agent"):
-            c1, c2, c3 = st.columns([1, 1.5, 1])
-            new_id = c1.text_input("Identifiant (ex: benaissa)")
-            new_nom = c2.text_input("Nom Complet (ex: BENAISSA Ahmed)")
-            new_daira = c3.selectbox("Cellule", LISTE_DAIRAS)
-            submit = st.form_submit_button("Créer le compte")
-            if submit and new_id and new_nom:
-                session = get_session()
-                if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
-                    session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
-                    session.commit()
-                    st.success(f"Agent {new_nom} configuré avec succès !")
-                    st.rerun()
-                else: st.error("Cet identifiant est déjà pris par un autre agent.")
-                session.close()
+def page_corbeille():
+    st.title("🗑️ Corbeille des Dossiers Non Affectés")
+    agent_daira = st.session_state.user.get('daira', '')
+    
+    if not agent_daira:
+        st.warning("⚠️ Vous n'avez pas de Daïra assignée. Demandez à l'administrateur de mettre à jour votre compte.")
+        return
 
-        st.markdown("---")
-        st.markdown("### 🗑️ Supprimer un compte en double")
-        st.warning("Si vous supprimez un agent, ses dossiers ne seront pas effacés. Ils retourneront simplement dans la 'Corbeille' pour être récupérés.")
+    st.info(f"Voici les dossiers sans gestionnaire localisés dans la Daïra de **{agent_daira}**.")
+    try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
+    except: return
+
+    mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
+    mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
+    df_orphans = df[mask_vide & mask_cellule].copy()
+    
+    if df_orphans.empty:
+        st.success("🎉 Aucun dossier orphelin dans votre secteur.")
+    else:
+        df_orphans["C'est mon dossier !"] = False
+        edited_orphans = st.data_editor(
+            df_orphans, hide_index=True, use_container_width=True,
+            column_config={
+                "C'est mon dossier !": st.column_config.CheckboxColumn("S'attribuer", default=False),
+                "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None
+            },
+            disabled=["identifiant", "nom", "type_dispositif", "commune", "montant_pnr"]
+        )
         
-        session_suppr = get_session()
-        try:
-            agents_pour_suppr = session_suppr.query(UtilisateurAuth).filter_by(role='agent').order_by(UtilisateurAuth.nom).all()
-            options_suppression = [f"{a.nom} (ID: {a.identifiant})" for a in agents_pour_suppr]
-        except:
-            options_suppression = []
-        finally:
-            session_suppr.close()
-            
-        if options_suppression:
-            with st.form("suppression_agent"):
-                agent_a_effacer = st.selectbox("Sélectionnez le compte à supprimer :", options_suppression)
-                btn_suppr = st.form_submit_button("🗑️ Supprimer définitivement")
-                if btn_suppr and agent_a_effacer:
-                    id_to_delete = agent_a_effacer.split("(ID: ")[1].replace(")", "")
-                    sess_del = get_session()
-                    sess_del.query(UtilisateurAuth).filter_by(identifiant=id_to_delete).delete()
-                    sess_del.commit()
-                    sess_del.close()
-                    st.success("✅ L'agent a été supprimé de la liste !")
-                    st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with tab3:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.markdown("### 🧹 Optimisation de la base")
-        st.info("Utilisez cette fonction si vous pensez avoir importé le même fichier plusieurs fois par erreur. Cela garde les doubles financements intacts.")
-        if st.button("🧼 Lancer l'Algorithme Anti-Doublons"):
+        ids_recup = edited_orphans[edited_orphans["C'est mon dossier !"] == True]['id'].tolist()
+        if st.button(f"📥 Récupérer ces {len(ids_recup)} dossier(s)", type="primary", disabled=(len(ids_recup)==0)):
+            session = get_session()
+            nom_agent = st.session_state.user['nom']
             try:
-                df_dup = pd.read_sql_query("SELECT id, identifiant, date_financement FROM dossiers", con=engine)
-                duplicates = df_dup[df_dup.duplicated(subset=['identifiant', 'date_financement'], keep='first')]
-                ids_to_delete = duplicates['id'].tolist()
-                
-                if ids_to_delete:
-                    session = get_session()
-                    session.query(Dossier).filter(Dossier.id.in_(ids_to_delete)).delete(synchronize_session=False)
-                    session.commit()
-                    session.close()
-                    st.success(f"✅ Opération réussie : {len(ids_to_delete)} doublons strict effacés !")
-                    st.rerun()
-                else: st.success("Parfait, la base est parfaitement propre !")
-            except Exception as e: st.error(f"Erreur : {e}")
+                for cid in ids_recup:
+                    dos = session.query(Dossier).get(cid)
+                    if dos: dos.gestionnaire = nom_agent
+                session.commit()
+                st.success("✅ Dossiers récupérés !")
+                st.rerun()
+            except Exception as e: session.rollback()
+            finally: session.close()
+
+def page_supervision():
+    st.title("📊 Supervision des Dossiers & Extractions")
+    try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
+    except: df = pd.DataFrame()
+    
+    if df.empty: st.warning("La base est vide."); return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📌 Total Dossiers", len(df))
+    c2.metric("💰 Crédit PNR", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
+    c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
+    c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
+    
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    st.markdown("#### 🗺️ Cartographie des Dossiers ANGEM")
+    df_map = df.copy()
+    df_map['lat'] = df_map['commune'].apply(lambda x: get_lat_lon(x)[0])
+    df_map['lon'] = df_map['commune'].apply(lambda x: get_lat_lon(x)[1])
+    df_map_grouped = df_map.groupby(['commune', 'lat', 'lon']).size().reset_index(name='Total')
+    fig_map = px.scatter_mapbox(df_map_grouped, lat="lat", lon="lon", hover_name="commune", size="Total", mapbox_style="carto-positron", zoom=9)
+    fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    st.plotly_chart(fig_map, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    st.markdown("#### 📥 Extractions Officielles (PDF / Excel)")
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        pdf_global = generer_rapport_global_pdf(df)
+        st.download_button("📊 État Global des Dossiers (PDF)", data=pdf_global, file_name="Etat_Global.pdf", mime="application/pdf", use_container_width=True)
+        pdf_creances = generer_creances_pdf(df)
+        st.download_button("🔴 Extraction des Contentieux (PDF)", data=pdf_creances, file_name="Contentieux.pdf", mime="application/pdf", use_container_width=True)
+    with col_b2:
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df.drop(columns=['id', 'documents', 'historique_visites', 'prochaine_visite'], errors='ignore').to_excel(writer, index=False, sheet_name='Dossiers')
+        st.download_button("🟢 Sauvegarde Complète (Excel)", data=buffer.getvalue(), file_name="Base_Dossiers.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def page_integration_admin():
+    st.title("⚙️ Équipes & Intégration")
+    tab1, tab2 = st.tabs(["📥 Importation de Fichiers Excel", "🔐 Gestion des Accompagnateurs"])
+    
+    with tab1:
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        type_import = st.radio("Quel dispositif souhaitez-vous importer ?", ["🔵 PNR PROJET", "🟢 PNR AMP"], horizontal=True)
+        type_dispo_val = "PNR PROJET" if "PROJET" in type_import else "PNR AMP"
         
-        st.markdown("---")
-        st.markdown("### 🧨 Remise à Zéro")
-        st.error("Action irréversible : Supprime tous les promoteurs. Les comptes de tes agents seront conservés.")
+        uploaded_file = st.file_uploader(f"📂 Glissez votre fichier Excel pour {type_dispo_val}", type=['xlsx', 'xls', 'csv'])
+        if uploaded_file and st.button("🚀 Lancer l'Intégration", type="primary"):
+            session = get_session()
+            try:
+                xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
+                agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
+                agents_noms = [a.nom for a in agents_db]
+
+                with st.status(f"Analyse en cours ({type_dispo_val})...", expanded=True) as status:
+                    count_add, count_upd = 0, 0
+                    for s_name, df_raw in xl.items():
+                        df_raw = df_raw.fillna('')
+                        header_idx = -1
+                        for i in range(min(30, len(df_raw))):
+                            row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
+                            if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST"] if k in row_cl]) >= 2:
+                                header_idx = i; break
+                        if header_idx == -1: continue
+                        
+                        df = df_raw.iloc[header_idx:].copy()
+                        df.columns = df.iloc[0].astype(str).tolist()
+                        df = df.iloc[1:].reset_index(drop=True)
+                        df_cols = [clean_header(c) for c in df.columns]
+                        col_map = {db_f: df.columns[df_cols.index(clean_header(v))] for db_f, variants in MAPPING_CONFIG.items() for v in variants if clean_header(v) in df_cols}
+                        
+                        for _, row in df.iterrows():
+                            data = {}
+                            for db_f, xl_c in col_map.items():
+                                val = row[xl_c]
+                                if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
+                                if db_f in COLONNES_ARGENT: data[db_f] = clean_money(val)
+                                elif db_f == 'identifiant': data[db_f] = clean_identifiant(val)
+                                elif db_f == 'gestionnaire': data[db_f] = trouver_agent_intelligent(val, agents_noms)
+                                else: data[db_f] = str(val).strip().upper()
+
+                            ident = data.get('identifiant', '')
+                            date_fin = data.get('date_financement', '')
+                            if not ident: continue
+                            data['type_dispositif'] = type_dispo_val
+
+                            exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
+                            if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
+
+                            if exist:
+                                for k, v in data.items(): setattr(exist, k, v)
+                                count_upd += 1
+                            else:
+                                session.add(Dossier(**data))
+                                count_add += 1
+                    session.commit()
+                    status.update(label=f"Terminé : {count_add} créés, {count_upd} mis à jour.", state="complete")
+                st.balloons()
+            except Exception as e: session.rollback(); st.error(f"Erreur : {e}")
+            finally: session.close()
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.error("Remise à zéro de tous les dossiers")
         if st.button("🗑️ FORMARTER LA BASE DE DONNÉES", type="primary"):
             session = get_session()
             session.query(Dossier).delete(); session.commit(); session.close()
             st.rerun()
+
+    with tab2:
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
+        except: df_users = pd.DataFrame()
+            
+        if not df_users.empty:
+            st.markdown("### 🔑 Gestion des Accès et Daïras")
+            edited_users = st.data_editor(
+                df_users, use_container_width=True, hide_index=True,
+                column_config={
+                    "id": None, "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
+                    "nom": st.column_config.TextColumn("Nom", disabled=True), 
+                    "daira": st.column_config.SelectboxColumn("Cellule", options=LISTE_DAIRAS),
+                    "mot_de_passe": st.column_config.TextColumn("Mot de passe")
+                }
+            )
+            if st.button("💾 Sauvegarder les accès", type="primary"):
+                session = get_session()
+                try:
+                    for _, row in edited_users.iterrows():
+                        user_db = session.query(UtilisateurAuth).get(row['id'])
+                        if user_db: 
+                            user_db.mot_de_passe = row['mot_de_passe']
+                            user_db.daira = row['daira']
+                    session.commit()
+                    st.success("✅ Accès mis à jour !")
+                except Exception as e: session.rollback()
+                finally: session.close()
+                
+        st.markdown("---")
+        with st.form("ajout_agent"):
+            st.markdown("#### ➕ Ajouter un agent")
+            c1, c2, c3 = st.columns([1, 1.5, 1])
+            new_id = c1.text_input("Identifiant")
+            new_nom = c2.text_input("Nom Complet")
+            new_daira = c3.selectbox("Cellule", LISTE_DAIRAS)
+            if st.form_submit_button("Créer le compte") and new_id and new_nom:
+                session = get_session()
+                if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
+                    session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
+                    session.commit()
+                    st.success("Agent ajouté !")
+                    st.rerun()
+                session.close()
         st.markdown("</div>", unsafe_allow_html=True)
 
 # --- DEMARRAGE DE L'APPLICATION ---
 if st.session_state.user is None: login_page()
 else:
     page = sidebar_menu()
-    if page == "🗂️ Base Globale" and st.session_state.user['role'] == "admin": page_gestion(vue_admin=True)
-    elif page == "🗂️ Mes Dossiers Promoteurs": page_gestion(vue_admin=False)
-    elif page == "📥 Intégration Fichiers" and st.session_state.user['role'] == "admin": page_import()
-    elif page == "📊 Espace Direction" and st.session_state.user['role'] == "admin": page_admin()
+    
+    if page == "🔍 Recherche Promoteur": page_recherche()
+    elif page == "🔵 Mes Dossiers (PROJET)": page_dossiers_liste("PNR PROJET", vue_admin=False)
+    elif page == "🟢 Mes Dossiers (AMP)": page_dossiers_liste("PNR AMP", vue_admin=False)
+    elif page == "🔵 Tous les Dossiers (PROJET)": page_dossiers_liste("PNR PROJET", vue_admin=True)
+    elif page == "🟢 Tous les Dossiers (AMP)": page_dossiers_liste("PNR AMP", vue_admin=True)
+    elif page == "🗑️ Corbeille Cellule": page_corbeille()
+    elif page == "📊 Supervision & Extractions" and st.session_state.user['role'] == "admin": page_supervision()
+    elif page == "⚙️ Équipes & Intégration" and st.session_state.user['role'] == "admin": page_integration_admin()
