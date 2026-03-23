@@ -15,7 +15,7 @@ import base64
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v19.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v19.2", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -177,6 +177,7 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(95, 8, f" Accompagnateur : {clean_pdf_text(dos.gestionnaire)}", border='R', ln=True)
     pdf.cell(95, 8, f" Nom/Prenom : {clean_pdf_text(dos.nom)} {clean_pdf_text(dos.prenom)}", border='L')
     pdf.cell(95, 8, f" Telephone : {clean_pdf_text(dos.telephone)}", border='R', ln=True)
+    pdf.cell(0, 8, f" Date de naissance : {clean_pdf_text(dos.date_naissance)}", border='LR', ln=True)
     pdf.cell(0, 8, f" Adresse : {clean_pdf_text(dos.adresse)} - {clean_pdf_text(dos.commune)}", border='LRB', ln=True)
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12)
@@ -311,23 +312,29 @@ def clean_identifiant(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
+# --- LE DICTIONNAIRE "INTELLIGENT" MIS A JOUR (v19.2) ---
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
     'prenom': ['PRENOM', 'PRENOMS'],
-    'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVIPAR'],
+    'date_naissance': ['DATEDENAISSANCE', 'DATENAISSANCE'],
+    'adresse': ['ADRESSE', 'ADRESSEXACTE'],
+    'telephone': ['TEL', 'TELEPHONE', 'MOB', 'MOBILE'],
+    'commune': ['COMMUNE', 'APC'],
     'daira': ['DAIRA'],
-    'commune': ['COMMUNE', 'APC', 'ADRESSE'],
+    'activite': ['ACTIVITE', 'PROJET'],
     'secteur': ['SECTEURDACTIVITE', 'SECTEUR'],
+    'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVIPAR'],
     'banque_nom': ['BANQUEDUPROMOTEUR', 'BANQUECCP', 'BANQUE'],
+    'num_ordre_versement': ['NUMOV', 'OV'],
+    'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'],
+    'debut_consommation': ['DEBUTCONSOM', 'DEBUTCONSOMMATION'],
     'montant_pnr': ['PNR', 'MONTANTPNR29', 'MTDUPNR', 'MONTANT'],
     'apport_personnel': ['APPORT', 'APPORTPERSONNEL'], 
     'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
     'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
-    'telephone': ['TEL', 'TELEPHONE', 'MOB', 'MOBILE'],
     'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
-    'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'], 
-    'activite': ['ACTIVITE', 'PROJET'],
+    'etat_dette': ['ETAT', 'ETATDETTE']
 }
 COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel']
 
@@ -336,7 +343,7 @@ def calculer_alerte_bool(row):
     if any(char.isdigit() for char in ech):
         num = int(re.search(r'\d+', ech).group())
         if num > 0: return True
-    if row.get('statut_dossier') == "Contentieux / Retard": return True
+    if row.get('statut_dossier') == "Contentieux / Retard" or row.get('etat_dette') == "CONTENTIEUX": return True
     return False
 
 def get_badge(row):
@@ -727,9 +734,8 @@ def page_integration_admin():
 
                 with st.status(f"Importation vers {type_dispo_val}...", expanded=True) as status:
                     count_add, count_upd = 0, 0
-                    batch_size = 50 # Le système de "Péage" : on sauvegarde tous les 50 dossiers
+                    batch_size = 50 
                     
-                    # DESACTIVATION DE L'AUTOFLUSH POUR EVITER LE TIMEOUT
                     with session.no_autoflush:
                         for s_name, df_raw in xl.items():
                             df_raw = df_raw.fillna('')
@@ -776,12 +782,10 @@ def page_integration_admin():
                                     session.add(Dossier(**data))
                                     count_add += 1
                                     
-                                # SAUVEGARDE PAR LOTS (Évite l'embouteillage)
                                 if (count_add + count_upd) % batch_size == 0:
                                     try: session.commit()
                                     except Exception as e: session.rollback(); st.error(f"Erreur lot : {e}")
 
-                    # Sauvegarde finale des dossiers restants
                     try: session.commit()
                     except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
                     
