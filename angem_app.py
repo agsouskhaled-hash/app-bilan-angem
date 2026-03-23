@@ -15,7 +15,7 @@ import base64
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v19.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v19.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -215,6 +215,64 @@ def generer_fiche_promoteur_pdf(dos):
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
     return bytes_pdf
 
+def generer_rapport_global_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    try: pdf.image("logo_angem.png", x=10, y=8, w=30)
+    except: pass
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 20, "ETAT GLOBAL DES DOSSIERS - ANGEM", ln=True, align='C')
+    pdf.ln(5)
+    
+    total_pnr = df['montant_pnr'].astype(float).sum()
+    total_remb = df['montant_rembourse'].astype(float).sum()
+    total_reste = df['reste_rembourser'].astype(float).sum()
+    
+    df_projet = df[df['type_dispositif'] == 'PNR PROJET']
+    df_amp = df[df['type_dispositif'] == 'PNR AMP']
+
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "1. VOLUME DES DOSSIERS", ln=True, border='B')
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(0, 8, f"Total Dossiers : {len(df)} (Projets: {len(df_projet)} | AMP: {len(df_amp)})", ln=True)
+    pdf.cell(0, 8, f"Total Credit PNR Engage : {total_pnr:,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"  -> PNR Projets : {df_projet['montant_pnr'].astype(float).sum():,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"  -> PNR AMP : {df_amp['montant_pnr'].astype(float).sum():,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"Total Montant Recouvre : {total_remb:,.0f} DA", ln=True)
+    pdf.cell(0, 8, f"Total Dette Globale (Reste a payer) : {total_reste:,.0f} DA", ln=True)
+    pdf.ln(5)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f: bytes_pdf = f.read()
+    return bytes_pdf
+
+def generer_creances_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    try: pdf.image("logo_angem.png", x=10, y=8, w=30)
+    except: pass
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_text_color(200, 0, 0)
+    pdf.cell(0, 20, "EXTRACTION DES DOSSIERS EN SOUFFRANCE", ln=True, align='C')
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(5)
+    df_retard = df[df.apply(calculer_alerte_bool, axis=1)]
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, f"Total des dossiers en retard ou contentieux : {len(df_retard)}", ln=True)
+    pdf.ln(5)
+    pdf.set_font("Arial", '', 10)
+    for _, row in df_retard.iterrows():
+        nom = clean_pdf_text(f"{row['nom']} {row['prenom']}")[:20] 
+        agent = clean_pdf_text(row['gestionnaire'])[:15]
+        dispo = "AMP" if row['type_dispositif'] == "PNR AMP" else "PROJET"
+        txt = f"[{dispo}] ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
+        pdf.cell(0, 8, txt, ln=True, border='B')
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f: bytes_pdf = f.read()
+    return bytes_pdf
+
 # --- UTILITAIRES DE NETTOYAGE ---
 def trouver_agent_intelligent(nom_excel, liste_officielle):
     nom_ex = str(nom_excel).strip().upper()
@@ -235,7 +293,6 @@ def clean_header(val):
     if pd.isna(val): return ""
     val = str(val).upper()
     val = ''.join(c for c in unicodedata.normalize('NFD', val) if unicodedata.category(c) != 'Mn')
-    # Supprime espaces et sauts de ligne pour un mapping parfait
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
@@ -309,7 +366,6 @@ def login_page():
         password = st.text_input("🔑 Mot de passe", type="password")
         
         st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
-        # NOUVEAU : LE CHOIX DE L'ENVIRONNEMENT DÈS LE LOGIN
         env_choisi = st.selectbox("🏢 Choisissez votre environnement de travail", ["PNR PROJET", "PNR AMP"])
         
         st.markdown("<br>", unsafe_allow_html=True)
@@ -323,7 +379,7 @@ def login_page():
                     "nom": user_db.nom, 
                     "role": user_db.role, 
                     "daira": user_db.daira,
-                    "env": env_choisi # On sauvegarde l'environnement choisi
+                    "env": env_choisi 
                 }
                 st.rerun()
             else: st.error("⚠️ Mot de passe incorrect.")
@@ -352,7 +408,7 @@ def sidebar_menu():
         options = [
             f"🗂️ Base Globale ({env})",
             "📊 Supervision Direction", 
-            "⚙️ Intégration Fichiers & Équipes"
+            "⚙️ Intégration Fichiers"
         ]
         
     choix = st.sidebar.radio("Menu de Navigation", options, label_visibility="collapsed")
@@ -477,7 +533,6 @@ def afficher_profil_promoteur(dos_db, session):
 def page_gestion(vue_admin=False):
     env_actif = st.session_state.user.get('env')
     
-    # 1. LA BARRE DE RECHERCHE OMNIPRÉSENTE
     st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
     st.markdown(f"<div class='search-title'>🔍 Moteur de recherche rapide ({env_actif})</div>", unsafe_allow_html=True)
     search_global = st.text_input("Tapez le Nom, l'Identifiant ou le Téléphone du promoteur et appuyez sur Entrée...", key="search_bar")
@@ -490,7 +545,6 @@ def page_gestion(vue_admin=False):
         st.info(f"📌 Aucun dossier dans l'environnement {env_actif}.")
         return
 
-    # Si une recherche est lancée, on affiche la fiche tout de suite
     if search_global:
         mask_search = df.apply(lambda x: x.astype(str).str.contains(search_global, case=False).any(), axis=1)
         df_trouve = df[mask_search]
@@ -507,7 +561,6 @@ def page_gestion(vue_admin=False):
         else:
             st.warning("⚠️ Aucun promoteur trouvé pour cette recherche.")
 
-    # 2. L'ESPACE DE TRAVAIL (TABLEAU)
     if not vue_admin:
         nom_agent = str(st.session_state.user['nom']).upper()
         mots_agent = set([m for m in re.split(r'\W+', nom_agent) if len(m) >= 3])
@@ -622,7 +675,6 @@ def page_supervision():
     
     if df.empty: st.warning("La base est vide."); return
 
-    # Filtre global de l'interface admin
     type_dispo_admin = st.radio("Afficher les données pour :", ["Les deux dispositifs", "PNR PROJET", "PNR AMP"], horizontal=True)
     if type_dispo_admin != "Les deux dispositifs":
         df = df[df['type_dispositif'] == type_dispo_admin]
@@ -649,11 +701,11 @@ def page_supervision():
 
 def page_integration_admin():
     st.title("⚙️ Équipes & Intégration Sécurisée")
-    tab1, tab2 = st.tabs(["📥 Importateur Intelligent", "🔐 Gestion des Équipes"])
+    tab1, tab2 = st.tabs(["📥 Importateur Intelligent (Anti-Timeout)", "🔐 Gestion des Équipes"])
     
     with tab1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.info("L'Importateur Anti-Casse répare automatiquement les sauts de lignes gênants des fichiers CSV de l'ANGEM.")
+        st.info("💡 La sauvegarde par lots est activée. Le Cloud ne plantera plus jamais lors des gros imports !")
         
         type_import = st.radio("Destiner les dossiers importés à l'espace :", ["🔵 PNR PROJET", "🟢 PNR AMP"], horizontal=True)
         type_dispo_val = "PNR PROJET" if "PROJET" in type_import else "PNR AMP"
@@ -663,13 +715,9 @@ def page_integration_admin():
         if uploaded_file and st.button("🚀 Démarrer l'Analyse et l'Importation", type="primary"):
             session = get_session()
             try:
-                # --- ALGORITHME ANTI-CASSE POUR CSV ---
                 if uploaded_file.name.lower().endswith('.csv'):
-                    try:
-                        # Le moteur 'python' de pandas gère nativement les retours à la ligne dans les cellules
-                        df_raw = pd.read_csv(uploaded_file, sep=None, engine='python', dtype=str)
-                    except Exception:
-                        df_raw = pd.read_csv(uploaded_file, sep=';', encoding='latin1', dtype=str)
+                    try: df_raw = pd.read_csv(uploaded_file, sep=None, engine='python', dtype=str)
+                    except Exception: df_raw = pd.read_csv(uploaded_file, sep=';', encoding='latin1', dtype=str)
                     xl = {'Fichier CSV': df_raw}
                 else:
                     xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
@@ -677,55 +725,67 @@ def page_integration_admin():
                 agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
                 agents_noms = [a.nom for a in agents_db]
 
-                with st.status(f"Importation Intelligente vers {type_dispo_val}...", expanded=True) as status:
+                with st.status(f"Importation vers {type_dispo_val}...", expanded=True) as status:
                     count_add, count_upd = 0, 0
-                    for s_name, df_raw in xl.items():
-                        df_raw = df_raw.fillna('')
-                        
-                        # Si CSV, les colonnes sont souvent déjà dans df_raw.columns. Si Excel, on cherche la ligne.
-                        if uploaded_file.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns:
-                            df = df_raw
-                        else:
-                            header_idx = -1
-                            for i in range(min(30, len(df_raw))):
-                                row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
-                                if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST"] if k in row_cl]) >= 2:
-                                    header_idx = i; break
-                            if header_idx == -1: continue
+                    batch_size = 50 # Le système de "Péage" : on sauvegarde tous les 50 dossiers
+                    
+                    # DESACTIVATION DE L'AUTOFLUSH POUR EVITER LE TIMEOUT
+                    with session.no_autoflush:
+                        for s_name, df_raw in xl.items():
+                            df_raw = df_raw.fillna('')
                             
-                            df = df_raw.iloc[header_idx:].copy()
-                            df.columns = df.iloc[0].astype(str).tolist()
-                            df = df.iloc[1:].reset_index(drop=True)
-                            
-                        df_cols = [clean_header(c) for c in df.columns]
-                        col_map = {db_f: df.columns[df_cols.index(clean_header(v))] for db_f, variants in MAPPING_CONFIG.items() for v in variants if clean_header(v) in df_cols}
-                        
-                        for _, row in df.iterrows():
-                            data = {}
-                            for db_f, xl_c in col_map.items():
-                                val = row[xl_c]
-                                if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
-                                if db_f in COLONNES_ARGENT: data[db_f] = clean_money(val)
-                                elif db_f == 'identifiant': data[db_f] = clean_identifiant(val)
-                                elif db_f == 'gestionnaire': data[db_f] = trouver_agent_intelligent(val, agents_noms)
-                                else: data[db_f] = str(val).strip().upper()
-
-                            ident = data.get('identifiant', '')
-                            date_fin = data.get('date_financement', '')
-                            if not ident: continue
-                            data['type_dispositif'] = type_dispo_val
-
-                            exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
-                            if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
-
-                            if exist:
-                                for k, v in data.items(): setattr(exist, k, v)
-                                count_upd += 1
+                            if uploaded_file.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns:
+                                df = df_raw
                             else:
-                                session.add(Dossier(**data))
-                                count_add += 1
-                    session.commit()
-                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour.", state="complete")
+                                header_idx = -1
+                                for i in range(min(30, len(df_raw))):
+                                    row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
+                                    if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST"] if k in row_cl]) >= 2:
+                                        header_idx = i; break
+                                if header_idx == -1: continue
+                                
+                                df = df_raw.iloc[header_idx:].copy()
+                                df.columns = df.iloc[0].astype(str).tolist()
+                                df = df.iloc[1:].reset_index(drop=True)
+                                
+                            df_cols = [clean_header(c) for c in df.columns]
+                            col_map = {db_f: df.columns[df_cols.index(clean_header(v))] for db_f, variants in MAPPING_CONFIG.items() for v in variants if clean_header(v) in df_cols}
+                            
+                            for _, row in df.iterrows():
+                                data = {}
+                                for db_f, xl_c in col_map.items():
+                                    val = row[xl_c]
+                                    if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
+                                    if db_f in COLONNES_ARGENT: data[db_f] = clean_money(val)
+                                    elif db_f == 'identifiant': data[db_f] = clean_identifiant(val)
+                                    elif db_f == 'gestionnaire': data[db_f] = trouver_agent_intelligent(val, agents_noms)
+                                    else: data[db_f] = str(val).strip().upper()
+
+                                ident = data.get('identifiant', '')
+                                date_fin = data.get('date_financement', '')
+                                if not ident: continue
+                                data['type_dispositif'] = type_dispo_val
+
+                                exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
+                                if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
+
+                                if exist:
+                                    for k, v in data.items(): setattr(exist, k, v)
+                                    count_upd += 1
+                                else:
+                                    session.add(Dossier(**data))
+                                    count_add += 1
+                                    
+                                # SAUVEGARDE PAR LOTS (Évite l'embouteillage)
+                                if (count_add + count_upd) % batch_size == 0:
+                                    try: session.commit()
+                                    except Exception as e: session.rollback(); st.error(f"Erreur lot : {e}")
+
+                    # Sauvegarde finale des dossiers restants
+                    try: session.commit()
+                    except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
+                    
+                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour sans timeout.", state="complete")
                 st.balloons()
             except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
             finally: session.close()
