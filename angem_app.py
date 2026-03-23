@@ -15,7 +15,7 @@ import base64
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v19.2", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v19.3", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -312,7 +312,6 @@ def clean_identifiant(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
-# --- LE DICTIONNAIRE "INTELLIGENT" MIS A JOUR (v19.2) ---
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
@@ -712,7 +711,7 @@ def page_integration_admin():
     
     with tab1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.info("💡 La sauvegarde par lots est activée. Le Cloud ne plantera plus jamais lors des gros imports !")
+        st.info("💡 Filtre actif : Les financements de 40 000 DA ou moins seront automatiquement ignorés.")
         
         type_import = st.radio("Destiner les dossiers importés à l'espace :", ["🔵 PNR PROJET", "🟢 PNR AMP"], horizontal=True)
         type_dispo_val = "PNR PROJET" if "PROJET" in type_import else "PNR AMP"
@@ -733,7 +732,7 @@ def page_integration_admin():
                 agents_noms = [a.nom for a in agents_db]
 
                 with st.status(f"Importation vers {type_dispo_val}...", expanded=True) as status:
-                    count_add, count_upd = 0, 0
+                    count_add, count_upd, count_ignored = 0, 0, 0
                     batch_size = 50 
                     
                     with session.no_autoflush:
@@ -770,6 +769,13 @@ def page_integration_admin():
                                 ident = data.get('identifiant', '')
                                 date_fin = data.get('date_financement', '')
                                 if not ident: continue
+
+                                # --- LE NOUVEAU FILTRE : ON IGNORE LES PETITS MONTANTS ---
+                                montant_pnr_verif = data.get('montant_pnr', 0.0)
+                                if montant_pnr_verif <= 40000:
+                                    count_ignored += 1
+                                    continue
+
                                 data['type_dispositif'] = type_dispo_val
 
                                 exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
@@ -789,7 +795,7 @@ def page_integration_admin():
                     try: session.commit()
                     except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
                     
-                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour sans timeout.", state="complete")
+                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour. ({count_ignored} petits montants ignorés).", state="complete")
                 st.balloons()
             except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
             finally: session.close()
