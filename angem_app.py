@@ -16,7 +16,7 @@ import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v21.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v21.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -558,6 +558,16 @@ def afficher_profil_promoteur(dos_db, session):
                     else:
                         st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Consulter le document</a>", unsafe_allow_html=True)
         else: st.caption("Aucune pièce jointe.")
+    
+    # --- NOUVEAU : LE BOUTON POUR SUPPRIMER LES DOUBLONS ---
+    st.markdown("---")
+    with st.expander("⚠️ Options Avancées (Suppression de doublon)"):
+        st.warning("Attention : Si vous cliquez ci-dessous, ce dossier (et toutes ses informations) sera définitivement effacé de la base de données de l'ANGEM.")
+        if st.button("🗑️ Supprimer définitivement ce dossier", key=f"del_{dos_db.id}", type="primary"):
+            session.delete(dos_db)
+            session.commit()
+            st.success("Dossier supprimé avec succès. Mise à jour de la liste...")
+            st.rerun()
 
 # --- PAGES DE L'APPLICATION ---
 def page_gestion(vue_admin=False):
@@ -580,7 +590,7 @@ def page_gestion(vue_admin=False):
         if nb_orphelins > 0:
             st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation' pour récupérer vos promoteurs.</div>", unsafe_allow_html=True)
 
-    # BARRE DE RECHERCHE
+    # BARRE DE RECHERCHE RAPIDE TOUT EN HAUT
     st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
     st.markdown(f"<div class='search-title'>🔍 Moteur de recherche rapide ({env_actif})</div>", unsafe_allow_html=True)
     search_global = st.text_input("Tapez le Nom, l'Identifiant ou le Téléphone du promoteur et appuyez sur Entrée...", key="search_bar")
@@ -664,6 +674,24 @@ def page_gestion(vue_admin=False):
             st.rerun()
         except Exception as e: session.rollback(); st.error(e)
         finally: session.close()
+
+    # --- LE RETOUR DE LA RUBRIQUE FIXE SOUS LE TABLEAU ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color: {theme_color}; border-bottom: 2px solid {theme_color}; padding-bottom: 5px;'>📂 Profil Détaillé du Promoteur</h3>", unsafe_allow_html=True)
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    
+    options_noms = ["Sélectionnez un profil..."] + df_filtered.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']}", axis=1).tolist()
+    profil_choisi = st.selectbox("Choisissez un promoteur affiché dans le tableau ci-dessus :", options_noms)
+    
+    if profil_choisi != "Sélectionnez un profil...":
+        id_choisi = profil_choisi.split(" - ")[0]
+        session = get_session()
+        dos_db = session.query(Dossier).filter_by(identifiant=id_choisi).first()
+        if dos_db:
+            afficher_profil_promoteur(dos_db, session)
+        session.close()
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 def page_corbeille():
     env_actif = st.session_state.user.get('env')
@@ -838,7 +866,7 @@ def page_integration_admin():
                                 exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
                                 if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
 
-                                # FILTRE 40 000 DA (UNIQUEMENT SI NOUVEAU DOSSIER OU SI PNR EXPLICITEMENT MIS A JOUR)
+                                # FILTRE 40 000 DA
                                 if 'montant_pnr' in data and 0 < data['montant_pnr'] <= 40000:
                                     count_ignored += 1
                                     continue
@@ -849,10 +877,9 @@ def page_integration_admin():
                                 if exist:
                                     for k, v in data.items(): 
                                         if isinstance(v, str):
-                                            if v.strip() != "": # Ne met à jour que si la case Excel n'est PAS vide
+                                            if v.strip() != "":
                                                 setattr(exist, k, v)
                                         else:
-                                            # C'est un chiffre (Montant), on le met à jour
                                             setattr(exist, k, v)
                                     count_upd += 1
                                 else:
