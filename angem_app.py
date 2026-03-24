@@ -16,7 +16,7 @@ import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v20.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v21.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -33,7 +33,7 @@ else:
     theme_color = "#2c3e50"
     theme_bg = "#f4f7f6"
 
-# --- LE STYLE CSS MODERNE ---
+# --- LE STYLE CSS MODERNE & RESPONSIVE (MOBILE) ---
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {theme_bg}; }}
@@ -79,6 +79,14 @@ st.markdown(f"""
     .doc-link:hover {{ background-color: #e1e5eb; color: #0d47a1; }}
     .search-title {{ color: {theme_color}; font-weight: bold; font-size: 24px; margin-bottom: 10px; }}
     .compteur-orphelins {{ font-size: 40px; font-weight: bold; color: #dc3545; text-align: center; margin: 10px 0; }}
+    
+    /* RESPONSIVE DESIGN POUR LES TELEPHONES MOBILES */
+    @media (max-width: 768px) {{
+        .btn-call, .btn-wa, .btn-maps {{ min-width: 100%; margin-bottom: 5px; }}
+        .profil-header {{ padding: 15px; }}
+        .modern-card {{ padding: 15px; }}
+        .action-btn-container {{ flex-direction: column; }}
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -174,16 +182,6 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-def get_lat_lon(commune_name):
-    c = str(commune_name).upper().strip()
-    if "ZÉRALDA" in c or "ZERALDA" in c or "STAOUELI" in c: return 36.7115, 2.8425
-    if "CHÉRAGA" in c or "CHERAGA" in c or "AIN BENIAN" in c: return 36.7667, 2.9500
-    if "DRARIA" in c or "BABA HASSEN" in c: return 36.7167, 2.9833
-    if "BIR MOURAD RAIS" in c or "BIR MOURAD" in c: return 36.7333, 3.0500
-    if "BOUZAREAH" in c or "BEN AKNOUN" in c: return 36.7833, 3.0167
-    if "BIRTOUTA" in c or "TESSALA" in c: return 36.6500, 2.9833
-    return 36.7300, 3.0000
-
 # --- FONCTIONS PDF ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
@@ -252,14 +250,11 @@ def generer_rapport_global_pdf(df):
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "ETAT GLOBAL DES DOSSIERS - ANGEM", ln=True, align='C')
     pdf.ln(5)
-    
     total_pnr = df['montant_pnr'].astype(float).sum()
     total_remb = df['montant_rembourse'].astype(float).sum()
     total_reste = df['reste_rembourser'].astype(float).sum()
-    
     df_projet = df[df['type_dispositif'] == 'PNR PROJET']
     df_amp = df[df['type_dispositif'] == 'PNR AMP']
-
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "1. VOLUME DES DOSSIERS", ln=True, border='B')
     pdf.set_font("Arial", '', 11)
@@ -270,7 +265,6 @@ def generer_rapport_global_pdf(df):
     pdf.cell(0, 8, f"Total Montant Recouvre : {total_remb:,.0f} DA", ln=True)
     pdf.cell(0, 8, f"Total Dette Globale (Reste a payer) : {total_reste:,.0f} DA", ln=True)
     pdf.ln(5)
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
@@ -325,11 +319,11 @@ def clean_header(val):
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
-    if pd.isna(val) or val == '': return 0.0
+    if pd.isna(val) or str(val).strip() == '': return None # L'ANTI-ECRASEMENT : on renvoie None si c'est vide
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
-    s = re.sub(r'[^\d\.]', '', s)
+    s = re.sub(r'[^\d\.-]', '', s)
     try: return float(s)
-    except: return 0.0
+    except: return None
 
 def clean_identifiant(val):
     if pd.isna(val): return ""
@@ -459,31 +453,26 @@ def afficher_profil_promoteur(dos_db, session):
     st.markdown(f"""
     <div class='profil-header'>
         <h2 style='margin:0; color:{theme_color};'>👤 {dos_db.nom} {dos_db.prenom}</h2>
-        <p style='margin:5px 0 0 0; font-size:16px;'><b>ID:</b> {dos_db.identifiant} &nbsp;|&nbsp; <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
+        <p style='margin:5px 0 0 0; font-size:16px;'><b>ID:</b> {dos_db.identifiant}  |  <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
         <p style='margin:10px 0 5px 0;'><b>Remboursement ({dos_db.montant_rembourse:,.0f} / {dos_db.montant_pnr:,.0f} DA) : {taux*100:.1f}%</b></p>
     </div>
     """, unsafe_allow_html=True)
     st.progress(min(taux, 1.0))
     
-    # Boutons d'action (Appel, WhatsApp, Google Maps)
     tel_brut = str(dos_db.telephone).strip()
     tel_clean = re.sub(r'\D', '', tel_brut) if tel_brut else ""
     tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
     msg_wa = f"Bonjour {clean_pdf_text(dos_db.nom)}, c'est votre accompagnateur ANGEM."
     
-    # NOUVEAU : GENERATION DU LIEN GOOGLE MAPS
     adresse_complete = f"{dos_db.adresse} {dos_db.commune} Algerie"
     lien_maps = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(adresse_complete)}"
 
-    col_btn1, col_btn2, col_btn3 = st.columns(3)
+    st.markdown("<div class='action-btn-container'>", unsafe_allow_html=True)
     if tel_clean and len(tel_clean) >= 9:
-        col_btn1.markdown(f"<a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler</a>", unsafe_allow_html=True)
-        col_btn2.markdown(f"<a href='https://wa.me/{tel_wa}?text={urllib.parse.quote(msg_wa)}' class='btn-wa' target='_blank'>💬 WhatsApp</a>", unsafe_allow_html=True)
-    else:
-        col_btn1.caption("⚠️ Numéro invalide")
-        col_btn2.caption("⚠️ Numéro invalide")
-    
-    col_btn3.markdown(f"<a href='{lien_maps}' class='btn-maps' target='_blank'>🗺️ Trouver sur Maps</a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler</a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='https://wa.me/{tel_wa}?text={urllib.parse.quote(msg_wa)}' class='btn-wa' target='_blank'>💬 WhatsApp</a>", unsafe_allow_html=True)
+    st.markdown(f"<a href='{lien_maps}' class='btn-maps' target='_blank'>🗺️ Trouver sur Maps</a>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     col_gauche, col_droite = st.columns([1.3, 1])
@@ -582,7 +571,7 @@ def page_gestion(vue_admin=False):
         st.info(f"📌 Aucun dossier dans l'environnement {env_actif}.")
         return
 
-    # NOUVEAU : ALERTE ROUGE ORPHELINS (Seulement pour les agents)
+    # ALERTE ROUGE ORPHELINS (Seulement pour les agents)
     if not vue_admin and agent_daira:
         mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
         mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
@@ -739,7 +728,7 @@ def page_supervision():
     c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
     c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
     
-    # --- NOUVEAU : LE RADAR ADMIN ---
+    # RADAR ADMIN
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("#### 👁️ Radar des Dossiers Orphelins")
     mask_vide_admin = (df['gestionnaire'].astype(str).str.strip() == "")
@@ -749,7 +738,6 @@ def page_supervision():
         st.success("✅ Tous les dossiers de cet environnement ont été affectés à un agent.")
     else:
         st.warning(f"⚠️ Il reste **{len(df_orphelins_admin)} dossiers** sans accompagnateur.")
-        # Regrouper par Commune pour voir qui est en retard
         orphelins_par_commune = df_orphelins_admin.groupby('commune').size().reset_index(name='Dossiers Orphelins')
         orphelins_par_commune = orphelins_par_commune.sort_values(by='Dossiers Orphelins', ascending=False)
         st.dataframe(orphelins_par_commune, hide_index=True, use_container_width=True)
@@ -773,16 +761,16 @@ def page_supervision():
 def page_integration_admin():
     env_actif = st.session_state.user.get('env')
     st.title("⚙️ Équipes & Intégration Sécurisée")
-    tab1, tab2 = st.tabs(["📥 Importateur Intelligent (Anti-Timeout)", "🔐 Gestion des Équipes"])
+    tab1, tab2 = st.tabs(["📥 Importateur Intelligent (Anti-Écrasement)", "🔐 Gestion des Équipes"])
     
     with tab1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.info("💡 L'importation se fera dans l'environnement actif : **" + env_actif + "**")
-        st.caption("Filtre actif : Les financements de 40 000 DA ou moins seront automatiquement ignorés.")
+        st.info("💡 **NOUVEAU :** L'importateur est maintenant un *Puzzle*. Si vous importez un deuxième fichier, il complétera les dossiers sans jamais effacer les anciennes cases qui contiennent déjà des informations.")
+        st.caption("L'importation se fera dans : **" + env_actif + "** (Filtre > 40 000 DA actif)")
         
         uploaded_file = st.file_uploader(f"📂 Glissez votre fichier (.xlsx ou .csv)", type=['xlsx', 'xls', 'csv'])
         
-        if uploaded_file and st.button("🚀 Démarrer l'Analyse et l'Importation", type="primary"):
+        if uploaded_file and st.button("🚀 Démarrer l'Importation Intelligente", type="primary"):
             session = get_session()
             try:
                 if uploaded_file.name.lower().endswith('.csv'):
@@ -795,9 +783,12 @@ def page_integration_admin():
                 agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
                 agents_noms = [a.nom for a in agents_db]
 
-                with st.status(f"Importation vers {env_actif}...", expanded=True) as status:
+                with st.status(f"Importation en cours vers {env_actif}...", expanded=True) as status:
                     count_add, count_upd, count_ignored = 0, 0, 0
                     batch_size = 50 
+                    
+                    progress_bar = st.progress(0)
+                    progress_text = st.empty()
                     
                     with session.no_autoflush:
                         for s_name, df_raw in xl.items():
@@ -820,12 +811,22 @@ def page_integration_admin():
                             df_cols = [clean_header(c) for c in df.columns]
                             col_map = {db_f: df.columns[df_cols.index(clean_header(v))] for db_f, variants in MAPPING_CONFIG.items() for v in variants if clean_header(v) in df_cols}
                             
-                            for _, row in df.iterrows():
+                            total_rows = len(df)
+                            
+                            for idx, row in df.iterrows():
+                                # MISE A JOUR BARRE DE PROGRESSION
+                                if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
+                                    prog_val = min(1.0, (idx + 1) / total_rows)
+                                    progress_bar.progress(prog_val)
+                                    progress_text.markdown(f"**Analyse en cours... {int(prog_val * 100)}%**")
+
                                 data = {}
                                 for db_f, xl_c in col_map.items():
                                     val = row[xl_c]
                                     if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
-                                    if db_f in COLONNES_ARGENT: data[db_f] = clean_money(val)
+                                    if db_f in COLONNES_ARGENT: 
+                                        amt = clean_money(val)
+                                        if amt is not None: data[db_f] = amt
                                     elif db_f == 'identifiant': data[db_f] = clean_identifiant(val)
                                     elif db_f == 'gestionnaire': data[db_f] = trouver_agent_intelligent(val, agents_noms)
                                     else: data[db_f] = str(val).strip().upper()
@@ -834,18 +835,25 @@ def page_integration_admin():
                                 date_fin = data.get('date_financement', '')
                                 if not ident: continue
 
-                                montant_pnr_verif = data.get('montant_pnr', 0.0)
-                                if montant_pnr_verif <= 40000:
+                                exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
+                                if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
+
+                                # FILTRE 40 000 DA (UNIQUEMENT SI NOUVEAU DOSSIER OU SI PNR EXPLICITEMENT MIS A JOUR)
+                                if 'montant_pnr' in data and 0 < data['montant_pnr'] <= 40000:
                                     count_ignored += 1
                                     continue
 
                                 data['type_dispositif'] = env_actif
 
-                                exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
-                                if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
-
+                                # LOGIQUE ANTI-ECRASEMENT (LE PUZZLE)
                                 if exist:
-                                    for k, v in data.items(): setattr(exist, k, v)
+                                    for k, v in data.items(): 
+                                        if isinstance(v, str):
+                                            if v.strip() != "": # Ne met à jour que si la case Excel n'est PAS vide
+                                                setattr(exist, k, v)
+                                        else:
+                                            # C'est un chiffre (Montant), on le met à jour
+                                            setattr(exist, k, v)
                                     count_upd += 1
                                 else:
                                     session.add(Dossier(**data))
@@ -858,6 +866,7 @@ def page_integration_admin():
                     try: session.commit()
                     except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
                     
+                    progress_text.empty()
                     status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour. ({count_ignored} ignorés car <= 40k).", state="complete")
                 st.balloons()
             except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
