@@ -12,10 +12,11 @@ import tempfile
 import io
 from datetime import datetime
 import base64
+import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v19.3", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v20.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -59,13 +60,25 @@ st.markdown(f"""
         border-radius: 10px; border-left: 6px solid {theme_color}; margin-bottom: 20px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     }}
-    .action-btn-container {{ display: flex; gap: 10px; margin-top: 10px; margin-bottom: 20px; }}
-    .btn-call {{ background-color: #007bff; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; box-shadow: 0 2px 5px rgba(0,123,255,0.3); }}
-    .btn-wa {{ background-color: #25D366; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; width: 100%; display: block; transition: 0.3s; box-shadow: 0 2px 5px rgba(37,211,102,0.3); }}
-    .btn-call:hover, .btn-wa:hover {{ opacity: 0.8; color: white; transform: translateY(-2px); }}
+    .alerte-urgente {{
+        background-color: #fff3f3; border-left: 6px solid #dc3545; padding: 15px 20px;
+        border-radius: 8px; color: #b02a37; font-weight: bold; margin-bottom: 20px; font-size: 16px;
+        animation: pulse 2s infinite;
+    }}
+    @keyframes pulse {{
+        0% {{ box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }}
+        70% {{ box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }}
+        100% {{ box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }}
+    }}
+    .action-btn-container {{ display: flex; gap: 10px; margin-top: 10px; margin-bottom: 20px; flex-wrap: wrap; }}
+    .btn-call {{ background-color: #007bff; color: white; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; flex: 1; min-width: 150px; transition: 0.3s; box-shadow: 0 2px 5px rgba(0,123,255,0.3); }}
+    .btn-wa {{ background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; flex: 1; min-width: 150px; transition: 0.3s; box-shadow: 0 2px 5px rgba(37,211,102,0.3); }}
+    .btn-maps {{ background-color: #ea4335; color: white; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; flex: 1; min-width: 150px; transition: 0.3s; box-shadow: 0 2px 5px rgba(234,67,53,0.3); }}
+    .btn-call:hover, .btn-wa:hover, .btn-maps:hover {{ opacity: 0.8; color: white; transform: translateY(-2px); }}
     .doc-link {{ display: block; background-color: #f0f2f6; padding: 12px; border-radius: 8px; text-decoration: none; color: #1f77b4; font-weight: bold; margin-bottom: 8px; border: 1px solid #e1e5eb; transition: 0.2s;}}
     .doc-link:hover {{ background-color: #e1e5eb; color: #0d47a1; }}
     .search-title {{ color: {theme_color}; font-weight: bold; font-size: 24px; margin-bottom: 10px; }}
+    .compteur-orphelins {{ font-size: 40px; font-weight: bold; color: #dc3545; text-align: center; margin: 10px 0; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -123,6 +136,17 @@ class UtilisateurAuth(Base):
     daira = Column(String, default="")
 
 Base.metadata.create_all(engine)
+
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS type_dispositif VARCHAR DEFAULT 'PNR PROJET'"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS apport_personnel FLOAT DEFAULT 0.0"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS date_naissance VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS num_ordre_versement VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS debut_consommation VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS etat_dette VARCHAR DEFAULT ''"))
+        conn.commit()
+except: pass
 
 def get_session(): return Session()
 
@@ -187,6 +211,8 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(95, 8, f" Statut : {clean_pdf_text(dos.statut_dossier)}", border='R', ln=True)
     pdf.cell(95, 8, f" Activite : {clean_pdf_text(dos.activite)}", border='L')
     pdf.cell(95, 8, f" Date de versement (OV) : {clean_pdf_text(dos.date_financement)}", border='R', ln=True)
+    pdf.cell(95, 8, f" Num OV : {clean_pdf_text(dos.num_ordre_versement)}", border='L')
+    pdf.cell(95, 8, f" Debut Consom. : {clean_pdf_text(dos.debut_consommation)}", border='R', ln=True)
     pdf.cell(63, 8, f" Credit PNR : {dos.montant_pnr:,.0f} DA", border='L')
     pdf.cell(63, 8, f" Apport : {dos.apport_personnel:,.0f} DA")
     pdf.cell(64, 8, f" Banque : {dos.credit_bancaire:,.0f} DA", border='R', ln=True)
@@ -197,7 +223,9 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.set_font("Arial", '', 11)
     pdf.cell(95, 8, f" Montant Recouvre : {dos.montant_rembourse:,.0f} DA", border='L')
     pdf.cell(95, 8, f" Reste a Rembourser : {dos.reste_rembourser:,.0f} DA", border='R', ln=True)
-    pdf.cell(0, 8, f" Echeances tombees (Retard) : {clean_pdf_text(dos.nb_echeance_tombee)}", border='LRB', ln=True)
+    pdf.cell(95, 8, f" Echeances tombees : {clean_pdf_text(dos.nb_echeance_tombee)}", border='L')
+    pdf.cell(95, 8, f" Etat : {clean_pdf_text(dos.etat_dette)}", border='R', ln=True)
+    pdf.cell(0, 8, "", border='T', ln=True) 
     pdf.ln(8)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 4. NOTES ET RAPPORT DE VISITE", ln=True)
@@ -312,6 +340,7 @@ def clean_identifiant(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
+# DICTIONNAIRE INTEGRAL POUR EXCEL
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
@@ -408,7 +437,7 @@ def sidebar_menu():
     
     options = [
         f"🗂️ Espace de Travail ({env})", 
-        "🗑️ Corbeille de la Cellule"
+        "🗑️ Corbeille & Affectation"
     ]
     if st.session_state.user['role'] == "admin":
         options = [
@@ -436,20 +465,26 @@ def afficher_profil_promoteur(dos_db, session):
     """, unsafe_allow_html=True)
     st.progress(min(taux, 1.0))
     
+    # Boutons d'action (Appel, WhatsApp, Google Maps)
     tel_brut = str(dos_db.telephone).strip()
-    if tel_brut and len(tel_brut) >= 9:
-        tel_clean = re.sub(r'\D', '', tel_brut)
-        tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
-        msg_wa = f"Bonjour {clean_pdf_text(dos_db.nom)}, c'est votre accompagnateur ANGEM."
-        st.markdown(f"""
-        <div class='action-btn-container'>
-            <a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler le {tel_brut}</a>
-            <a href='https://wa.me/{tel_wa}?text={msg_wa}' class='btn-wa' target='_blank'>💬 WhatsApp Rapide</a>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.caption("⚠️ Pas de numéro de téléphone valide enregistré.")
+    tel_clean = re.sub(r'\D', '', tel_brut) if tel_brut else ""
+    tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
+    msg_wa = f"Bonjour {clean_pdf_text(dos_db.nom)}, c'est votre accompagnateur ANGEM."
+    
+    # NOUVEAU : GENERATION DU LIEN GOOGLE MAPS
+    adresse_complete = f"{dos_db.adresse} {dos_db.commune} Algerie"
+    lien_maps = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(adresse_complete)}"
 
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
+    if tel_clean and len(tel_clean) >= 9:
+        col_btn1.markdown(f"<a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler</a>", unsafe_allow_html=True)
+        col_btn2.markdown(f"<a href='https://wa.me/{tel_wa}?text={urllib.parse.quote(msg_wa)}' class='btn-wa' target='_blank'>💬 WhatsApp</a>", unsafe_allow_html=True)
+    else:
+        col_btn1.caption("⚠️ Numéro invalide")
+        col_btn2.caption("⚠️ Numéro invalide")
+    
+    col_btn3.markdown(f"<a href='{lien_maps}' class='btn-maps' target='_blank'>🗺️ Trouver sur Maps</a>", unsafe_allow_html=True)
+    
     st.markdown("<br>", unsafe_allow_html=True)
     col_gauche, col_droite = st.columns([1.3, 1])
     
@@ -538,18 +573,29 @@ def afficher_profil_promoteur(dos_db, session):
 # --- PAGES DE L'APPLICATION ---
 def page_gestion(vue_admin=False):
     env_actif = st.session_state.user.get('env')
+    agent_daira = st.session_state.user.get('daira', '')
     
-    st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='search-title'>🔍 Moteur de recherche rapide ({env_actif})</div>", unsafe_allow_html=True)
-    search_global = st.text_input("Tapez le Nom, l'Identifiant ou le Téléphone du promoteur et appuyez sur Entrée...", key="search_bar")
-    st.markdown("</div>", unsafe_allow_html=True)
-
     try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}' ORDER BY id DESC", con=engine).fillna('')
     except: df = pd.DataFrame()
 
     if df.empty:
         st.info(f"📌 Aucun dossier dans l'environnement {env_actif}.")
         return
+
+    # NOUVEAU : ALERTE ROUGE ORPHELINS (Seulement pour les agents)
+    if not vue_admin and agent_daira:
+        mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
+        mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
+        nb_orphelins = len(df[mask_vide & mask_cellule])
+        
+        if nb_orphelins > 0:
+            st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation' pour récupérer vos promoteurs.</div>", unsafe_allow_html=True)
+
+    # BARRE DE RECHERCHE
+    st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
+    st.markdown(f"<div class='search-title'>🔍 Moteur de recherche rapide ({env_actif})</div>", unsafe_allow_html=True)
+    search_global = st.text_input("Tapez le Nom, l'Identifiant ou le Téléphone du promoteur et appuyez sur Entrée...", key="search_bar")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if search_global:
         mask_search = df.apply(lambda x: x.astype(str).str.contains(search_global, case=False).any(), axis=1)
@@ -632,14 +678,13 @@ def page_gestion(vue_admin=False):
 
 def page_corbeille():
     env_actif = st.session_state.user.get('env')
-    st.title(f"🗑️ Corbeille ({env_actif})")
+    st.title(f"🗑️ Bourse aux dossiers ({env_actif})")
     agent_daira = st.session_state.user.get('daira', '')
     
     if not agent_daira:
         st.warning("⚠️ Vous n'avez pas de Daïra assignée. Demandez à l'administrateur.")
         return
 
-    st.info(f"Voici les dossiers **{env_actif}** sans gestionnaire de la Cellule de **{agent_daira}**.")
     try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}'", con=engine).fillna('')
     except: return
 
@@ -647,21 +692,27 @@ def page_corbeille():
     mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
     df_orphans = df[mask_vide & mask_cellule].copy()
     
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align: center; color: #2c3e50;'>Dossiers en attente dans la Daïra de {agent_daira}</h3>", unsafe_allow_html=True)
+    st.markdown(f"<div class='compteur-orphelins'>{len(df_orphans)}</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
     if df_orphans.empty:
-        st.success("🎉 Aucun dossier orphelin dans votre secteur.")
+        st.success("🎉 Félicitations, tous les dossiers de votre Daïra ont un accompagnateur !")
     else:
+        st.info("Cochez les dossiers qui vous appartiennent et validez en bas de la page.")
         df_orphans["C'est mon dossier !"] = False
         edited_orphans = st.data_editor(
-            df_orphans, hide_index=True, use_container_width=True,
+            df_orphans, hide_index=True, use_container_width=True, height=400,
             column_config={
                 "C'est mon dossier !": st.column_config.CheckboxColumn("S'attribuer", default=False),
                 "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None
             },
-            disabled=["identifiant", "nom", "commune", "montant_pnr"]
+            disabled=["identifiant", "nom", "commune", "montant_pnr", "activite"]
         )
         
         ids_recup = edited_orphans[edited_orphans["C'est mon dossier !"] == True]['id'].tolist()
-        if st.button(f"📥 Récupérer ces {len(ids_recup)} dossier(s)", type="primary", disabled=(len(ids_recup)==0)):
+        if st.button(f"📥 Confirmer et récupérer ces {len(ids_recup)} dossier(s)", type="primary", disabled=(len(ids_recup)==0)):
             session = get_session()
             nom_agent = st.session_state.user['nom']
             try:
@@ -669,21 +720,18 @@ def page_corbeille():
                     dos = session.query(Dossier).get(cid)
                     if dos: dos.gestionnaire = nom_agent
                 session.commit()
-                st.success("✅ Dossiers récupérés !")
+                st.success("✅ Dossiers récupérés avec succès !")
                 st.rerun()
             except Exception as e: session.rollback()
             finally: session.close()
 
 def page_supervision():
+    env_actif = st.session_state.user.get('env')
     st.title("📊 Supervision Direction & Extractions")
-    try: df = pd.read_sql_query("SELECT * FROM dossiers", con=engine).fillna('')
+    try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}'", con=engine).fillna('')
     except: df = pd.DataFrame()
     
-    if df.empty: st.warning("La base est vide."); return
-
-    type_dispo_admin = st.radio("Afficher les données pour :", ["Les deux dispositifs", "PNR PROJET", "PNR AMP"], horizontal=True)
-    if type_dispo_admin != "Les deux dispositifs":
-        df = df[df['type_dispositif'] == type_dispo_admin]
+    if df.empty: st.warning("La base est vide pour cet environnement."); return
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("📌 Total Dossiers", len(df))
@@ -691,7 +739,24 @@ def page_supervision():
     c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
     c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
     
+    # --- NOUVEAU : LE RADAR ADMIN ---
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    st.markdown("#### 👁️ Radar des Dossiers Orphelins")
+    mask_vide_admin = (df['gestionnaire'].astype(str).str.strip() == "")
+    df_orphelins_admin = df[mask_vide_admin]
+    
+    if df_orphelins_admin.empty:
+        st.success("✅ Tous les dossiers de cet environnement ont été affectés à un agent.")
+    else:
+        st.warning(f"⚠️ Il reste **{len(df_orphelins_admin)} dossiers** sans accompagnateur.")
+        # Regrouper par Commune pour voir qui est en retard
+        orphelins_par_commune = df_orphelins_admin.groupby('commune').size().reset_index(name='Dossiers Orphelins')
+        orphelins_par_commune = orphelins_par_commune.sort_values(by='Dossiers Orphelins', ascending=False)
+        st.dataframe(orphelins_par_commune, hide_index=True, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    st.markdown("#### 📥 Extractions Officielles (PDF / Excel)")
     col_b1, col_b2 = st.columns(2)
     with col_b1:
         pdf_global = generer_rapport_global_pdf(df)
@@ -706,15 +771,14 @@ def page_supervision():
     st.markdown("</div>", unsafe_allow_html=True)
 
 def page_integration_admin():
+    env_actif = st.session_state.user.get('env')
     st.title("⚙️ Équipes & Intégration Sécurisée")
     tab1, tab2 = st.tabs(["📥 Importateur Intelligent (Anti-Timeout)", "🔐 Gestion des Équipes"])
     
     with tab1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.info("💡 Filtre actif : Les financements de 40 000 DA ou moins seront automatiquement ignorés.")
-        
-        type_import = st.radio("Destiner les dossiers importés à l'espace :", ["🔵 PNR PROJET", "🟢 PNR AMP"], horizontal=True)
-        type_dispo_val = "PNR PROJET" if "PROJET" in type_import else "PNR AMP"
+        st.info("💡 L'importation se fera dans l'environnement actif : **" + env_actif + "**")
+        st.caption("Filtre actif : Les financements de 40 000 DA ou moins seront automatiquement ignorés.")
         
         uploaded_file = st.file_uploader(f"📂 Glissez votre fichier (.xlsx ou .csv)", type=['xlsx', 'xls', 'csv'])
         
@@ -731,7 +795,7 @@ def page_integration_admin():
                 agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
                 agents_noms = [a.nom for a in agents_db]
 
-                with st.status(f"Importation vers {type_dispo_val}...", expanded=True) as status:
+                with st.status(f"Importation vers {env_actif}...", expanded=True) as status:
                     count_add, count_upd, count_ignored = 0, 0, 0
                     batch_size = 50 
                     
@@ -770,13 +834,12 @@ def page_integration_admin():
                                 date_fin = data.get('date_financement', '')
                                 if not ident: continue
 
-                                # --- LE NOUVEAU FILTRE : ON IGNORE LES PETITS MONTANTS ---
                                 montant_pnr_verif = data.get('montant_pnr', 0.0)
                                 if montant_pnr_verif <= 40000:
                                     count_ignored += 1
                                     continue
 
-                                data['type_dispositif'] = type_dispo_val
+                                data['type_dispositif'] = env_actif
 
                                 exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
                                 if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
@@ -795,7 +858,7 @@ def page_integration_admin():
                     try: session.commit()
                     except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
                     
-                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour. ({count_ignored} petits montants ignorés).", state="complete")
+                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour. ({count_ignored} ignorés car <= 40k).", state="complete")
                 st.balloons()
             except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
             finally: session.close()
