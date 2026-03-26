@@ -16,7 +16,7 @@ import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v21.1", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v22.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -65,6 +65,10 @@ st.markdown(f"""
         border-radius: 8px; color: #b02a37; font-weight: bold; margin-bottom: 20px; font-size: 16px;
         animation: pulse 2s infinite;
     }}
+    .alerte-nouveau {{
+        background-color: #f0fdf4; border-left: 6px solid #16a34a; padding: 15px 20px;
+        border-radius: 8px; color: #15803d; font-weight: bold; margin-bottom: 20px; font-size: 16px;
+    }}
     @keyframes pulse {{
         0% {{ box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }}
         70% {{ box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }}
@@ -80,7 +84,6 @@ st.markdown(f"""
     .search-title {{ color: {theme_color}; font-weight: bold; font-size: 24px; margin-bottom: 10px; }}
     .compteur-orphelins {{ font-size: 40px; font-weight: bold; color: #dc3545; text-align: center; margin: 10px 0; }}
     
-    /* RESPONSIVE DESIGN POUR LES TELEPHONES MOBILES */
     @media (max-width: 768px) {{
         .btn-call, .btn-wa, .btn-maps {{ min-width: 100%; margin-bottom: 5px; }}
         .profil-header {{ padding: 15px; }}
@@ -133,6 +136,7 @@ class Dossier(Base):
     documents = Column(String, default="") 
     historique_visites = Column(String, default="") 
     prochaine_visite = Column(String, default="")
+    est_nouveau = Column(String, default="NON") # NOUVEAU: Pour la pastille "NOUVEAU"
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -153,6 +157,7 @@ try:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS num_ordre_versement VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS debut_consommation VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS etat_dette VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS est_nouveau VARCHAR DEFAULT 'NON'"))
         conn.commit()
 except: pass
 
@@ -163,6 +168,11 @@ def init_db_users():
     admin = session.query(UtilisateurAuth).filter_by(identifiant="admin").first()
     if not admin:
         session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"))
+    
+    finance = session.query(UtilisateurAuth).filter_by(identifiant="finance").first()
+    if not finance:
+        session.add(UtilisateurAuth(identifiant="finance", nom="Service Finance", mot_de_passe="angem", role="finance"))
+        
     session.commit()
     session.close()
 
@@ -182,7 +192,7 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF ---
+# --- FONCTIONS PDF (Gardées Intactes) ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -319,7 +329,7 @@ def clean_header(val):
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
-    if pd.isna(val) or str(val).strip() == '': return None # L'ANTI-ECRASEMENT : on renvoie None si c'est vide
+    if pd.isna(val) or str(val).strip() == '': return None # Puzzle (Anti-écrasement)
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.-]', '', s)
     try: return float(s)
@@ -334,7 +344,6 @@ def clean_identifiant(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
-# DICTIONNAIRE INTEGRAL POUR EXCEL
 MAPPING_CONFIG = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
     'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
@@ -388,7 +397,7 @@ def login_page():
         try:
             users_db = session.query(UtilisateurAuth).order_by(UtilisateurAuth.nom).all()
             noms_disponibles = [u.nom for u in users_db]
-        except: noms_disponibles = ["Administrateur"]
+        except: noms_disponibles = ["Administrateur", "Service Finance"]
         session.close()
 
         nom_choisi = st.selectbox("👤 Profil Utilisateur", noms_disponibles)
@@ -429,15 +438,21 @@ def sidebar_menu():
     </div>
     """, unsafe_allow_html=True)
     
-    options = [
-        f"🗂️ Espace de Travail ({env})", 
-        "🗑️ Corbeille & Affectation"
-    ]
-    if st.session_state.user['role'] == "admin":
+    if st.session_state.user['role'] == "finance":
+        options = [
+            f"📥 Importation Financements",
+            f"🗂️ Base Globale ({env})"
+        ]
+    elif st.session_state.user['role'] == "admin":
         options = [
             f"🗂️ Base Globale ({env})",
             "📊 Supervision Direction", 
-            "⚙️ Intégration Fichiers"
+            "⚙️ Intégration & Équipes"
+        ]
+    else:
+        options = [
+            f"🗂️ Espace de Travail ({env})", 
+            "🗑️ Corbeille & Affectation"
         ]
         
     choix = st.sidebar.radio("Menu de Navigation", options, label_visibility="collapsed")
@@ -449,6 +464,11 @@ def sidebar_menu():
 
 # --- AFFICHAGE DU PROFIL COMPLET ---
 def afficher_profil_promoteur(dos_db, session):
+    # LA MAGIE (CHOIX B) : Si c'est nouveau et que ça appartient à l'agent, on enlève l'étiquette
+    if dos_db.est_nouveau == "OUI" and dos_db.gestionnaire == st.session_state.user['nom']:
+        dos_db.est_nouveau = "NON"
+        session.commit()
+
     taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
     st.markdown(f"""
     <div class='profil-header'>
@@ -458,6 +478,16 @@ def afficher_profil_promoteur(dos_db, session):
     </div>
     """, unsafe_allow_html=True)
     st.progress(min(taux, 1.0))
+
+    # NOUVEAU : LE BOUTON D'ATTRIBUTION MAGIQUE POUR L'AGENT
+    if not dos_db.gestionnaire or dos_db.gestionnaire.strip() == "":
+        st.info("ℹ️ Ce dossier n'a pas d'accompagnateur assigné.")
+        if st.session_state.user['role'] == 'agent':
+            if st.button("🙋‍♂️ M'attribuer ce dossier", key=f"claim_{dos_db.id}", type="primary"):
+                dos_db.gestionnaire = st.session_state.user['nom']
+                session.commit()
+                st.success("✅ Dossier attribué ! Il est maintenant dans votre portefeuille.")
+                st.rerun()
     
     tel_brut = str(dos_db.telephone).strip()
     tel_clean = re.sub(r'\D', '', tel_brut) if tel_brut else ""
@@ -559,10 +589,9 @@ def afficher_profil_promoteur(dos_db, session):
                         st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Consulter le document</a>", unsafe_allow_html=True)
         else: st.caption("Aucune pièce jointe.")
     
-    # --- NOUVEAU : LE BOUTON POUR SUPPRIMER LES DOUBLONS ---
     st.markdown("---")
     with st.expander("⚠️ Options Avancées (Suppression de doublon)"):
-        st.warning("Attention : Si vous cliquez ci-dessous, ce dossier (et toutes ses informations) sera définitivement effacé de la base de données de l'ANGEM.")
+        st.warning("Attention : Ce dossier sera définitivement effacé de la base de données.")
         if st.button("🗑️ Supprimer définitivement ce dossier", key=f"del_{dos_db.id}", type="primary"):
             session.delete(dos_db)
             session.commit()
@@ -573,6 +602,8 @@ def afficher_profil_promoteur(dos_db, session):
 def page_gestion(vue_admin=False):
     env_actif = st.session_state.user.get('env')
     agent_daira = st.session_state.user.get('daira', '')
+    nom_agent = str(st.session_state.user['nom'])
+    role_user = st.session_state.user['role']
     
     try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}' ORDER BY id DESC", con=engine).fillna('')
     except: df = pd.DataFrame()
@@ -581,16 +612,22 @@ def page_gestion(vue_admin=False):
         st.info(f"📌 Aucun dossier dans l'environnement {env_actif}.")
         return
 
+    # ALERTE NOUVEAUX FINANCEMENTS (Finance vers Agent)
+    if role_user == 'agent':
+        df_nouveaux = df[(df['gestionnaire'] == nom_agent) & (df['est_nouveau'] == "OUI")]
+        if len(df_nouveaux) > 0:
+            st.markdown(f"<div class='alerte-nouveau'>🎉 Bonne nouvelle : {len(df_nouveaux)} nouveau(x) dossier(s) financé(s) ajouté(s) à votre portefeuille !</div>", unsafe_allow_html=True)
+
     # ALERTE ROUGE ORPHELINS (Seulement pour les agents)
-    if not vue_admin and agent_daira:
+    if role_user == 'agent' and agent_daira:
         mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
         mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
         nb_orphelins = len(df[mask_vide & mask_cellule])
         
         if nb_orphelins > 0:
-            st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation' pour récupérer vos promoteurs.</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation' ou utilisez la recherche pour les récupérer.</div>", unsafe_allow_html=True)
 
-    # BARRE DE RECHERCHE RAPIDE TOUT EN HAUT
+    # BARRE DE RECHERCHE RAPIDE
     st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
     st.markdown(f"<div class='search-title'>🔍 Moteur de recherche rapide ({env_actif})</div>", unsafe_allow_html=True)
     search_global = st.text_input("Tapez le Nom, l'Identifiant ou le Téléphone du promoteur et appuyez sur Entrée...", key="search_bar")
@@ -612,18 +649,22 @@ def page_gestion(vue_admin=False):
         else:
             st.warning("⚠️ Aucun promoteur trouvé pour cette recherche.")
 
-    if not vue_admin:
-        nom_agent = str(st.session_state.user['nom']).upper()
-        mots_agent = set([m for m in re.split(r'\W+', nom_agent) if len(m) >= 3])
+    # FILTRAGE DU TABLEAU POUR L'AGENT
+    if not vue_admin and role_user != 'finance':
+        mots_agent = set([m for m in re.split(r'\W+', nom_agent.upper()) if len(m) >= 3])
         def match_agent(val):
             val_clean = str(val).upper()
             if not val_clean: return False
-            if val_clean == nom_agent or nom_agent in val_clean or val_clean in nom_agent: return True
+            if val_clean == nom_agent.upper() or nom_agent.upper() in val_clean or val_clean in nom_agent.upper(): return True
             if mots_agent.intersection(set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])): return True
             return False
         df = df[df['gestionnaire'].apply(match_agent)]
 
     df['Badge'] = df.apply(get_badge, axis=1)
+
+    # AJOUT DE L'ETIQUETTE "NOUVEAU" DANS LE TABLEAU
+    df_affichage = df.copy()
+    df_affichage.loc[df_affichage['est_nouveau'] == 'OUI', 'nom'] = "✨ NOUVEAU - " + df_affichage['nom']
 
     df_visites = df[df['prochaine_visite'].str.strip() != ''].copy()
     if not df_visites.empty:
@@ -636,26 +677,28 @@ def page_gestion(vue_admin=False):
     filtre_badge = col_f.radio("Filtrer la liste :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True, label_visibility="collapsed")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    df_filtered = df.copy()
     if filtre_badge != "Tous":
-        df_filtered = df_filtered[df_filtered['Badge'].str.contains(filtre_badge.split(" ")[0])]
+        df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
 
     try:
         df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
         liste_agents = [""] + sorted(list(set(df_agents['nom'].tolist() + df['gestionnaire'].unique().tolist())))
     except: liste_agents = [""]
 
-    st.caption(f"Affichage de {len(df_filtered)} dossiers.")
+    st.caption(f"Affichage de {len(df_affichage)} dossiers.")
+
+    # Désactiver la modification de l'agent si on est ni Admin ni Finance
+    is_not_admin = (role_user == 'agent')
 
     edited_df = st.data_editor(
-        df_filtered, use_container_width=True, hide_index=True, height=500,
+        df_affichage, use_container_width=True, hide_index=True, height=500,
         column_config={
-            "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None,
+            "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None, "est_nouveau": None,
             "Badge": st.column_config.TextColumn("État", disabled=True),
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
-            "nom": "Nom Promoteur",
+            "nom": st.column_config.TextColumn("Nom Promoteur", disabled=True),
             "statut_dossier": st.column_config.SelectboxColumn("Étape du dossier", options=LISTE_STATUTS, width="medium"),
-            "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=not vue_admin),
+            "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=is_not_admin),
             "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
             "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
         }
@@ -668,19 +711,19 @@ def page_gestion(vue_admin=False):
                 dos = session.query(Dossier).get(row['id'])
                 if dos:
                     setattr(dos, 'statut_dossier', row['statut_dossier'])
-                    if vue_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
+                    if not is_not_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
             session.commit()
             st.toast("✅ Base mise à jour !")
             st.rerun()
         except Exception as e: session.rollback(); st.error(e)
         finally: session.close()
 
-    # --- LE RETOUR DE LA RUBRIQUE FIXE SOUS LE TABLEAU ---
+    # RUBRIQUE FIXE SOUS LE TABLEAU
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(f"<h3 style='color: {theme_color}; border-bottom: 2px solid {theme_color}; padding-bottom: 5px;'>📂 Profil Détaillé du Promoteur</h3>", unsafe_allow_html=True)
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     
-    options_noms = ["Sélectionnez un profil..."] + df_filtered.apply(lambda x: f"{x['identifiant']} - {x['nom']} {x['prenom']}", axis=1).tolist()
+    options_noms = ["Sélectionnez un profil..."] + df_affichage.apply(lambda x: f"{x['identifiant']} - {x['nom'].replace('✨ NOUVEAU - ', '')}", axis=1).tolist()
     profil_choisi = st.selectbox("Choisissez un promoteur affiché dans le tableau ci-dessus :", options_noms)
     
     if profil_choisi != "Sélectionnez un profil...":
@@ -723,7 +766,7 @@ def page_corbeille():
             df_orphans, hide_index=True, use_container_width=True, height=400,
             column_config={
                 "C'est mon dossier !": st.column_config.CheckboxColumn("S'attribuer", default=False),
-                "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None
+                "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None, "est_nouveau": None
             },
             disabled=["identifiant", "nom", "commune", "montant_pnr", "activite"]
         )
@@ -756,7 +799,6 @@ def page_supervision():
     c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
     c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
     
-    # RADAR ADMIN
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("#### 👁️ Radar des Dossiers Orphelins")
     mask_vide_admin = (df['gestionnaire'].astype(str).str.strip() == "")
@@ -782,18 +824,30 @@ def page_supervision():
     with col_b2:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.drop(columns=['id', 'documents', 'historique_visites', 'prochaine_visite'], errors='ignore').to_excel(writer, index=False, sheet_name='Dossiers')
+            df.drop(columns=['id', 'documents', 'historique_visites', 'prochaine_visite', 'est_nouveau'], errors='ignore').to_excel(writer, index=False, sheet_name='Dossiers')
         st.download_button("🟢 Sauvegarde Complète (Excel)", data=buffer.getvalue(), file_name="Base_Dossiers.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 def page_integration_admin():
     env_actif = st.session_state.user.get('env')
-    st.title("⚙️ Équipes & Intégration Sécurisée")
-    tab1, tab2 = st.tabs(["📥 Importateur Intelligent (Anti-Écrasement)", "🔐 Gestion des Équipes"])
+    role_user = st.session_state.user['role']
     
-    with tab1:
+    st.title("⚙️ Équipes & Intégration Sécurisée")
+    
+    if role_user == "finance":
+        tabs = st.tabs(["📥 Importateur Nouveaux Financements"])
+        tab_import = tabs[0]
+        tab_equipes = None
+    else:
+        tab_import, tab_equipes = st.tabs(["📥 Importateur Intelligent (Anti-Écrasement)", "🔐 Gestion des Équipes"])
+    
+    with tab_import:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.info("💡 **NOUVEAU :** L'importateur est maintenant un *Puzzle*. Si vous importez un deuxième fichier, il complétera les dossiers sans jamais effacer les anciennes cases qui contiennent déjà des informations.")
+        if role_user == "finance":
+            st.info("💡 **Espace Finance :** Les nouveaux dossiers importés ici seront automatiquement envoyés aux accompagnateurs. S'ils sont reconnus, une étiquette '✨ NOUVEAU' apparaîtra sur leur compte.")
+        else:
+            st.info("💡 **NOUVEAU :** L'importateur est maintenant un *Puzzle*. Si vous importez un deuxième fichier, il complétera les dossiers sans jamais effacer les anciennes cases qui contiennent déjà des informations.")
+            
         st.caption("L'importation se fera dans : **" + env_actif + "** (Filtre > 40 000 DA actif)")
         
         uploaded_file = st.file_uploader(f"📂 Glissez votre fichier (.xlsx ou .csv)", type=['xlsx', 'xls', 'csv'])
@@ -842,7 +896,6 @@ def page_integration_admin():
                             total_rows = len(df)
                             
                             for idx, row in df.iterrows():
-                                # MISE A JOUR BARRE DE PROGRESSION
                                 if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
                                     prog_val = min(1.0, (idx + 1) / total_rows)
                                     progress_bar.progress(prog_val)
@@ -866,14 +919,16 @@ def page_integration_admin():
                                 exist = session.query(Dossier).filter_by(identifiant=ident, date_financement=date_fin).first()
                                 if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
 
-                                # FILTRE 40 000 DA
                                 if 'montant_pnr' in data and 0 < data['montant_pnr'] <= 40000:
                                     count_ignored += 1
                                     continue
 
                                 data['type_dispositif'] = env_actif
 
-                                # LOGIQUE ANTI-ECRASEMENT (LE PUZZLE)
+                                # LA MAGIE FINANCE : Si c'est nouveau, on prépare l'alerte
+                                if not exist:
+                                    data['est_nouveau'] = 'OUI'
+
                                 if exist:
                                     for k, v in data.items(): 
                                         if isinstance(v, str):
@@ -900,57 +955,59 @@ def page_integration_admin():
             finally: session.close()
         st.markdown("</div>", unsafe_allow_html=True)
         
-        st.error("Zone de danger")
-        if st.button("🗑️ FORMARTER LA BASE DE DONNÉES", type="primary"):
-            session = get_session()
-            session.query(Dossier).delete(); session.commit(); session.close()
-            st.rerun()
+        if role_user == "admin":
+            st.error("Zone de danger")
+            if st.button("🗑️ FORMARTER LA BASE DE DONNÉES", type="primary"):
+                session = get_session()
+                session.query(Dossier).delete(); session.commit(); session.close()
+                st.rerun()
 
-    with tab2:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
-        except: df_users = pd.DataFrame()
-            
-        if not df_users.empty:
-            st.markdown("### 🔑 Gestion des Accès")
-            edited_users = st.data_editor(
-                df_users, use_container_width=True, hide_index=True,
-                column_config={
-                    "id": None, "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
-                    "nom": st.column_config.TextColumn("Nom", disabled=True), 
-                    "daira": st.column_config.SelectboxColumn("Cellule", options=LISTE_DAIRAS),
-                    "mot_de_passe": st.column_config.TextColumn("Mot de passe")
-                }
-            )
-            if st.button("💾 Sauvegarder", type="primary"):
-                session = get_session()
-                try:
-                    for _, row in edited_users.iterrows():
-                        user_db = session.query(UtilisateurAuth).get(row['id'])
-                        if user_db: 
-                            user_db.mot_de_passe = row['mot_de_passe']
-                            user_db.daira = row['daira']
-                    session.commit()
-                    st.success("✅ Accès mis à jour !")
-                except Exception as e: session.rollback()
-                finally: session.close()
+    if tab_equipes:
+        with tab_equipes:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
+            except: df_users = pd.DataFrame()
                 
-        st.markdown("---")
-        with st.form("ajout_agent"):
-            st.markdown("#### ➕ Ajouter un agent")
-            c1, c2, c3 = st.columns([1, 1.5, 1])
-            new_id = c1.text_input("Identifiant")
-            new_nom = c2.text_input("Nom Complet")
-            new_daira = c3.selectbox("Cellule", LISTE_DAIRAS)
-            if st.form_submit_button("Créer le compte") and new_id and new_nom:
-                session = get_session()
-                if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
-                    session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
-                    session.commit()
-                    st.success("Agent ajouté !")
-                    st.rerun()
-                session.close()
-        st.markdown("</div>", unsafe_allow_html=True)
+            if not df_users.empty:
+                st.markdown("### 🔑 Gestion des Accès")
+                edited_users = st.data_editor(
+                    df_users, use_container_width=True, hide_index=True,
+                    column_config={
+                        "id": None, "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
+                        "nom": st.column_config.TextColumn("Nom", disabled=True), 
+                        "daira": st.column_config.SelectboxColumn("Cellule", options=LISTE_DAIRAS),
+                        "mot_de_passe": st.column_config.TextColumn("Mot de passe")
+                    }
+                )
+                if st.button("💾 Sauvegarder", type="primary"):
+                    session = get_session()
+                    try:
+                        for _, row in edited_users.iterrows():
+                            user_db = session.query(UtilisateurAuth).get(row['id'])
+                            if user_db: 
+                                user_db.mot_de_passe = row['mot_de_passe']
+                                user_db.daira = row['daira']
+                        session.commit()
+                        st.success("✅ Accès mis à jour !")
+                    except Exception as e: session.rollback()
+                    finally: session.close()
+                    
+            st.markdown("---")
+            with st.form("ajout_agent"):
+                st.markdown("#### ➕ Ajouter un agent")
+                c1, c2, c3 = st.columns([1, 1.5, 1])
+                new_id = c1.text_input("Identifiant")
+                new_nom = c2.text_input("Nom Complet")
+                new_daira = c3.selectbox("Cellule", LISTE_DAIRAS)
+                if st.form_submit_button("Créer le compte") and new_id and new_nom:
+                    session = get_session()
+                    if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
+                        session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
+                        session.commit()
+                        st.success("Agent ajouté !")
+                        st.rerun()
+                    session.close()
+            st.markdown("</div>", unsafe_allow_html=True)
 
 # --- DEMARRAGE DE L'APPLICATION ---
 if st.session_state.user is None: login_page()
@@ -958,8 +1015,8 @@ else:
     page = sidebar_menu()
     
     if "Espace de Travail" in page or "Base Globale" in page:
-        vue_admin = "Base Globale" in page
+        vue_admin = ("Base Globale" in page)
         page_gestion(vue_admin=vue_admin)
     elif "Corbeille" in page: page_corbeille()
     elif "Supervision" in page and st.session_state.user['role'] == "admin": page_supervision()
-    elif "Intégration" in page and st.session_state.user['role'] == "admin": page_integration_admin()
+    elif "Importation" in page or "Intégration" in page: page_integration_admin()
