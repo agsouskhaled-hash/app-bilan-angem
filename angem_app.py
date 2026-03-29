@@ -16,7 +16,7 @@ import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v22.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v23.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -25,73 +25,79 @@ SUPABASE_URL = "https://greyjhgiytajxpvucbrk.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyZXlqaGdpeXRhanhwdnVjYnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMTU0MjksImV4cCI6MjA4NzU5MTQyOX0.jCNan1Y1hvfGog6Zcu8Rr8d5PkeFRFvipAGGB09ztxo"
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- DYNAMIQUE DES COULEURS (PROJET = Bleu, AMP = Vert) ---
+# --- DYNAMIQUE DES COULEURS ---
 if 'user' in st.session_state and st.session_state.user is not None:
     theme_color = "#1f77b4" if st.session_state.user.get('env') == "PNR PROJET" else "#28a745"
-    theme_bg = "#f0f7fb" if st.session_state.user.get('env') == "PNR PROJET" else "#f0fbf2"
+    theme_bg = "#f4f9fc" if st.session_state.user.get('env') == "PNR PROJET" else "#f4fcf5"
 else:
     theme_color = "#2c3e50"
-    theme_bg = "#f4f7f6"
+    theme_bg = "#f8f9fa"
 
-# --- LE STYLE CSS MODERNE & RESPONSIVE (MOBILE) ---
+# --- LE STYLE CSS PREMIUM ---
 st.markdown(f"""
 <style>
-    .stApp {{ background-color: {theme_bg}; }}
-    div[data-testid="metric-container"] {{
-        background-color: #ffffff; border: 1px solid #e1e5eb; padding: 20px;
-        border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-        border-left: 6px solid {theme_color}; transition: transform 0.2s ease-in-out;
-    }}
-    div[data-testid="metric-container"]:hover {{ transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.08); }}
-    .stButton>button {{ border-radius: 8px; font-weight: 600; transition: all 0.3s; border: none; }}
-    .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.15); }}
-    .login-container {{
-        background: #ffffff; padding: 40px; border-radius: 16px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center;
-        max-width: 450px; margin: 0 auto; border: 1px solid #f0f2f6; border-top: 6px solid {theme_color};
-    }}
-    .modern-card {{
-        background-color: #ffffff; padding: 25px; border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-top: 15px; margin-bottom: 15px;
-        border: 1px solid #e1e5eb; border-top: 3px solid {theme_color};
-    }}
-    .profil-header {{
-        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%); padding: 20px;
-        border-radius: 10px; border-left: 6px solid {theme_color}; margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    }}
-    .alerte-urgente {{
-        background-color: #fff3f3; border-left: 6px solid #dc3545; padding: 15px 20px;
-        border-radius: 8px; color: #b02a37; font-weight: bold; margin-bottom: 20px; font-size: 16px;
-        animation: pulse 2s infinite;
-    }}
-    .alerte-nouveau {{
-        background-color: #f0fdf4; border-left: 6px solid #16a34a; padding: 15px 20px;
-        border-radius: 8px; color: #15803d; font-weight: bold; margin-bottom: 20px; font-size: 16px;
-    }}
-    @keyframes pulse {{
-        0% {{ box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }}
-        70% {{ box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }}
-        100% {{ box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }}
-    }}
-    .action-btn-container {{ display: flex; gap: 10px; margin-top: 10px; margin-bottom: 20px; flex-wrap: wrap; }}
-    .btn-call {{ background-color: #007bff; color: white; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; flex: 1; min-width: 150px; transition: 0.3s; box-shadow: 0 2px 5px rgba(0,123,255,0.3); }}
-    .btn-wa {{ background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; flex: 1; min-width: 150px; transition: 0.3s; box-shadow: 0 2px 5px rgba(37,211,102,0.3); }}
-    .btn-maps {{ background-color: #ea4335; color: white; padding: 10px 15px; border-radius: 8px; text-decoration: none; font-weight: bold; text-align: center; flex: 1; min-width: 150px; transition: 0.3s; box-shadow: 0 2px 5px rgba(234,67,53,0.3); }}
-    .btn-call:hover, .btn-wa:hover, .btn-maps:hover {{ opacity: 0.8; color: white; transform: translateY(-2px); }}
-    .doc-link {{ display: block; background-color: #f0f2f6; padding: 12px; border-radius: 8px; text-decoration: none; color: #1f77b4; font-weight: bold; margin-bottom: 8px; border: 1px solid #e1e5eb; transition: 0.2s;}}
-    .doc-link:hover {{ background-color: #e1e5eb; color: #0d47a1; }}
-    .search-title {{ color: {theme_color}; font-weight: bold; font-size: 24px; margin-bottom: 10px; }}
-    .compteur-orphelins {{ font-size: 40px; font-weight: bold; color: #dc3545; text-align: center; margin: 10px 0; }}
+    .stApp {{ background-color: {theme_bg}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
     
+    /* Cartes modernes et ombres douces */
+    .modern-card {{
+        background-color: #ffffff; padding: 25px; border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04); margin-top: 15px; margin-bottom: 25px;
+        border: 1px solid #edf2f7; border-top: 4px solid {theme_color};
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }}
+    .modern-card:hover {{ transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }}
+    
+    /* Cartes du portail de connexion */
+    .portal-card {{
+        background: #ffffff; padding: 30px 20px; border-radius: 16px; text-align: center;
+        border: 2px solid #edf2f7; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        cursor: pointer; transition: all 0.3s ease; height: 100%; display: flex; flex-direction: column; justify-content: center;
+    }}
+    .portal-card:hover {{ border-color: {theme_color}; transform: translateY(-5px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }}
+    .portal-icon {{ font-size: 48px; margin-bottom: 15px; }}
+    .portal-title {{ font-size: 20px; font-weight: bold; color: #2d3748; margin-bottom: 10px; }}
+    .portal-desc {{ font-size: 14px; color: #718096; }}
+
+    /* En-tête du profil promoteur */
+    .profil-header {{
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); padding: 25px;
+        border-radius: 12px; border-left: 8px solid {theme_color}; margin-bottom: 25px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    }}
+    
+    /* Alertes animées */
+    .alerte-urgente {{ background-color: #fef2f2; border-left: 6px solid #ef4444; padding: 15px 20px; border-radius: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 20px; animation: pulseRed 2s infinite; }}
+    .alerte-nouveau {{ background-color: #f0fdf4; border-left: 6px solid #22c55e; padding: 15px 20px; border-radius: 8px; color: #15803d; font-weight: 600; margin-bottom: 20px; animation: pulseGreen 2s infinite; }}
+    @keyframes pulseRed {{ 0% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }} }}
+    @keyframes pulseGreen {{ 0% {{ box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }} }}
+    
+    /* Boutons d'action rapides */
+    .action-btn-container {{ display: flex; gap: 12px; margin-top: 15px; margin-bottom: 25px; flex-wrap: wrap; }}
+    .btn-action {{ flex: 1; min-width: 160px; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; text-align: center; color: white; transition: all 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; }}
+    .btn-call {{ background-color: #3b82f6; }} .btn-call:hover {{ background-color: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(59,130,246,0.3); color: white; }}
+    .btn-wa {{ background-color: #22c55e; }} .btn-wa:hover {{ background-color: #16a34a; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(34,197,94,0.3); color: white; }}
+    .btn-maps {{ background-color: #ef4444; }} .btn-maps:hover {{ background-color: #dc2626; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(239,68,68,0.3); color: white; }}
+    
+    /* Liens documentaires */
+    .doc-link {{ display: flex; align-items: center; gap: 10px; background-color: #f1f5f9; padding: 12px 16px; border-radius: 8px; text-decoration: none; color: #334155; font-weight: 600; margin-bottom: 10px; border: 1px solid #e2e8f0; transition: all 0.2s; }}
+    .doc-link:hover {{ background-color: #e2e8f0; color: #0f172a; transform: translateX(4px); }}
+    
+    /* Boutons natifs Streamlit */
+    .stButton>button {{ border-radius: 8px; font-weight: 600; transition: all 0.2s; border: none; padding: 0.5rem 1rem; }}
+    .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
+    
+    /* Responsive Mobile */
     @media (max-width: 768px) {{
-        .btn-call, .btn-wa, .btn-maps {{ min-width: 100%; margin-bottom: 5px; }}
-        .profil-header {{ padding: 15px; }}
-        .modern-card {{ padding: 15px; }}
-        .action-btn-container {{ flex-direction: column; }}
+        .btn-action {{ min-width: 100%; margin-bottom: 8px; }}
+        .modern-card, .profil-header {{ padding: 15px; }}
+        .portal-card {{ margin-bottom: 15px; }}
     }}
 </style>
 """, unsafe_allow_html=True)
+
+# --- INITIALISATION SESSION STATE PORTAIL ---
+if 'portal_selection' not in st.session_state:
+    st.session_state.portal_selection = None
 
 # --- CONNEXION BASE DE DONNÉES ---
 Base = declarative_base()
@@ -136,7 +142,7 @@ class Dossier(Base):
     documents = Column(String, default="") 
     historique_visites = Column(String, default="") 
     prochaine_visite = Column(String, default="")
-    est_nouveau = Column(String, default="NON") # NOUVEAU: Pour la pastille "NOUVEAU"
+    est_nouveau = Column(String, default="NON")
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -166,13 +172,9 @@ def get_session(): return Session()
 def init_db_users():
     session = get_session()
     admin = session.query(UtilisateurAuth).filter_by(identifiant="admin").first()
-    if not admin:
-        session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"))
-    
+    if not admin: session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"))
     finance = session.query(UtilisateurAuth).filter_by(identifiant="finance").first()
-    if not finance:
-        session.add(UtilisateurAuth(identifiant="finance", nom="Service Finance", mot_de_passe="angem", role="finance"))
-        
+    if not finance: session.add(UtilisateurAuth(identifiant="finance", nom="Service Finance", mot_de_passe="angem", role="finance"))
     session.commit()
     session.close()
 
@@ -186,7 +188,7 @@ def afficher_logo(largeur=250):
             encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/png;base64,{encoded_string}" width="{largeur}"></div>', unsafe_allow_html=True)
     except:
-        st.markdown(f'<div style="text-align: center; color: {theme_color}; font-size: 24px; font-weight: bold; border: 2px solid {theme_color}; padding: 10px; border-radius: 10px; margin-bottom: 20px;">🔵 ANGEM Workspace</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align: center; color: {theme_color}; font-size: 28px; font-weight: 800; padding: 15px; margin-bottom: 20px; letter-spacing: 1px;">🔵 ANGEM Workspace</div>', unsafe_allow_html=True)
 
 def clean_pdf_text(text):
     if not text: return ""
@@ -329,7 +331,7 @@ def clean_header(val):
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
-    if pd.isna(val) or str(val).strip() == '': return None # Puzzle (Anti-écrasement)
+    if pd.isna(val) or str(val).strip() == '': return None
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.-]', '', s)
     try: return float(s)
@@ -384,43 +386,69 @@ def get_badge(row):
 
 if 'user' not in st.session_state: st.session_state.user = None
 
-# --- ECRAN DE CONNEXION INTELLIGENT ---
+# --- LE NOUVEAU PORTAIL DE CONNEXION ---
 def login_page():
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-        afficher_logo(220)
-        st.markdown("<h3 style='color: #2c3e50; margin-bottom: 25px;'>Portail Workspace ANGEM</h3>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    afficher_logo(200)
+    
+    if st.session_state.portal_selection is None:
+        st.markdown("<h2 style='text-align: center; color: #1e293b; font-weight: 800;'>Portail de Connexion</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #64748b; margin-bottom: 40px;'>Sélectionnez votre service pour accéder à votre espace de travail.</p>", unsafe_allow_html=True)
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("<div class='portal-card'>", unsafe_allow_html=True)
+            if st.button("👩‍💻\n\nAccompagnateurs", use_container_width=True): st.session_state.portal_selection = "agent"
+            st.markdown("<p class='portal-desc'>Suivi terrain, agenda & gestion des promoteurs.</p></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown("<div class='portal-card'>", unsafe_allow_html=True)
+            if st.button("💰\n\nService Finance", use_container_width=True): st.session_state.portal_selection = "finance"
+            st.markdown("<p class='portal-desc'>Intégration des nouveaux financements PNR.</p></div>", unsafe_allow_html=True)
+        with c3:
+            st.markdown("<div class='portal-card'>", unsafe_allow_html=True)
+            if st.button("👑\n\nDirection & Admin", use_container_width=True): st.session_state.portal_selection = "admin"
+            st.markdown("<p class='portal-desc'>Supervision, extractions et gestion des accès.</p></div>", unsafe_allow_html=True)
+            
+    else:
+        role_selectionne = st.session_state.portal_selection
+        titre_form = "Espace Accompagnateur" if role_selectionne == "agent" else "Service Finance" if role_selectionne == "finance" else "Administration Globale"
+        
+        st.markdown(f"<div class='login-container'>", unsafe_allow_html=True)
+        if st.button("⬅️ Retour aux services", key="back_btn"):
+            st.session_state.portal_selection = None
+            st.rerun()
+            
+        st.markdown(f"<h3 style='color: #2c3e50; margin: 20px 0;'>{titre_form}</h3>", unsafe_allow_html=True)
         
         session = get_session()
         try:
-            users_db = session.query(UtilisateurAuth).order_by(UtilisateurAuth.nom).all()
+            users_db = session.query(UtilisateurAuth).filter_by(role=role_selectionne).order_by(UtilisateurAuth.nom).all()
             noms_disponibles = [u.nom for u in users_db]
-        except: noms_disponibles = ["Administrateur", "Service Finance"]
+        except: noms_disponibles = []
         session.close()
 
-        nom_choisi = st.selectbox("👤 Profil Utilisateur", noms_disponibles)
-        password = st.text_input("🔑 Mot de passe", type="password")
-        
-        st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
-        env_choisi = st.selectbox("🏢 Choisissez votre environnement de travail", ["PNR PROJET", "PNR AMP"])
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🚀 Entrer dans l'espace sécurisé", type="primary", use_container_width=True):
-            session = get_session()
-            user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi).first()
-            session.close()
-            if user_db and user_db.mot_de_passe == password:
-                st.session_state.user = {
-                    "identifiant": user_db.identifiant, 
-                    "nom": user_db.nom, 
-                    "role": user_db.role, 
-                    "daira": user_db.daira,
-                    "env": env_choisi 
-                }
-                st.rerun()
-            else: st.error("⚠️ Mot de passe incorrect.")
+        if not noms_disponibles:
+            st.warning("Aucun compte trouvé pour ce service.")
+        else:
+            nom_choisi = st.selectbox("👤 Profil Utilisateur", noms_disponibles)
+            password = st.text_input("🔑 Mot de passe", type="password")
+            env_choisi = st.selectbox("🏢 Dispositif", ["PNR PROJET", "PNR AMP"])
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🚀 Entrer dans l'espace sécurisé", type="primary", use_container_width=True):
+                session = get_session()
+                user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi, role=role_selectionne).first()
+                session.close()
+                if user_db and user_db.mot_de_passe == password:
+                    st.session_state.user = {
+                        "identifiant": user_db.identifiant, 
+                        "nom": user_db.nom, 
+                        "role": user_db.role, 
+                        "daira": user_db.daira,
+                        "env": env_choisi 
+                    }
+                    st.rerun()
+                else: st.error("⚠️ Mot de passe incorrect.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 def sidebar_menu():
@@ -429,42 +457,33 @@ def sidebar_menu():
     daira_info = f" ({st.session_state.user.get('daira')})" if st.session_state.user.get('daira') else ""
     
     st.sidebar.markdown(f"""
-    <div style='text-align: center; padding: 15px; background: {theme_color}15; border: 1px solid {theme_color}40; border-radius: 8px; margin-bottom: 20px;'>
-        <b style='color: #2c3e50; font-size:18px;'>👤 {st.session_state.user['nom']}</b><br>
-        <small style='color: #555;'>📍 Cellule {daira_info}</small><br>
-        <div style='margin-top:8px; display:inline-block; background:{theme_color}; color:white; padding:4px 10px; border-radius:15px; font-size:12px; font-weight:bold;'>
+    <div style='text-align: center; padding: 15px; background: {theme_color}10; border: 1px solid {theme_color}30; border-radius: 12px; margin-bottom: 25px;'>
+        <div style='font-size: 40px; margin-bottom: 5px;'>👤</div>
+        <b style='color: #1e293b; font-size:18px;'>{st.session_state.user['nom']}</b><br>
+        <small style='color: #64748b;'>📍 Cellule {daira_info}</small><br>
+        <div style='margin-top:12px; display:inline-block; background:{theme_color}; color:white; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
             🏢 {env}
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     if st.session_state.user['role'] == "finance":
-        options = [
-            f"📥 Importation Financements",
-            f"🗂️ Base Globale ({env})"
-        ]
+        options = [f"📥 Importation Financements", f"🗂️ Base Globale ({env})"]
     elif st.session_state.user['role'] == "admin":
-        options = [
-            f"🗂️ Base Globale ({env})",
-            "📊 Supervision Direction", 
-            "⚙️ Intégration & Équipes"
-        ]
+        options = [f"🗂️ Base Globale ({env})", "📊 Supervision Direction", "⚙️ Intégration & Équipes"]
     else:
-        options = [
-            f"🗂️ Espace de Travail ({env})", 
-            "🗑️ Corbeille & Affectation"
-        ]
+        options = [f"🗂️ Espace de Travail ({env})", "🗑️ Corbeille & Affectation"]
         
     choix = st.sidebar.radio("Menu de Navigation", options, label_visibility="collapsed")
     st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Changer d'environnement / Déconnexion", use_container_width=True):
+    if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
         st.session_state.user = None
+        st.session_state.portal_selection = None
         st.rerun()
     return choix
 
 # --- AFFICHAGE DU PROFIL COMPLET ---
 def afficher_profil_promoteur(dos_db, session):
-    # LA MAGIE (CHOIX B) : Si c'est nouveau et que ça appartient à l'agent, on enlève l'étiquette
     if dos_db.est_nouveau == "OUI" and dos_db.gestionnaire == st.session_state.user['nom']:
         dos_db.est_nouveau = "NON"
         session.commit()
@@ -472,18 +491,17 @@ def afficher_profil_promoteur(dos_db, session):
     taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
     st.markdown(f"""
     <div class='profil-header'>
-        <h2 style='margin:0; color:{theme_color};'>👤 {dos_db.nom} {dos_db.prenom}</h2>
-        <p style='margin:5px 0 0 0; font-size:16px;'><b>ID:</b> {dos_db.identifiant}  |  <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
-        <p style='margin:10px 0 5px 0;'><b>Remboursement ({dos_db.montant_rembourse:,.0f} / {dos_db.montant_pnr:,.0f} DA) : {taux*100:.1f}%</b></p>
+        <h2 style='margin:0; color:{theme_color}; font-weight: 800;'>{dos_db.nom} {dos_db.prenom}</h2>
+        <p style='margin:5px 0 0 0; font-size:16px; color: #475569;'><b>ID:</b> {dos_db.identifiant}  |  <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
+        <p style='margin:15px 0 8px 0; font-weight: 600;'>Progression du Remboursement ({dos_db.montant_rembourse:,.0f} / {dos_db.montant_pnr:,.0f} DA) : {taux*100:.1f}%</p>
     </div>
     """, unsafe_allow_html=True)
     st.progress(min(taux, 1.0))
 
-    # NOUVEAU : LE BOUTON D'ATTRIBUTION MAGIQUE POUR L'AGENT
     if not dos_db.gestionnaire or dos_db.gestionnaire.strip() == "":
         st.info("ℹ️ Ce dossier n'a pas d'accompagnateur assigné.")
         if st.session_state.user['role'] == 'agent':
-            if st.button("🙋‍♂️ M'attribuer ce dossier", key=f"claim_{dos_db.id}", type="primary"):
+            if st.button("🙋‍♂️ M'attribuer ce dossier en un clic", key=f"claim_{dos_db.id}", type="primary", use_container_width=True):
                 dos_db.gestionnaire = st.session_state.user['nom']
                 session.commit()
                 st.success("✅ Dossier attribué ! Il est maintenant dans votre portefeuille.")
@@ -493,21 +511,20 @@ def afficher_profil_promoteur(dos_db, session):
     tel_clean = re.sub(r'\D', '', tel_brut) if tel_brut else ""
     tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
     msg_wa = f"Bonjour {clean_pdf_text(dos_db.nom)}, c'est votre accompagnateur ANGEM."
-    
     adresse_complete = f"{dos_db.adresse} {dos_db.commune} Algerie"
     lien_maps = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(adresse_complete)}"
 
     st.markdown("<div class='action-btn-container'>", unsafe_allow_html=True)
     if tel_clean and len(tel_clean) >= 9:
-        st.markdown(f"<a href='tel:{tel_clean}' class='btn-call' target='_blank'>📞 Appeler</a>", unsafe_allow_html=True)
-        st.markdown(f"<a href='https://wa.me/{tel_wa}?text={urllib.parse.quote(msg_wa)}' class='btn-wa' target='_blank'>💬 WhatsApp</a>", unsafe_allow_html=True)
-    st.markdown(f"<a href='{lien_maps}' class='btn-maps' target='_blank'>🗺️ Trouver sur Maps</a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='tel:{tel_clean}' class='btn-action btn-call' target='_blank'>📞 Appeler</a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='https://wa.me/{tel_wa}?text={urllib.parse.quote(msg_wa)}' class='btn-action btn-wa' target='_blank'>💬 WhatsApp</a>", unsafe_allow_html=True)
+    st.markdown(f"<a href='{lien_maps}' class='btn-action btn-maps' target='_blank'>🗺️ Ouvrir Maps</a>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
     
-    st.markdown("<br>", unsafe_allow_html=True)
     col_gauche, col_droite = st.columns([1.3, 1])
     
     with col_gauche:
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.markdown("### 🗓️ Planifier une visite")
         col_d1, col_d2 = st.columns([2,1])
         date_visite = col_d1.date_input("Date prévue :", key=f"date_{dos_db.id}")
@@ -523,8 +540,9 @@ def afficher_profil_promoteur(dos_db, session):
                 dos_db.prochaine_visite = ""
                 session.commit()
                 st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
                 
-        st.markdown("---")
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.markdown("### 📝 Rapport & Historique")
         nouvelle_note = st.text_area("Rédiger un compte-rendu :", placeholder="Observations...", key=f"note_{dos_db.id}")
         if st.button("Enregistrer le rapport", key=f"btn_note_{dos_db.id}"):
@@ -536,18 +554,19 @@ def afficher_profil_promoteur(dos_db, session):
             st.success("Rapport ajouté !")
             st.rerun()
         
-        st.markdown(f"<div style='background-color:#ffffff; border:1px solid #e1e5eb; padding:15px; border-radius:8px; height: 300px; overflow-y: auto; border-left: 4px solid {theme_color};'>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:15px; border-radius:8px; height: 200px; overflow-y: auto; border-left: 4px solid {theme_color};'>", unsafe_allow_html=True)
         if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
-        else: st.markdown("<span style='color:#888;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        else: st.markdown("<span style='color:#94a3b8;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
+        st.markdown("</div></div>", unsafe_allow_html=True)
     
     with col_droite:
-        st.markdown("### 📎 Dossier & Pièces jointes")
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.markdown("### 📎 Documents & Base Documentaire")
         pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
         st.download_button("📄 Exporter la Fiche (PDF)", data=pdf_bytes, file_name=f"Dossier_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True, key=f"pdf_{dos_db.id}")
         
         st.markdown("---")
-        with st.expander("☁️ 📸 Scanner un document avec la caméra"):
+        with st.expander("📸 Scanner un document (Caméra)"):
             photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed", key=f"cam_{dos_db.id}")
             if photo_camera is not None:
                 if st.button("☁️ Archiver sur le Cloud", use_container_width=True, key=f"up_cam_{dos_db.id}"):
@@ -561,7 +580,7 @@ def afficher_profil_promoteur(dos_db, session):
                         st.rerun()
                     except Exception as e: st.error(f"Erreur Cloud : {e}")
 
-        with st.expander("☁️ 📁 Joindre un fichier (PDF/Image)"):
+        with st.expander("📁 Joindre un fichier (PDF/Image)"):
             nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed", key=f"file_{dos_db.id}")
             if nouveau_scan is not None:
                 if st.button("☁️ Archiver sur le Cloud", use_container_width=True, key=f"up_file_{dos_db.id}"):
@@ -576,7 +595,7 @@ def afficher_profil_promoteur(dos_db, session):
                         st.rerun()
                     except Exception as e: st.error(f"Erreur Cloud : {e}")
                 
-        st.markdown("**🗄️ Base Documentaire du Promoteur :**")
+        st.markdown("<br>**Base Documentaire du Promoteur :**", unsafe_allow_html=True)
         if dos_db.documents:
             docs_list = [d for d in dos_db.documents.split("|") if d]
             if not docs_list: st.caption("Aucune pièce jointe.")
@@ -586,8 +605,9 @@ def afficher_profil_promoteur(dos_db, session):
                     if doc.lower().endswith(('.png', '.jpg', '.jpeg')):
                         st.image(public_url, caption=doc, use_container_width=True)
                     else:
-                        st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Consulter le document</a>", unsafe_allow_html=True)
+                        st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Voir : {doc[:20]}...</a>", unsafe_allow_html=True)
         else: st.caption("Aucune pièce jointe.")
+        st.markdown("</div>", unsafe_allow_html=True)
     
     st.markdown("---")
     with st.expander("⚠️ Options Avancées (Suppression de doublon)"):
@@ -612,22 +632,18 @@ def page_gestion(vue_admin=False):
         st.info(f"📌 Aucun dossier dans l'environnement {env_actif}.")
         return
 
-    # ALERTE NOUVEAUX FINANCEMENTS (Finance vers Agent)
     if role_user == 'agent':
         df_nouveaux = df[(df['gestionnaire'] == nom_agent) & (df['est_nouveau'] == "OUI")]
         if len(df_nouveaux) > 0:
             st.markdown(f"<div class='alerte-nouveau'>🎉 Bonne nouvelle : {len(df_nouveaux)} nouveau(x) dossier(s) financé(s) ajouté(s) à votre portefeuille !</div>", unsafe_allow_html=True)
 
-    # ALERTE ROUGE ORPHELINS (Seulement pour les agents)
     if role_user == 'agent' and agent_daira:
         mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
         mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
         nb_orphelins = len(df[mask_vide & mask_cellule])
-        
         if nb_orphelins > 0:
-            st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation' ou utilisez la recherche pour les récupérer.</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation'.</div>", unsafe_allow_html=True)
 
-    # BARRE DE RECHERCHE RAPIDE
     st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
     st.markdown(f"<div class='search-title'>🔍 Moteur de recherche rapide ({env_actif})</div>", unsafe_allow_html=True)
     search_global = st.text_input("Tapez le Nom, l'Identifiant ou le Téléphone du promoteur et appuyez sur Entrée...", key="search_bar")
@@ -636,7 +652,6 @@ def page_gestion(vue_admin=False):
     if search_global:
         mask_search = df.apply(lambda x: x.astype(str).str.contains(search_global, case=False).any(), axis=1)
         df_trouve = df[mask_search]
-        
         if not df_trouve.empty:
             st.success(f"🎯 {len(df_trouve)} résultat(s) trouvé(s)")
             for _, row in df_trouve.iterrows():
@@ -646,10 +661,8 @@ def page_gestion(vue_admin=False):
                     if dos_db: afficher_profil_promoteur(dos_db, session)
                     session.close()
             st.markdown("---")
-        else:
-            st.warning("⚠️ Aucun promoteur trouvé pour cette recherche.")
+        else: st.warning("⚠️ Aucun promoteur trouvé pour cette recherche.")
 
-    # FILTRAGE DU TABLEAU POUR L'AGENT
     if not vue_admin and role_user != 'finance':
         mots_agent = set([m for m in re.split(r'\W+', nom_agent.upper()) if len(m) >= 3])
         def match_agent(val):
@@ -661,8 +674,6 @@ def page_gestion(vue_admin=False):
         df = df[df['gestionnaire'].apply(match_agent)]
 
     df['Badge'] = df.apply(get_badge, axis=1)
-
-    # AJOUT DE L'ETIQUETTE "NOUVEAU" DANS LE TABLEAU
     df_affichage = df.copy()
     df_affichage.loc[df_affichage['est_nouveau'] == 'OUI', 'nom'] = "✨ NOUVEAU - " + df_affichage['nom']
 
@@ -673,26 +684,27 @@ def page_gestion(vue_admin=False):
 
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     col_t, col_f = st.columns([1, 2])
-    col_t.markdown(f"#### 🗂️ Pipeline {env_actif}")
+    col_t.markdown(f"<h4 style='margin:0; color:#2d3748;'>🗂️ Pipeline {env_actif}</h4>", unsafe_allow_html=True)
     filtre_badge = col_f.radio("Filtrer la liste :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True, label_visibility="collapsed")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if filtre_badge != "Tous":
-        df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
+    
+    if filtre_badge != "Tous": df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
 
     try:
         df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
         liste_agents = [""] + sorted(list(set(df_agents['nom'].tolist() + df['gestionnaire'].unique().tolist())))
     except: liste_agents = [""]
 
-    st.caption(f"Affichage de {len(df_affichage)} dossiers.")
+    st.caption(f"Affichage de {len(df_affichage)} dossiers. Cochez la case 'Ouvrir 📂' pour voir le détail complet du promoteur.")
 
-    # Désactiver la modification de l'agent si on est ni Admin ni Finance
     is_not_admin = (role_user == 'agent')
+    
+    # LA NOUVEAUTE MAGIQUE : Colonne "Ouvrir" dans le tableau
+    df_affichage.insert(0, "Ouvrir 📂", False)
 
     edited_df = st.data_editor(
-        df_affichage, use_container_width=True, hide_index=True, height=500,
+        df_affichage, use_container_width=True, hide_index=True, height=450,
         column_config={
+            "Ouvrir 📂": st.column_config.CheckboxColumn("Ouvrir 📂", default=False),
             "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None, "est_nouveau": None,
             "Badge": st.column_config.TextColumn("État", disabled=True),
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
@@ -704,7 +716,7 @@ def page_gestion(vue_admin=False):
         }
     )
 
-    if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
+    if st.button("💾 Enregistrer les modifications de statut/agent du tableau", type="primary"):
         session = get_session()
         try:
             for _, row in edited_df.iterrows():
@@ -717,24 +729,20 @@ def page_gestion(vue_admin=False):
             st.rerun()
         except Exception as e: session.rollback(); st.error(e)
         finally: session.close()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # RUBRIQUE FIXE SOUS LE TABLEAU
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"<h3 style='color: {theme_color}; border-bottom: 2px solid {theme_color}; padding-bottom: 5px;'>📂 Profil Détaillé du Promoteur</h3>", unsafe_allow_html=True)
-    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    
-    options_noms = ["Sélectionnez un profil..."] + df_affichage.apply(lambda x: f"{x['identifiant']} - {x['nom'].replace('✨ NOUVEAU - ', '')}", axis=1).tolist()
-    profil_choisi = st.selectbox("Choisissez un promoteur affiché dans le tableau ci-dessus :", options_noms)
-    
-    if profil_choisi != "Sélectionnez un profil...":
-        id_choisi = profil_choisi.split(" - ")[0]
+    # LECTURE DE LA CASE COCHEE POUR OUVRIR LE PROFIL
+    lignes_selectionnees = edited_df[edited_df["Ouvrir 📂"] == True]
+    if not lignes_selectionnees.empty:
+        id_choisi = lignes_selectionnees.iloc[0]['identifiant']
+        st.markdown(f"<h3 style='color: {theme_color}; border-bottom: 2px solid {theme_color}; padding-bottom: 5px; margin-top: 20px;'>📂 Profil Détaillé du Promoteur</h3>", unsafe_allow_html=True)
         session = get_session()
         dos_db = session.query(Dossier).filter_by(identifiant=id_choisi).first()
         if dos_db:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             afficher_profil_promoteur(dos_db, session)
+            st.markdown("</div>", unsafe_allow_html=True)
         session.close()
-    st.markdown("</div>", unsafe_allow_html=True)
-
 
 def page_corbeille():
     env_actif = st.session_state.user.get('env')
@@ -753,7 +761,7 @@ def page_corbeille():
     df_orphans = df[mask_vide & mask_cellule].copy()
     
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    st.markdown(f"<h3 style='text-align: center; color: #2c3e50;'>Dossiers en attente dans la Daïra de {agent_daira}</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align: center; color: #2d3748;'>Dossiers en attente dans la Daïra de {agent_daira}</h3>", unsafe_allow_html=True)
     st.markdown(f"<div class='compteur-orphelins'>{len(df_orphans)}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -800,7 +808,7 @@ def page_supervision():
     c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
     
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    st.markdown("#### 👁️ Radar des Dossiers Orphelins")
+    st.markdown("<h4 style='margin:0; color:#2d3748;'>👁️ Radar des Dossiers Orphelins</h4><br>", unsafe_allow_html=True)
     mask_vide_admin = (df['gestionnaire'].astype(str).str.strip() == "")
     df_orphelins_admin = df[mask_vide_admin]
     
@@ -814,7 +822,7 @@ def page_supervision():
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    st.markdown("#### 📥 Extractions Officielles (PDF / Excel)")
+    st.markdown("<h4 style='margin:0; color:#2d3748;'>📥 Extractions Officielles (PDF / Excel)</h4><br>", unsafe_allow_html=True)
     col_b1, col_b2 = st.columns(2)
     with col_b1:
         pdf_global = generer_rapport_global_pdf(df)
@@ -839,14 +847,14 @@ def page_integration_admin():
         tab_import = tabs[0]
         tab_equipes = None
     else:
-        tab_import, tab_equipes = st.tabs(["📥 Importateur Intelligent (Anti-Écrasement)", "🔐 Gestion des Équipes"])
+        tab_import, tab_equipes = st.tabs(["📥 Importateur Intelligent", "🔐 Gestion des Équipes"])
     
     with tab_import:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         if role_user == "finance":
             st.info("💡 **Espace Finance :** Les nouveaux dossiers importés ici seront automatiquement envoyés aux accompagnateurs. S'ils sont reconnus, une étiquette '✨ NOUVEAU' apparaîtra sur leur compte.")
         else:
-            st.info("💡 **NOUVEAU :** L'importateur est maintenant un *Puzzle*. Si vous importez un deuxième fichier, il complétera les dossiers sans jamais effacer les anciennes cases qui contiennent déjà des informations.")
+            st.info("💡 **Puzzle Actif :** Si vous importez un deuxième fichier, il complétera les dossiers sans effacer les anciennes cases pleines.")
             
         st.caption("L'importation se fera dans : **" + env_actif + "** (Filtre > 40 000 DA actif)")
         
@@ -925,7 +933,6 @@ def page_integration_admin():
 
                                 data['type_dispositif'] = env_actif
 
-                                # LA MAGIE FINANCE : Si c'est nouveau, on prépare l'alerte
                                 if not exist:
                                     data['est_nouveau'] = 'OUI'
 
