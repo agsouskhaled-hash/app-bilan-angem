@@ -16,7 +16,7 @@ import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v23.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v24.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -38,7 +38,6 @@ st.markdown(f"""
 <style>
     .stApp {{ background-color: {theme_bg}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
     
-    /* Cartes modernes et ombres douces */
     .modern-card {{
         background-color: #ffffff; padding: 25px; border-radius: 16px;
         box-shadow: 0 8px 24px rgba(0,0,0,0.04); margin-top: 15px; margin-bottom: 25px;
@@ -47,7 +46,6 @@ st.markdown(f"""
     }}
     .modern-card:hover {{ transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }}
     
-    /* Cartes du portail de connexion */
     .portal-card {{
         background: #ffffff; padding: 30px 20px; border-radius: 16px; text-align: center;
         border: 2px solid #edf2f7; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
@@ -58,35 +56,32 @@ st.markdown(f"""
     .portal-title {{ font-size: 20px; font-weight: bold; color: #2d3748; margin-bottom: 10px; }}
     .portal-desc {{ font-size: 14px; color: #718096; }}
 
-    /* En-tête du profil promoteur */
     .profil-header {{
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); padding: 25px;
         border-radius: 12px; border-left: 8px solid {theme_color}; margin-bottom: 25px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }}
     
-    /* Alertes animées */
     .alerte-urgente {{ background-color: #fef2f2; border-left: 6px solid #ef4444; padding: 15px 20px; border-radius: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 20px; animation: pulseRed 2s infinite; }}
     .alerte-nouveau {{ background-color: #f0fdf4; border-left: 6px solid #22c55e; padding: 15px 20px; border-radius: 8px; color: #15803d; font-weight: 600; margin-bottom: 20px; animation: pulseGreen 2s infinite; }}
     @keyframes pulseRed {{ 0% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }} }}
     @keyframes pulseGreen {{ 0% {{ box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }} }}
     
-    /* Boutons d'action rapides */
     .action-btn-container {{ display: flex; gap: 12px; margin-top: 15px; margin-bottom: 25px; flex-wrap: wrap; }}
     .btn-action {{ flex: 1; min-width: 160px; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; text-align: center; color: white; transition: all 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; }}
     .btn-call {{ background-color: #3b82f6; }} .btn-call:hover {{ background-color: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(59,130,246,0.3); color: white; }}
     .btn-wa {{ background-color: #22c55e; }} .btn-wa:hover {{ background-color: #16a34a; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(34,197,94,0.3); color: white; }}
     .btn-maps {{ background-color: #ef4444; }} .btn-maps:hover {{ background-color: #dc2626; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(239,68,68,0.3); color: white; }}
     
-    /* Liens documentaires */
     .doc-link {{ display: flex; align-items: center; gap: 10px; background-color: #f1f5f9; padding: 12px 16px; border-radius: 8px; text-decoration: none; color: #334155; font-weight: 600; margin-bottom: 10px; border: 1px solid #e2e8f0; transition: all 0.2s; }}
     .doc-link:hover {{ background-color: #e2e8f0; color: #0f172a; transform: translateX(4px); }}
     
-    /* Boutons natifs Streamlit */
     .stButton>button {{ border-radius: 8px; font-weight: 600; transition: all 0.2s; border: none; padding: 0.5rem 1rem; }}
     .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
     
-    /* Responsive Mobile */
+    .search-title {{ color: {theme_color}; font-weight: bold; font-size: 24px; margin-bottom: 10px; }}
+    .compteur-orphelins {{ font-size: 40px; font-weight: bold; color: #dc3545; text-align: center; margin: 10px 0; }}
+    
     @media (max-width: 768px) {{
         .btn-action {{ min-width: 100%; margin-bottom: 8px; }}
         .modern-card, .profil-header {{ padding: 15px; }}
@@ -95,9 +90,9 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALISATION SESSION STATE PORTAIL ---
-if 'portal_selection' not in st.session_state:
-    st.session_state.portal_selection = None
+# --- INITIALISATION SESSION STATE PORTAIL ET RECHERCHE ---
+if 'portal_selection' not in st.session_state: st.session_state.portal_selection = None
+if 'search_query' not in st.session_state: st.session_state.search_query = ""
 
 # --- CONNEXION BASE DE DONNÉES ---
 Base = declarative_base()
@@ -194,7 +189,7 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF (Gardées Intactes) ---
+# --- FONCTIONS PDF ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -470,7 +465,7 @@ def sidebar_menu():
     if st.session_state.user['role'] == "finance":
         options = [f"📥 Importation Financements", f"🗂️ Base Globale ({env})"]
     elif st.session_state.user['role'] == "admin":
-        options = [f"🗂️ Base Globale ({env})", "📊 Supervision Direction", "⚙️ Intégration & Équipes"]
+        options = [f"🗂️ Base Globale ({env})", "📊 Supervision Direction", "⚙️ Intégration & Admin"]
     else:
         options = [f"🗂️ Espace de Travail ({env})", "🗑️ Corbeille & Affectation"]
         
@@ -502,7 +497,7 @@ def afficher_profil_promoteur(dos_db, session):
         st.info("ℹ️ Ce dossier n'a pas d'accompagnateur assigné.")
         if st.session_state.user['role'] == 'agent':
             if st.button("🙋‍♂️ M'attribuer ce dossier en un clic", key=f"claim_{dos_db.id}", type="primary", use_container_width=True):
-                dos_db.gestionnaire = st.session_state.user['nom']
+                dos_db.gestionnaire = st.session_state.user['nom'].upper() # Force MAJ
                 session.commit()
                 st.success("✅ Dossier attribué ! Il est maintenant dans votre portefeuille.")
                 st.rerun()
@@ -610,7 +605,7 @@ def afficher_profil_promoteur(dos_db, session):
         st.markdown("</div>", unsafe_allow_html=True)
     
     st.markdown("---")
-    with st.expander("⚠️ Options Avancées (Suppression de doublon)"):
+    with st.expander("⚠️ Options Avancées (Suppression manuelle)"):
         st.warning("Attention : Ce dossier sera définitivement effacé de la base de données.")
         if st.button("🗑️ Supprimer définitivement ce dossier", key=f"del_{dos_db.id}", type="primary"):
             session.delete(dos_db)
@@ -622,7 +617,7 @@ def afficher_profil_promoteur(dos_db, session):
 def page_gestion(vue_admin=False):
     env_actif = st.session_state.user.get('env')
     agent_daira = st.session_state.user.get('daira', '')
-    nom_agent = str(st.session_state.user['nom'])
+    nom_agent = str(st.session_state.user['nom']).upper() # Force MAJ
     role_user = st.session_state.user['role']
     
     try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}' ORDER BY id DESC", con=engine).fillna('')
@@ -633,7 +628,7 @@ def page_gestion(vue_admin=False):
         return
 
     if role_user == 'agent':
-        df_nouveaux = df[(df['gestionnaire'] == nom_agent) & (df['est_nouveau'] == "OUI")]
+        df_nouveaux = df[(df['gestionnaire'].str.upper() == nom_agent) & (df['est_nouveau'] == "OUI")]
         if len(df_nouveaux) > 0:
             st.markdown(f"<div class='alerte-nouveau'>🎉 Bonne nouvelle : {len(df_nouveaux)} nouveau(x) dossier(s) financé(s) ajouté(s) à votre portefeuille !</div>", unsafe_allow_html=True)
 
@@ -644,10 +639,24 @@ def page_gestion(vue_admin=False):
         if nb_orphelins > 0:
             st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation'.</div>", unsafe_allow_html=True)
 
+    # --- LA NOUVELLE CONSOLE DE RECHERCHE ---
     st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='search-title'>🔍 Moteur de recherche rapide ({env_actif})</div>", unsafe_allow_html=True)
-    search_global = st.text_input("Tapez le Nom, l'Identifiant ou le Téléphone du promoteur et appuyez sur Entrée...", key="search_bar")
+    st.markdown(f"<div class='search-title'>🔍 Console de Recherche Interactive ({env_actif})</div>", unsafe_allow_html=True)
+    
+    col_search1, col_search2, col_search3 = st.columns([3, 1, 1])
+    temp_search = col_search1.text_input("Tapez un Nom, ID ou Téléphone...", value=st.session_state.search_query, label_visibility="collapsed")
+    
+    if col_search2.button("🔍 Rechercher", use_container_width=True, type="primary"):
+        st.session_state.search_query = temp_search
+        st.rerun()
+        
+    if col_search3.button("❌ Effacer", use_container_width=True):
+        st.session_state.search_query = ""
+        st.rerun()
+        
     st.markdown("</div>", unsafe_allow_html=True)
+
+    search_global = st.session_state.search_query
 
     if search_global:
         mask_search = df.apply(lambda x: x.astype(str).str.contains(search_global, case=False).any(), axis=1)
@@ -664,11 +673,11 @@ def page_gestion(vue_admin=False):
         else: st.warning("⚠️ Aucun promoteur trouvé pour cette recherche.")
 
     if not vue_admin and role_user != 'finance':
-        mots_agent = set([m for m in re.split(r'\W+', nom_agent.upper()) if len(m) >= 3])
+        mots_agent = set([m for m in re.split(r'\W+', nom_agent) if len(m) >= 3])
         def match_agent(val):
             val_clean = str(val).upper()
             if not val_clean: return False
-            if val_clean == nom_agent.upper() or nom_agent.upper() in val_clean or val_clean in nom_agent.upper(): return True
+            if val_clean == nom_agent or nom_agent in val_clean or val_clean in nom_agent: return True
             if mots_agent.intersection(set([m for m in re.split(r'\W+', val_clean) if len(m) >= 3])): return True
             return False
         df = df[df['gestionnaire'].apply(match_agent)]
@@ -689,16 +698,21 @@ def page_gestion(vue_admin=False):
     
     if filtre_badge != "Tous": df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
 
+    # --- ASSAINISSEMENT DU MENU DEROULANT (NOMS EN MAJUSCULES) ---
     try:
         df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
-        liste_agents = [""] + sorted(list(set(df_agents['nom'].tolist() + df['gestionnaire'].unique().tolist())))
+        noms_db = df_agents['nom'].dropna().tolist()
+        noms_dossiers = df['gestionnaire'].dropna().tolist()
+        liste_brute = noms_db + noms_dossiers
+        # Supprime les espaces inutiles, met tout en majuscules et supprime les doublons
+        liste_propre = sorted(list(set([str(x).strip().upper() for x in liste_brute if str(x).strip() != ""])))
+        liste_agents = [""] + liste_propre
     except: liste_agents = [""]
 
     st.caption(f"Affichage de {len(df_affichage)} dossiers. Cochez la case 'Ouvrir 📂' pour voir le détail complet du promoteur.")
 
     is_not_admin = (role_user == 'agent')
     
-    # LA NOUVEAUTE MAGIQUE : Colonne "Ouvrir" dans le tableau
     df_affichage.insert(0, "Ouvrir 📂", False)
 
     edited_df = st.data_editor(
@@ -723,7 +737,8 @@ def page_gestion(vue_admin=False):
                 dos = session.query(Dossier).get(row['id'])
                 if dos:
                     setattr(dos, 'statut_dossier', row['statut_dossier'])
-                    if not is_not_admin: setattr(dos, 'gestionnaire', row['gestionnaire'])
+                    if not is_not_admin: 
+                        setattr(dos, 'gestionnaire', str(row['gestionnaire']).strip().upper()) # Force MAJ
             session.commit()
             st.toast("✅ Base mise à jour !")
             st.rerun()
@@ -731,7 +746,6 @@ def page_gestion(vue_admin=False):
         finally: session.close()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # LECTURE DE LA CASE COCHEE POUR OUVRIR LE PROFIL
     lignes_selectionnees = edited_df[edited_df["Ouvrir 📂"] == True]
     if not lignes_selectionnees.empty:
         id_choisi = lignes_selectionnees.iloc[0]['identifiant']
@@ -782,7 +796,7 @@ def page_corbeille():
         ids_recup = edited_orphans[edited_orphans["C'est mon dossier !"] == True]['id'].tolist()
         if st.button(f"📥 Confirmer et récupérer ces {len(ids_recup)} dossier(s)", type="primary", disabled=(len(ids_recup)==0)):
             session = get_session()
-            nom_agent = st.session_state.user['nom']
+            nom_agent = str(st.session_state.user['nom']).upper()
             try:
                 for cid in ids_recup:
                     dos = session.query(Dossier).get(cid)
@@ -840,14 +854,15 @@ def page_integration_admin():
     env_actif = st.session_state.user.get('env')
     role_user = st.session_state.user['role']
     
-    st.title("⚙️ Équipes & Intégration Sécurisée")
+    st.title("⚙️ Intégration, Équipes & Nettoyage")
     
     if role_user == "finance":
         tabs = st.tabs(["📥 Importateur Nouveaux Financements"])
         tab_import = tabs[0]
         tab_equipes = None
+        tab_clean = None
     else:
-        tab_import, tab_equipes = st.tabs(["📥 Importateur Intelligent", "🔐 Gestion des Équipes"])
+        tab_import, tab_equipes, tab_clean = st.tabs(["📥 Importation Puzzle", "🔐 Gestion des Équipes", "🧹 Nettoyage (Doublons)"])
     
     with tab_import:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -961,13 +976,6 @@ def page_integration_admin():
             except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
             finally: session.close()
         st.markdown("</div>", unsafe_allow_html=True)
-        
-        if role_user == "admin":
-            st.error("Zone de danger")
-            if st.button("🗑️ FORMARTER LA BASE DE DONNÉES", type="primary"):
-                session = get_session()
-                session.query(Dossier).delete(); session.commit(); session.close()
-                st.rerun()
 
     if tab_equipes:
         with tab_equipes:
@@ -1009,12 +1017,57 @@ def page_integration_admin():
                 if st.form_submit_button("Créer le compte") and new_id and new_nom:
                     session = get_session()
                     if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
-                        session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
+                        # Force le nom de l'agent en MAJUSCULES à la création
+                        session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.strip().upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
                         session.commit()
                         st.success("Agent ajouté !")
                         st.rerun()
                     session.close()
             st.markdown("</div>", unsafe_allow_html=True)
+            
+    if tab_clean:
+        with tab_clean:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.markdown("### 🧹 Le Grand Nettoyeur")
+            st.warning("Cette action va scanner la base de données. Si le système trouve des dossiers avec **le même Identifiant ET le même Numéro OV**, il supprimera les doublons pour ne garder que la version la plus récente.")
+            
+            if st.button("🚨 Lancer le nettoyage des doublons stricts", type="primary"):
+                session = get_session()
+                try:
+                    dossiers_all = session.query(Dossier).all()
+                    df_dup = pd.DataFrame([{
+                        'id': d.id, 
+                        'identifiant': str(d.identifiant).strip() if d.identifiant else "", 
+                        'ov': str(d.num_ordre_versement).strip() if d.num_ordre_versement else "",
+                        'type_dispositif': d.type_dispositif
+                    } for d in dossiers_all])
+                    
+                    if not df_dup.empty:
+                        df_dup = df_dup[df_dup['identifiant'] != ""] # Ignore les lignes vides
+                        # Grouper par ID, OV et Dispositif, et garder le max(id)
+                        ids_to_keep = df_dup.groupby(['identifiant', 'ov', 'type_dispositif'])['id'].max().tolist()
+                        ids_to_delete = df_dup[~df_dup['id'].isin(ids_to_keep)]['id'].tolist()
+                        
+                        if ids_to_delete:
+                            session.query(Dossier).filter(Dossier.id.in_(ids_to_delete)).delete(synchronize_session=False)
+                            session.commit()
+                            st.success(f"✅ Nettoyage terminé avec succès ! {len(ids_to_delete)} doublon(s) strict(s) éliminé(s) de la base de données.")
+                        else:
+                            st.info("👍 Bonne nouvelle : La base est déjà parfaitement propre. Aucun doublon strict (Même ID + Même OV) n'a été détecté.")
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"Erreur technique : {e}")
+                finally:
+                    session.close()
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+            st.error("Zone de Danger Critique")
+            if st.button("🗑️ FORMARTER TOTALEMENT LA BASE DE DONNÉES"):
+                session = get_session()
+                session.query(Dossier).delete()
+                session.commit()
+                session.close()
+                st.rerun()
 
 # --- DEMARRAGE DE L'APPLICATION ---
 if st.session_state.user is None: login_page()
