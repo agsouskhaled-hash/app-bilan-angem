@@ -16,7 +16,7 @@ import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v24.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v26.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -33,7 +33,7 @@ else:
     theme_color = "#2c3e50"
     theme_bg = "#f8f9fa"
 
-# --- LE STYLE CSS PREMIUM ---
+# --- LE STYLE CSS PREMIUM (Lifting de l'Intérieur) ---
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {theme_bg}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
@@ -45,6 +45,28 @@ st.markdown(f"""
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }}
     .modern-card:hover {{ transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }}
+    
+    /* Nouvelles Cartes de Statistiques 3D */
+    .metric-card {{
+        background: #ffffff; border-radius: 16px; padding: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: 1px solid #edf2f7;
+        display: flex; align-items: center; justify-content: space-between;
+        transition: all 0.3s ease; border-left: 6px solid {theme_color};
+        margin-bottom: 20px;
+    }}
+    .metric-card:hover {{ transform: translateY(-5px); box-shadow: 0 12px 25px rgba(0,0,0,0.08); }}
+    .metric-info {{ display: flex; flex-direction: column; }}
+    .metric-value {{ font-size: 26px; font-weight: 800; color: #1e293b; margin-top: 5px; }}
+    .metric-label {{ font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }}
+    .metric-icon {{ font-size: 38px; opacity: 0.9; }}
+    .metric-danger {{ border-left-color: #ef4444; }}
+    
+    /* Badge Utilisateur Latéral */
+    .user-badge {{
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04); text-align: center; margin-bottom: 25px;
+    }}
     
     .portal-card {{
         background: #ffffff; padding: 30px 20px; border-radius: 16px; text-align: center;
@@ -79,18 +101,18 @@ st.markdown(f"""
     .stButton>button {{ border-radius: 8px; font-weight: 600; transition: all 0.2s; border: none; padding: 0.5rem 1rem; }}
     .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
     
-    .search-title {{ color: {theme_color}; font-weight: bold; font-size: 24px; margin-bottom: 10px; }}
+    .search-title {{ color: {theme_color}; font-weight: 800; font-size: 20px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }}
     .compteur-orphelins {{ font-size: 40px; font-weight: bold; color: #dc3545; text-align: center; margin: 10px 0; }}
     
     @media (max-width: 768px) {{
         .btn-action {{ min-width: 100%; margin-bottom: 8px; }}
-        .modern-card, .profil-header {{ padding: 15px; }}
+        .modern-card, .profil-header, .metric-card {{ padding: 15px; }}
         .portal-card {{ margin-bottom: 15px; }}
     }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALISATION SESSION STATE PORTAIL ET RECHERCHE ---
+# --- INITIALISATION SESSION STATE ---
 if 'portal_selection' not in st.session_state: st.session_state.portal_selection = None
 if 'search_query' not in st.session_state: st.session_state.search_query = ""
 
@@ -183,7 +205,7 @@ def afficher_logo(largeur=250):
             encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/png;base64,{encoded_string}" width="{largeur}"></div>', unsafe_allow_html=True)
     except:
-        st.markdown(f'<div style="text-align: center; color: {theme_color}; font-size: 28px; font-weight: 800; padding: 15px; margin-bottom: 20px; letter-spacing: 1px;">🔵 ANGEM Workspace</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align: center; color: {theme_color}; font-size: 28px; font-weight: 900; padding: 15px; margin-bottom: 20px; letter-spacing: 1px;">🔵 ANGEM Workspace</div>', unsafe_allow_html=True)
 
 def clean_pdf_text(text):
     if not text: return ""
@@ -326,7 +348,7 @@ def clean_header(val):
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
-    if pd.isna(val) or str(val).strip() == '': return None
+    if pd.isna(val) or str(val).strip() == '': return None # L'ANTI-ECRASEMENT PARFAIT
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.-]', '', s)
     try: return float(s)
@@ -341,28 +363,29 @@ def clean_identifiant(val):
     if s.endswith('.0'): s = s[:-2]
     return s
 
-MAPPING_CONFIG = {
-    'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT'],
-    'nom': ['NOM', 'NOMETPRENOM', 'PROMOTEUR'],
-    'prenom': ['PRENOM', 'PRENOMS'],
-    'date_naissance': ['DATEDENAISSANCE', 'DATENAISSANCE'],
-    'adresse': ['ADRESSE', 'ADRESSEXACTE'],
-    'telephone': ['TEL', 'TELEPHONE', 'MOB', 'MOBILE'],
-    'commune': ['COMMUNE', 'APC'],
+# --- LE RADAR A MOTS-CLES ---
+MAPPING_CONFIG_KEYWORDS = {
+    'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'CARTENAT', 'IDPROMOTEUR', 'NAT'],
+    'nom': ['NOMETPRENOM', 'NOM', 'PROMOTEUR'],
+    'prenom': ['PRENOM'],
+    'date_naissance': ['NAISSANCE', 'DATENAISS', 'NAISS', 'NELE', 'DATEDENAISS'],
+    'adresse': ['ADRESSE', 'ADRESSEXACTE', 'LIEU'],
+    'telephone': ['TEL', 'MOB', 'JOIGNABLE', 'TELEPHONE'],
+    'commune': ['COMMUNE', 'APC', 'LOCALITE'],
     'daira': ['DAIRA'],
-    'activite': ['ACTIVITE', 'PROJET'],
-    'secteur': ['SECTEURDACTIVITE', 'SECTEUR'],
-    'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVIPAR'],
-    'banque_nom': ['BANQUEDUPROMOTEUR', 'BANQUECCP', 'BANQUE'],
-    'num_ordre_versement': ['NUMOV', 'OV'],
-    'date_financement': ['DATEOV', 'DATEDEVIREMENT', 'DATEVIREMENT', 'DATEDEFINANCEMENT'],
-    'debut_consommation': ['DEBUTCONSOM', 'DEBUTCONSOMMATION'],
-    'montant_pnr': ['PNR', 'MONTANTPNR29', 'MTDUPNR', 'MONTANT'],
-    'apport_personnel': ['APPORT', 'APPORTPERSONNEL'], 
-    'montant_rembourse': ['TOTALREMB', 'TOTALVERS', 'VERSEMENT'],
-    'reste_rembourser': ['MONTANTRESTAREMB', 'MONTANTRESTA', 'RESTE'],
-    'nb_echeance_tombee': ['NBRECHTOMB', 'ECHEANCESTOMBEES'],
-    'etat_dette': ['ETAT', 'ETATDETTE']
+    'activite': ['ACTIVITE', 'PROJET', 'INTITULE'],
+    'secteur': ['SECTEUR'],
+    'gestionnaire': ['GEST', 'ACCOMPAGNATEUR', 'SUIVI', 'AGENT'],
+    'banque_nom': ['BANQUE', 'CCP', 'AGENCE'],
+    'num_ordre_versement': ['NUMOV', 'ORDREVERSEMENT', 'OV'],
+    'date_financement': ['DATEOV', 'DATEVIREMENT', 'DATEFINAN', 'DATEDEFINANCEMENT'],
+    'debut_consommation': ['DEBUTCONSOM', 'CONSOMMATION', 'DEBUTEXPLOIT'],
+    'montant_pnr': ['PNR', 'MONTANTPNR', 'MTPNR', 'MONTANT'],
+    'apport_personnel': ['APPORT'],
+    'montant_rembourse': ['TOTALREMB', 'VERSEMENT', 'REMBOURSE', 'TOTALVERS'],
+    'reste_rembourser': ['RESTAREMB', 'MONTANTRESTA', 'RESTE'],
+    'nb_echeance_tombee': ['ECHTOMB', 'ECHEANCES', 'RETARD'],
+    'etat_dette': ['ETATDETTE', 'ETAT']
 }
 COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel']
 
@@ -381,7 +404,7 @@ def get_badge(row):
 
 if 'user' not in st.session_state: st.session_state.user = None
 
-# --- LE NOUVEAU PORTAIL DE CONNEXION ---
+# --- LE PORTAIL DE CONNEXION ---
 def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
     afficher_logo(200)
@@ -446,17 +469,18 @@ def login_page():
                 else: st.error("⚠️ Mot de passe incorrect.")
         st.markdown("</div>", unsafe_allow_html=True)
 
+# --- MENU LATÉRAL PREMIUM ---
 def sidebar_menu():
     afficher_logo(180)
     env = st.session_state.user.get('env')
     daira_info = f" ({st.session_state.user.get('daira')})" if st.session_state.user.get('daira') else ""
     
     st.sidebar.markdown(f"""
-    <div style='text-align: center; padding: 15px; background: {theme_color}10; border: 1px solid {theme_color}30; border-radius: 12px; margin-bottom: 25px;'>
-        <div style='font-size: 40px; margin-bottom: 5px;'>👤</div>
-        <b style='color: #1e293b; font-size:18px;'>{st.session_state.user['nom']}</b><br>
-        <small style='color: #64748b;'>📍 Cellule {daira_info}</small><br>
-        <div style='margin-top:12px; display:inline-block; background:{theme_color}; color:white; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
+    <div class='user-badge'>
+        <div style='font-size: 45px; margin-bottom: 10px;'>👤</div>
+        <div style='color: #1e293b; font-size:18px; font-weight: 800; text-transform: uppercase;'>{st.session_state.user['nom']}</div>
+        <div style='color: #64748b; font-size: 13px; margin-top: 5px;'>📍 Cellule {daira_info}</div>
+        <div style='margin-top:15px; display:inline-block; background:{theme_color}; color:white; padding:6px 16px; border-radius:20px; font-size:12px; font-weight:bold; box-shadow: 0 4px 10px rgba(0,0,0,0.15);'>
             🏢 {env}
         </div>
     </div>
@@ -486,7 +510,7 @@ def afficher_profil_promoteur(dos_db, session):
     taux = (dos_db.montant_rembourse / dos_db.montant_pnr) if dos_db.montant_pnr > 0 else 0
     st.markdown(f"""
     <div class='profil-header'>
-        <h2 style='margin:0; color:{theme_color}; font-weight: 800;'>{dos_db.nom} {dos_db.prenom}</h2>
+        <h2 style='margin:0; color:{theme_color}; font-weight: 800; text-transform: uppercase;'>{dos_db.nom} {dos_db.prenom}</h2>
         <p style='margin:5px 0 0 0; font-size:16px; color: #475569;'><b>ID:</b> {dos_db.identifiant}  |  <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
         <p style='margin:15px 0 8px 0; font-weight: 600;'>Progression du Remboursement ({dos_db.montant_rembourse:,.0f} / {dos_db.montant_pnr:,.0f} DA) : {taux*100:.1f}%</p>
     </div>
@@ -497,7 +521,7 @@ def afficher_profil_promoteur(dos_db, session):
         st.info("ℹ️ Ce dossier n'a pas d'accompagnateur assigné.")
         if st.session_state.user['role'] == 'agent':
             if st.button("🙋‍♂️ M'attribuer ce dossier en un clic", key=f"claim_{dos_db.id}", type="primary", use_container_width=True):
-                dos_db.gestionnaire = st.session_state.user['nom'].upper() # Force MAJ
+                dos_db.gestionnaire = st.session_state.user['nom'].upper()
                 session.commit()
                 st.success("✅ Dossier attribué ! Il est maintenant dans votre portefeuille.")
                 st.rerun()
@@ -617,7 +641,7 @@ def afficher_profil_promoteur(dos_db, session):
 def page_gestion(vue_admin=False):
     env_actif = st.session_state.user.get('env')
     agent_daira = st.session_state.user.get('daira', '')
-    nom_agent = str(st.session_state.user['nom']).upper() # Force MAJ
+    nom_agent = str(st.session_state.user['nom']).upper()
     role_user = st.session_state.user['role']
     
     try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}' ORDER BY id DESC", con=engine).fillna('')
@@ -639,21 +663,21 @@ def page_gestion(vue_admin=False):
         if nb_orphelins > 0:
             st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation'.</div>", unsafe_allow_html=True)
 
-    # --- LA NOUVELLE CONSOLE DE RECHERCHE ---
-    st.markdown("<div class='modern-card' style='padding-top:15px; padding-bottom: 15px;'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='search-title'>🔍 Console de Recherche Interactive ({env_actif})</div>", unsafe_allow_html=True)
+    # --- PANNEAU DE CONTRÔLE UNIFIÉ (Recherche + Filtres) ---
+    st.markdown("<div class='modern-card' style='padding: 20px;'>", unsafe_allow_html=True)
+    st.markdown(f"<div class='search-title'>🎯 Centre de Contrôle ({env_actif})</div>", unsafe_allow_html=True)
     
-    col_search1, col_search2, col_search3 = st.columns([3, 1, 1])
+    col_search1, col_search2, col_search3, col_filter = st.columns([3, 1, 1, 3])
+    
     temp_search = col_search1.text_input("Tapez un Nom, ID ou Téléphone...", value=st.session_state.search_query, label_visibility="collapsed")
-    
     if col_search2.button("🔍 Rechercher", use_container_width=True, type="primary"):
         st.session_state.search_query = temp_search
         st.rerun()
-        
     if col_search3.button("❌ Effacer", use_container_width=True):
         st.session_state.search_query = ""
         st.rerun()
         
+    filtre_badge = col_filter.radio("Filtrer la liste :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True, label_visibility="collapsed")
     st.markdown("</div>", unsafe_allow_html=True)
 
     search_global = st.session_state.search_query
@@ -688,31 +712,24 @@ def page_gestion(vue_admin=False):
 
     df_visites = df[df['prochaine_visite'].str.strip() != ''].copy()
     if not df_visites.empty:
-        with st.expander(f"🗓️ Mon Agenda : {len(df_visites)} visite(s) programmée(s)", expanded=True):
+        with st.expander(f"🗓️ Agenda : {len(df_visites)} visite(s) programmée(s)", expanded=True):
             st.dataframe(df_visites[['identifiant', 'nom', 'commune', 'prochaine_visite', 'telephone']], hide_index=True, use_container_width=True)
 
-    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    col_t, col_f = st.columns([1, 2])
-    col_t.markdown(f"<h4 style='margin:0; color:#2d3748;'>🗂️ Pipeline {env_actif}</h4>", unsafe_allow_html=True)
-    filtre_badge = col_f.radio("Filtrer la liste :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True, label_visibility="collapsed")
-    
     if filtre_badge != "Tous": df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
 
-    # --- ASSAINISSEMENT DU MENU DEROULANT (NOMS EN MAJUSCULES) ---
     try:
         df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
         noms_db = df_agents['nom'].dropna().tolist()
         noms_dossiers = df['gestionnaire'].dropna().tolist()
         liste_brute = noms_db + noms_dossiers
-        # Supprime les espaces inutiles, met tout en majuscules et supprime les doublons
         liste_propre = sorted(list(set([str(x).strip().upper() for x in liste_brute if str(x).strip() != ""])))
         liste_agents = [""] + liste_propre
     except: liste_agents = [""]
 
+    st.markdown("<div class='modern-card' style='padding-bottom:10px;'>", unsafe_allow_html=True)
     st.caption(f"Affichage de {len(df_affichage)} dossiers. Cochez la case 'Ouvrir 📂' pour voir le détail complet du promoteur.")
 
     is_not_admin = (role_user == 'agent')
-    
     df_affichage.insert(0, "Ouvrir 📂", False)
 
     edited_df = st.data_editor(
@@ -730,7 +747,7 @@ def page_gestion(vue_admin=False):
         }
     )
 
-    if st.button("💾 Enregistrer les modifications de statut/agent du tableau", type="primary"):
+    if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
         session = get_session()
         try:
             for _, row in edited_df.iterrows():
@@ -738,7 +755,7 @@ def page_gestion(vue_admin=False):
                 if dos:
                     setattr(dos, 'statut_dossier', row['statut_dossier'])
                     if not is_not_admin: 
-                        setattr(dos, 'gestionnaire', str(row['gestionnaire']).strip().upper()) # Force MAJ
+                        setattr(dos, 'gestionnaire', str(row['gestionnaire']).strip().upper())
             session.commit()
             st.toast("✅ Base mise à jour !")
             st.rerun()
@@ -749,7 +766,7 @@ def page_gestion(vue_admin=False):
     lignes_selectionnees = edited_df[edited_df["Ouvrir 📂"] == True]
     if not lignes_selectionnees.empty:
         id_choisi = lignes_selectionnees.iloc[0]['identifiant']
-        st.markdown(f"<h3 style='color: {theme_color}; border-bottom: 2px solid {theme_color}; padding-bottom: 5px; margin-top: 20px;'>📂 Profil Détaillé du Promoteur</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color: {theme_color}; border-bottom: 2px solid {theme_color}; padding-bottom: 5px; margin-top: 20px;'>📂 Profil du Promoteur Actif</h3>", unsafe_allow_html=True)
         session = get_session()
         dos_db = session.query(Dossier).filter_by(identifiant=id_choisi).first()
         if dos_db:
@@ -809,17 +826,27 @@ def page_corbeille():
 
 def page_supervision():
     env_actif = st.session_state.user.get('env')
-    st.title("📊 Supervision Direction & Extractions")
+    st.title("📊 Supervision & Extractions")
     try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}'", con=engine).fillna('')
     except: df = pd.DataFrame()
     
     if df.empty: st.warning("La base est vide pour cet environnement."); return
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📌 Total Dossiers", len(df))
-    c2.metric("💰 Crédit PNR", f"{df['montant_pnr'].astype(float).sum():,.0f} DA")
-    c3.metric("📈 Recouvrement", f"{df['montant_rembourse'].astype(float).sum():,.0f} DA")
-    c4.metric("🚨 Reste à Recouvrer", f"{df['reste_rembourser'].astype(float).sum():,.0f} DA", delta_color="inverse")
+    # --- NOUVELLES CARTES 3D POUR LES STATISTIQUES ---
+    total_dossiers = len(df)
+    total_pnr = df['montant_pnr'].astype(float).sum()
+    total_rembourse = df['montant_rembourse'].astype(float).sum()
+    total_reste = df['reste_rembourser'].astype(float).sum()
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"<div class='metric-card'><div class='metric-info'><div class='metric-label'>Total Dossiers</div><div class='metric-value'>{total_dossiers}</div></div><div class='metric-icon'>📌</div></div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div class='metric-card'><div class='metric-info'><div class='metric-label'>Crédit PNR</div><div class='metric-value'>{total_pnr:,.0f} DA</div></div><div class='metric-icon'>💰</div></div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"<div class='metric-card'><div class='metric-info'><div class='metric-label'>Recouvrement</div><div class='metric-value'>{total_rembourse:,.0f} DA</div></div><div class='metric-icon'>📈</div></div>", unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"<div class='metric-card metric-danger'><div class='metric-info'><div class='metric-label' style='color:#ef4444;'>Reste à Recouvrer</div><div class='metric-value' style='color:#b91c1c;'>{total_reste:,.0f} DA</div></div><div class='metric-icon'>🚨</div></div>", unsafe_allow_html=True)
     
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("<h4 style='margin:0; color:#2d3748;'>👁️ Radar des Dossiers Orphelins</h4><br>", unsafe_allow_html=True)
@@ -869,7 +896,7 @@ def page_integration_admin():
         if role_user == "finance":
             st.info("💡 **Espace Finance :** Les nouveaux dossiers importés ici seront automatiquement envoyés aux accompagnateurs. S'ils sont reconnus, une étiquette '✨ NOUVEAU' apparaîtra sur leur compte.")
         else:
-            st.info("💡 **Puzzle Actif :** Si vous importez un deuxième fichier, il complétera les dossiers sans effacer les anciennes cases pleines.")
+            st.info("💡 **Radar Actif & Puzzle Blindé :** L'importateur lit vos fichiers (même si les colonnes changent de nom). Il met à jour l'argent sans JAMAIS écraser vos adresses ou numéros existants avec des cases vides.")
             
         st.caption("L'importation se fera dans : **" + env_actif + "** (Filtre > 40 000 DA actif)")
         
@@ -905,7 +932,7 @@ def page_integration_admin():
                                 header_idx = -1
                                 for i in range(min(30, len(df_raw))):
                                     row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
-                                    if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST"] if k in row_cl]) >= 2:
+                                    if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST", "PRENOM", "ID"] if k in row_cl]) >= 1:
                                         header_idx = i; break
                                 if header_idx == -1: continue
                                 
@@ -913,8 +940,13 @@ def page_integration_admin():
                                 df.columns = df.iloc[0].astype(str).tolist()
                                 df = df.iloc[1:].reset_index(drop=True)
                                 
-                            df_cols = [clean_header(c) for c in df.columns]
-                            col_map = {db_f: df.columns[df_cols.index(clean_header(v))] for db_f, variants in MAPPING_CONFIG.items() for v in variants if clean_header(v) in df_cols}
+                            df_cols_clean = [clean_header(c) for c in df.columns]
+                            col_map = {}
+                            for db_f, keywords in MAPPING_CONFIG_KEYWORDS.items():
+                                for i, col_clean in enumerate(df_cols_clean):
+                                    if any(kw in col_clean for kw in keywords):
+                                        if db_f not in col_map: 
+                                            col_map[db_f] = df.columns[i]
                             
                             total_rows = len(df)
                             
@@ -956,7 +988,7 @@ def page_integration_admin():
                                         if isinstance(v, str):
                                             if v.strip() != "":
                                                 setattr(exist, k, v)
-                                        else:
+                                        elif v is not None:
                                             setattr(exist, k, v)
                                     count_upd += 1
                                 else:
@@ -1017,7 +1049,6 @@ def page_integration_admin():
                 if st.form_submit_button("Créer le compte") and new_id and new_nom:
                     session = get_session()
                     if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
-                        # Force le nom de l'agent en MAJUSCULES à la création
                         session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.strip().upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
                         session.commit()
                         st.success("Agent ajouté !")
@@ -1043,8 +1074,7 @@ def page_integration_admin():
                     } for d in dossiers_all])
                     
                     if not df_dup.empty:
-                        df_dup = df_dup[df_dup['identifiant'] != ""] # Ignore les lignes vides
-                        # Grouper par ID, OV et Dispositif, et garder le max(id)
+                        df_dup = df_dup[df_dup['identifiant'] != ""] 
                         ids_to_keep = df_dup.groupby(['identifiant', 'ov', 'type_dispositif'])['id'].max().tolist()
                         ids_to_delete = df_dup[~df_dup['id'].isin(ids_to_keep)]['id'].tolist()
                         
