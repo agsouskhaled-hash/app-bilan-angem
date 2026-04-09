@@ -16,7 +16,7 @@ import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v26.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v27.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -33,7 +33,7 @@ else:
     theme_color = "#2c3e50"
     theme_bg = "#f8f9fa"
 
-# --- LE STYLE CSS PREMIUM (Lifting de l'Intérieur) ---
+# --- LE STYLE CSS PREMIUM ---
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {theme_bg}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
@@ -46,7 +46,6 @@ st.markdown(f"""
     }}
     .modern-card:hover {{ transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }}
     
-    /* Nouvelles Cartes de Statistiques 3D */
     .metric-card {{
         background: #ffffff; border-radius: 16px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: 1px solid #edf2f7;
@@ -61,7 +60,6 @@ st.markdown(f"""
     .metric-icon {{ font-size: 38px; opacity: 0.9; }}
     .metric-danger {{ border-left-color: #ef4444; }}
     
-    /* Badge Utilisateur Latéral */
     .user-badge {{
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;
@@ -80,9 +78,14 @@ st.markdown(f"""
 
     .profil-header {{
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); padding: 25px;
-        border-radius: 12px; border-left: 8px solid {theme_color}; margin-bottom: 25px;
+        border-radius: 12px; border-left: 8px solid {theme_color}; margin-bottom: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }}
+    
+    /* Blocs Visuels Financement vs Recouvrement */
+    .block-finance {{ background-color: #eff6ff; border-left: 5px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
+    .block-recouvrement {{ background-color: #f0fdf4; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
+    .block-title {{ font-weight: bold; color: #1e293b; margin-bottom: 10px; font-size: 16px; text-transform: uppercase; }}
     
     .alerte-urgente {{ background-color: #fef2f2; border-left: 6px solid #ef4444; padding: 15px 20px; border-radius: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 20px; animation: pulseRed 2s infinite; }}
     .alerte-nouveau {{ background-color: #f0fdf4; border-left: 6px solid #22c55e; padding: 15px 20px; border-radius: 8px; color: #15803d; font-weight: 600; margin-bottom: 20px; animation: pulseGreen 2s infinite; }}
@@ -102,7 +105,6 @@ st.markdown(f"""
     .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
     
     .search-title {{ color: {theme_color}; font-weight: 800; font-size: 20px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }}
-    .compteur-orphelins {{ font-size: 40px; font-weight: bold; color: #dc3545; text-align: center; margin: 10px 0; }}
     
     @media (max-width: 768px) {{
         .btn-action {{ min-width: 100%; margin-bottom: 8px; }}
@@ -211,7 +213,6 @@ def clean_pdf_text(text):
     if not text: return ""
     return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('utf-8')
 
-# --- FONCTIONS PDF ---
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
@@ -325,7 +326,6 @@ def generer_creances_pdf(df):
         with open(tmp.name, "rb") as f: bytes_pdf = f.read()
     return bytes_pdf
 
-# --- UTILITAIRES DE NETTOYAGE ---
 def trouver_agent_intelligent(nom_excel, liste_officielle):
     nom_ex = str(nom_excel).strip().upper()
     if not nom_ex or nom_ex == "NAN": return ""
@@ -348,7 +348,7 @@ def clean_header(val):
     return ''.join(filter(str.isalnum, val))
 
 def clean_money(val):
-    if pd.isna(val) or str(val).strip() == '': return None # L'ANTI-ECRASEMENT PARFAIT
+    if pd.isna(val) or str(val).strip() == '': return None
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.-]', '', s)
     try: return float(s)
@@ -469,11 +469,12 @@ def login_page():
                 else: st.error("⚠️ Mot de passe incorrect.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# --- MENU LATÉRAL PREMIUM ---
+# --- MENU LATÉRAL PREMIUM (Rubriques Séparées) ---
 def sidebar_menu():
     afficher_logo(180)
     env = st.session_state.user.get('env')
     daira_info = f" ({st.session_state.user.get('daira')})" if st.session_state.user.get('daira') else ""
+    role = st.session_state.user['role']
     
     st.sidebar.markdown(f"""
     <div class='user-badge'>
@@ -486,12 +487,12 @@ def sidebar_menu():
     </div>
     """, unsafe_allow_html=True)
     
-    if st.session_state.user['role'] == "finance":
-        options = [f"📥 Importation Financements", f"🗂️ Base Globale ({env})"]
-    elif st.session_state.user['role'] == "admin":
-        options = [f"🗂️ Base Globale ({env})", "📊 Supervision Direction", "⚙️ Intégration & Admin"]
+    if role == "finance":
+        options = [f"📥 Import Financement", f"🗂️ Vue Financement ({env})"]
+    elif role == "admin":
+        options = [f"🗂️ Vue Globale Financement", "📈 Vue Globale Recouvrement", "📊 Supervision Direction", "⚙️ Intégration & Admin"]
     else:
-        options = [f"🗂️ Espace de Travail ({env})", "🗑️ Corbeille & Affectation"]
+        options = [f"🗂️ Rubrique Financement", "📈 Rubrique Recouvrement", "🗑️ Corbeille & Affectation"]
         
     choix = st.sidebar.radio("Menu de Navigation", options, label_visibility="collapsed")
     st.sidebar.markdown("---")
@@ -501,7 +502,7 @@ def sidebar_menu():
         st.rerun()
     return choix
 
-# --- AFFICHAGE DU PROFIL COMPLET ---
+# --- AFFICHAGE DU PROFIL COMPLET (Coupé en Deux Blocs) ---
 def afficher_profil_promoteur(dos_db, session):
     if dos_db.est_nouveau == "OUI" and dos_db.gestionnaire == st.session_state.user['nom']:
         dos_db.est_nouveau = "NON"
@@ -512,10 +513,8 @@ def afficher_profil_promoteur(dos_db, session):
     <div class='profil-header'>
         <h2 style='margin:0; color:{theme_color}; font-weight: 800; text-transform: uppercase;'>{dos_db.nom} {dos_db.prenom}</h2>
         <p style='margin:5px 0 0 0; font-size:16px; color: #475569;'><b>ID:</b> {dos_db.identifiant}  |  <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
-        <p style='margin:15px 0 8px 0; font-weight: 600;'>Progression du Remboursement ({dos_db.montant_rembourse:,.0f} / {dos_db.montant_pnr:,.0f} DA) : {taux*100:.1f}%</p>
     </div>
     """, unsafe_allow_html=True)
-    st.progress(min(taux, 1.0))
 
     if not dos_db.gestionnaire or dos_db.gestionnaire.strip() == "":
         st.info("ℹ️ Ce dossier n'a pas d'accompagnateur assigné.")
@@ -525,7 +524,31 @@ def afficher_profil_promoteur(dos_db, session):
                 session.commit()
                 st.success("✅ Dossier attribué ! Il est maintenant dans votre portefeuille.")
                 st.rerun()
-    
+
+    col_hist1, col_hist2 = st.columns(2)
+    with col_hist1:
+        st.markdown(f"""
+        <div class='block-finance'>
+            <div class='block-title'>🏦 Historique du Financement</div>
+            <b>Crédit PNR :</b> {dos_db.montant_pnr:,.0f} DA<br>
+            <b>Date de versement :</b> {dos_db.date_financement}<br>
+            <b>Numéro OV :</b> {dos_db.num_ordre_versement}<br>
+            <b>Banque :</b> {dos_db.banque_nom}
+        </div>
+        """, unsafe_allow_html=True)
+    with col_hist2:
+        st.markdown(f"""
+        <div class='block-recouvrement'>
+            <div class='block-title'>📈 État du Recouvrement</div>
+            <b>Montant Remboursé :</b> {dos_db.montant_rembourse:,.0f} DA<br>
+            <b>Reste à Rembourser :</b> <span style='color:red;'>{dos_db.reste_rembourser:,.0f} DA</span><br>
+            <b>Échéances tombées :</b> {dos_db.nb_echeance_tombee}<br>
+            <b>État de la Dette :</b> {dos_db.etat_dette}
+        </div>
+        """, unsafe_allow_html=True)
+        st.progress(min(taux, 1.0))
+        st.caption(f"Progression : {taux*100:.1f}%")
+
     tel_brut = str(dos_db.telephone).strip()
     tel_clean = re.sub(r'\D', '', tel_brut) if tel_brut else ""
     tel_wa = '213' + tel_clean[1:] if tel_clean.startswith('0') else tel_clean
@@ -637,8 +660,8 @@ def afficher_profil_promoteur(dos_db, session):
             st.success("Dossier supprimé avec succès. Mise à jour de la liste...")
             st.rerun()
 
-# --- PAGES DE L'APPLICATION ---
-def page_gestion(vue_admin=False):
+# --- PAGES DE GESTION (SÉPARÉES) ---
+def page_gestion(mode="financement", vue_admin=False):
     env_actif = st.session_state.user.get('env')
     agent_daira = st.session_state.user.get('daira', '')
     nom_agent = str(st.session_state.user['nom']).upper()
@@ -651,7 +674,7 @@ def page_gestion(vue_admin=False):
         st.info(f"📌 Aucun dossier dans l'environnement {env_actif}.")
         return
 
-    if role_user == 'agent':
+    if role_user == 'agent' and mode == 'financement':
         df_nouveaux = df[(df['gestionnaire'].str.upper() == nom_agent) & (df['est_nouveau'] == "OUI")]
         if len(df_nouveaux) > 0:
             st.markdown(f"<div class='alerte-nouveau'>🎉 Bonne nouvelle : {len(df_nouveaux)} nouveau(x) dossier(s) financé(s) ajouté(s) à votre portefeuille !</div>", unsafe_allow_html=True)
@@ -663,12 +686,12 @@ def page_gestion(vue_admin=False):
         if nb_orphelins > 0:
             st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation'.</div>", unsafe_allow_html=True)
 
-    # --- PANNEAU DE CONTRÔLE UNIFIÉ (Recherche + Filtres) ---
+    # --- PANNEAU DE CONTRÔLE UNIFIÉ ---
     st.markdown("<div class='modern-card' style='padding: 20px;'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='search-title'>🎯 Centre de Contrôle ({env_actif})</div>", unsafe_allow_html=True)
+    titre_console = "🎯 Recherche Financement" if mode == "financement" else "🎯 Recherche Recouvrement"
+    st.markdown(f"<div class='search-title'>{titre_console} ({env_actif})</div>", unsafe_allow_html=True)
     
     col_search1, col_search2, col_search3, col_filter = st.columns([3, 1, 1, 3])
-    
     temp_search = col_search1.text_input("Tapez un Nom, ID ou Téléphone...", value=st.session_state.search_query, label_visibility="collapsed")
     if col_search2.button("🔍 Rechercher", use_container_width=True, type="primary"):
         st.session_state.search_query = temp_search
@@ -677,7 +700,9 @@ def page_gestion(vue_admin=False):
         st.session_state.search_query = ""
         st.rerun()
         
-    filtre_badge = col_filter.radio("Filtrer la liste :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True, label_visibility="collapsed")
+    filtre_badge = "Tous"
+    if mode == "recouvrement":
+        filtre_badge = col_filter.radio("Filtrer la liste :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True, label_visibility="collapsed")
     st.markdown("</div>", unsafe_allow_html=True)
 
     search_global = st.session_state.search_query
@@ -708,14 +733,11 @@ def page_gestion(vue_admin=False):
 
     df['Badge'] = df.apply(get_badge, axis=1)
     df_affichage = df.copy()
-    df_affichage.loc[df_affichage['est_nouveau'] == 'OUI', 'nom'] = "✨ NOUVEAU - " + df_affichage['nom']
+    if mode == 'financement':
+        df_affichage.loc[df_affichage['est_nouveau'] == 'OUI', 'nom'] = "✨ NOUVEAU - " + df_affichage['nom']
 
-    df_visites = df[df['prochaine_visite'].str.strip() != ''].copy()
-    if not df_visites.empty:
-        with st.expander(f"🗓️ Agenda : {len(df_visites)} visite(s) programmée(s)", expanded=True):
-            st.dataframe(df_visites[['identifiant', 'nom', 'commune', 'prochaine_visite', 'telephone']], hide_index=True, use_container_width=True)
-
-    if filtre_badge != "Tous": df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
+    if mode == "recouvrement" and filtre_badge != "Tous": 
+        df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
 
     try:
         df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
@@ -727,25 +749,41 @@ def page_gestion(vue_admin=False):
     except: liste_agents = [""]
 
     st.markdown("<div class='modern-card' style='padding-bottom:10px;'>", unsafe_allow_html=True)
-    st.caption(f"Affichage de {len(df_affichage)} dossiers. Cochez la case 'Ouvrir 📂' pour voir le détail complet du promoteur.")
+    st.caption(f"Affichage de {len(df_affichage)} dossiers. Cochez la case 'Ouvrir 📂' pour voir le détail complet.")
 
     is_not_admin = (role_user == 'agent')
     df_affichage.insert(0, "Ouvrir 📂", False)
 
-    edited_df = st.data_editor(
-        df_affichage, use_container_width=True, hide_index=True, height=450,
-        column_config={
+    # CONFIGURATION DES COLONNES SELON LE MODE
+    if mode == "financement":
+        col_config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn("Ouvrir 📂", default=False),
             "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None, "est_nouveau": None,
-            "Badge": st.column_config.TextColumn("État", disabled=True),
+            "Badge": None, "montant_rembourse": None, "reste_rembourser": None, "nb_echeance_tombee": None, "etat_dette": None, "apport_personnel": None, "credit_bancaire": None, "montant_total_credit": None,
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
             "nom": st.column_config.TextColumn("Nom Promoteur", disabled=True),
             "statut_dossier": st.column_config.SelectboxColumn("Étape du dossier", options=LISTE_STATUTS, width="medium"),
             "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=is_not_admin),
-            "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
-            "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
+            "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA", disabled=True),
+            "num_ordre_versement": st.column_config.TextColumn("Num OV", disabled=True),
+            "banque_nom": st.column_config.TextColumn("Banque", disabled=True),
         }
-    )
+    else:
+        col_config = {
+            "Ouvrir 📂": st.column_config.CheckboxColumn("Ouvrir 📂", default=False),
+            "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None, "est_nouveau": None,
+            "banque_nom": None, "num_ordre_versement": None, "date_financement": None, "apport_personnel": None, "credit_bancaire": None, "montant_total_credit": None, "statut_dossier": None,
+            "Badge": st.column_config.TextColumn("État", disabled=True),
+            "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
+            "nom": st.column_config.TextColumn("Nom Promoteur", disabled=True),
+            "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=is_not_admin),
+            "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
+            "montant_rembourse": st.column_config.NumberColumn("Remboursé", format="%d DA", disabled=True),
+            "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
+            "etat_dette": st.column_config.TextColumn("Contentieux", disabled=True),
+        }
+
+    edited_df = st.data_editor(df_affichage, use_container_width=True, hide_index=True, height=450, column_config=col_config)
 
     if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
         session = get_session()
@@ -753,9 +791,8 @@ def page_gestion(vue_admin=False):
             for _, row in edited_df.iterrows():
                 dos = session.query(Dossier).get(row['id'])
                 if dos:
-                    setattr(dos, 'statut_dossier', row['statut_dossier'])
-                    if not is_not_admin: 
-                        setattr(dos, 'gestionnaire', str(row['gestionnaire']).strip().upper())
+                    if mode == "financement": setattr(dos, 'statut_dossier', row['statut_dossier'])
+                    if not is_not_admin: setattr(dos, 'gestionnaire', str(row['gestionnaire']).strip().upper())
             session.commit()
             st.toast("✅ Base mise à jour !")
             st.rerun()
@@ -832,7 +869,6 @@ def page_supervision():
     
     if df.empty: st.warning("La base est vide pour cet environnement."); return
 
-    # --- NOUVELLES CARTES 3D POUR LES STATISTIQUES ---
     total_dossiers = len(df)
     total_pnr = df['montant_pnr'].astype(float).sum()
     total_rembourse = df['montant_rembourse'].astype(float).sum()
@@ -877,6 +913,7 @@ def page_supervision():
         st.download_button("🟢 Sauvegarde Complète (Excel)", data=buffer.getvalue(), file_name="Base_Dossiers.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+# --- LA DOUBLE IMPORTATION BLINDÉE ---
 def page_integration_admin():
     env_actif = st.session_state.user.get('env')
     role_user = st.session_state.user['role']
@@ -884,50 +921,44 @@ def page_integration_admin():
     st.title("⚙️ Intégration, Équipes & Nettoyage")
     
     if role_user == "finance":
-        tabs = st.tabs(["📥 Importateur Nouveaux Financements"])
-        tab_import = tabs[0]
+        tabs = st.tabs(["📥 Importation FINANCEMENT"])
+        tab_fin = tabs[0]
+        tab_rec = None
         tab_equipes = None
         tab_clean = None
     else:
-        tab_import, tab_equipes, tab_clean = st.tabs(["📥 Importation Puzzle", "🔐 Gestion des Équipes", "🧹 Nettoyage (Doublons)"])
+        tab_fin, tab_rec, tab_equipes, tab_clean = st.tabs(["📥 Import FINANCEMENT", "📥 Import RECOUVREMENT", "🔐 Gestion des Équipes", "🧹 Nettoyage"])
     
-    with tab_import:
+    # 1. IMPORTATEUR FINANCEMENT (CRÉATION)
+    with tab_fin:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        if role_user == "finance":
-            st.info("💡 **Espace Finance :** Les nouveaux dossiers importés ici seront automatiquement envoyés aux accompagnateurs. S'ils sont reconnus, une étiquette '✨ NOUVEAU' apparaîtra sur leur compte.")
-        else:
-            st.info("💡 **Radar Actif & Puzzle Blindé :** L'importateur lit vos fichiers (même si les colonnes changent de nom). Il met à jour l'argent sans JAMAIS écraser vos adresses ou numéros existants avec des cases vides.")
-            
+        st.info("💡 **Création Officielle :** Ce portail crée les dossiers. Il intègre toutes les données (Noms, Adresses, Crédits, etc.). S'ils sont reconnus, une étiquette '✨ NOUVEAU' apparaîtra pour l'agent.")
         st.caption("L'importation se fera dans : **" + env_actif + "** (Filtre > 40 000 DA actif)")
         
-        uploaded_file = st.file_uploader(f"📂 Glissez votre fichier (.xlsx ou .csv)", type=['xlsx', 'xls', 'csv'])
+        file_fin = st.file_uploader(f"📂 Fichier FINANCEMENT (.xlsx, .csv)", type=['xlsx', 'xls', 'csv'], key="file_fin")
         
-        if uploaded_file and st.button("🚀 Démarrer l'Importation Intelligente", type="primary"):
+        if file_fin and st.button("🚀 Démarrer l'Intégration Financement", type="primary", key="btn_fin"):
             session = get_session()
             try:
-                if uploaded_file.name.lower().endswith('.csv'):
-                    try: df_raw = pd.read_csv(uploaded_file, sep=None, engine='python', dtype=str)
-                    except Exception: df_raw = pd.read_csv(uploaded_file, sep=';', encoding='latin1', dtype=str)
+                if file_fin.name.lower().endswith('.csv'):
+                    try: df_raw = pd.read_csv(file_fin, sep=None, engine='python', dtype=str)
+                    except Exception: df_raw = pd.read_csv(file_fin, sep=';', encoding='latin1', dtype=str)
                     xl = {'Fichier CSV': df_raw}
                 else:
-                    xl = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
+                    xl = pd.read_excel(file_fin, sheet_name=None, header=None, dtype=str)
                 
                 agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
                 agents_noms = [a.nom for a in agents_db]
 
-                with st.status(f"Importation en cours vers {env_actif}...", expanded=True) as status:
+                with st.status(f"Création en cours vers {env_actif}...", expanded=True) as status:
                     count_add, count_upd, count_ignored = 0, 0, 0
                     batch_size = 50 
-                    
                     progress_bar = st.progress(0)
-                    progress_text = st.empty()
                     
                     with session.no_autoflush:
                         for s_name, df_raw in xl.items():
                             df_raw = df_raw.fillna('')
-                            
-                            if uploaded_file.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns:
-                                df = df_raw
+                            if file_fin.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns: df = df_raw
                             else:
                                 header_idx = -1
                                 for i in range(min(30, len(df_raw))):
@@ -935,7 +966,6 @@ def page_integration_admin():
                                     if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST", "PRENOM", "ID"] if k in row_cl]) >= 1:
                                         header_idx = i; break
                                 if header_idx == -1: continue
-                                
                                 df = df_raw.iloc[header_idx:].copy()
                                 df.columns = df.iloc[0].astype(str).tolist()
                                 df = df.iloc[1:].reset_index(drop=True)
@@ -945,16 +975,11 @@ def page_integration_admin():
                             for db_f, keywords in MAPPING_CONFIG_KEYWORDS.items():
                                 for i, col_clean in enumerate(df_cols_clean):
                                     if any(kw in col_clean for kw in keywords):
-                                        if db_f not in col_map: 
-                                            col_map[db_f] = df.columns[i]
+                                        if db_f not in col_map: col_map[db_f] = df.columns[i]
                             
                             total_rows = len(df)
-                            
                             for idx, row in df.iterrows():
-                                if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
-                                    prog_val = min(1.0, (idx + 1) / total_rows)
-                                    progress_bar.progress(prog_val)
-                                    progress_text.markdown(f"**Analyse en cours... {int(prog_val * 100)}%**")
+                                if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1: progress_bar.progress(min(1.0, (idx + 1) / total_rows))
 
                                 data = {}
                                 for db_f, xl_c in col_map.items():
@@ -975,21 +1000,16 @@ def page_integration_admin():
                                 if not exist and date_fin != "": exist = session.query(Dossier).filter_by(identifiant=ident, date_financement='').first()
 
                                 if 'montant_pnr' in data and 0 < data['montant_pnr'] <= 40000:
-                                    count_ignored += 1
-                                    continue
+                                    count_ignored += 1; continue
 
                                 data['type_dispositif'] = env_actif
 
-                                if not exist:
-                                    data['est_nouveau'] = 'OUI'
+                                if not exist: data['est_nouveau'] = 'OUI'
 
                                 if exist:
                                     for k, v in data.items(): 
-                                        if isinstance(v, str):
-                                            if v.strip() != "":
-                                                setattr(exist, k, v)
-                                        elif v is not None:
-                                            setattr(exist, k, v)
+                                        if isinstance(v, str) and v.strip() != "": setattr(exist, k, v)
+                                        elif v is not None and not isinstance(v, str): setattr(exist, k, v)
                                     count_upd += 1
                                 else:
                                     session.add(Dossier(**data))
@@ -1001,13 +1021,100 @@ def page_integration_admin():
 
                     try: session.commit()
                     except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
-                    
-                    progress_text.empty()
-                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour. ({count_ignored} ignorés car <= 40k).", state="complete")
+                    status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour. ({count_ignored} bloqués car <= 40k).", state="complete")
                 st.balloons()
             except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
             finally: session.close()
         st.markdown("</div>", unsafe_allow_html=True)
+
+    # 2. IMPORTATEUR RECOUVREMENT (MISE A JOUR STRICTE)
+    if tab_rec:
+        with tab_rec:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.warning("🛡️ **Importation Sécurisée Anti-Fantômes :** Cet outil met UNIQUEMENT à jour l'argent (Remboursement, Retard, Contentieux). Si un Identifiant du fichier n'existe pas déjà dans la Base Finance, il sera **automatiquement rejeté** pour éviter les doublons invisibles.")
+            
+            file_rec = st.file_uploader(f"📂 Fichier RECOUVREMENT (.xlsx, .csv)", type=['xlsx', 'xls', 'csv'], key="file_rec")
+            
+            if file_rec and st.button("🚀 Démarrer la Mise à Jour Recouvrement", type="primary", key="btn_rec"):
+                session = get_session()
+                try:
+                    if file_rec.name.lower().endswith('.csv'):
+                        try: df_raw = pd.read_csv(file_rec, sep=None, engine='python', dtype=str)
+                        except Exception: df_raw = pd.read_csv(file_rec, sep=';', encoding='latin1', dtype=str)
+                        xl = {'Fichier CSV': df_raw}
+                    else:
+                        xl = pd.read_excel(file_rec, sheet_name=None, header=None, dtype=str)
+                    
+                    with st.status(f"Analyse financière en cours ({env_actif})...", expanded=True) as status:
+                        count_upd, count_rejetes = 0, 0
+                        batch_size = 50 
+                        progress_bar = st.progress(0)
+                        
+                        with session.no_autoflush:
+                            for s_name, df_raw in xl.items():
+                                df_raw = df_raw.fillna('')
+                                if file_rec.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns: df = df_raw
+                                else:
+                                    header_idx = -1
+                                    for i in range(min(30, len(df_raw))):
+                                        row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
+                                        if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST", "PRENOM", "ID"] if k in row_cl]) >= 1:
+                                            header_idx = i; break
+                                    if header_idx == -1: continue
+                                    df = df_raw.iloc[header_idx:].copy()
+                                    df.columns = df.iloc[0].astype(str).tolist()
+                                    df = df.iloc[1:].reset_index(drop=True)
+                                    
+                                df_cols_clean = [clean_header(c) for c in df.columns]
+                                col_map = {}
+                                for db_f, keywords in MAPPING_CONFIG_KEYWORDS.items():
+                                    for i, col_clean in enumerate(df_cols_clean):
+                                        if any(kw in col_clean for kw in keywords):
+                                            if db_f not in col_map: col_map[db_f] = df.columns[i]
+                                
+                                total_rows = len(df)
+                                for idx, row in df.iterrows():
+                                    if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1: progress_bar.progress(min(1.0, (idx + 1) / total_rows))
+
+                                    # On ne garde que les données financières pour ne RIEN écraser d'autre
+                                    data_finance = {}
+                                    for db_f, xl_c in col_map.items():
+                                        val = row[xl_c]
+                                        if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
+                                        
+                                        if db_f == 'identifiant': data_finance[db_f] = clean_identifiant(val)
+                                        elif db_f in ['montant_rembourse', 'reste_rembourser']:
+                                            amt = clean_money(val)
+                                            if amt is not None: data_finance[db_f] = amt
+                                        elif db_f in ['nb_echeance_tombee', 'etat_dette']:
+                                            data_finance[db_f] = str(val).strip().upper()
+
+                                    ident = data_finance.get('identifiant', '')
+                                    if not ident: continue
+
+                                    exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env_actif).first()
+                                    
+                                    # LA RÈGLE D'OR : SI L'ID N'EXISTE PAS = REJETÉ
+                                    if exist:
+                                        if 'montant_rembourse' in data_finance: exist.montant_rembourse = data_finance['montant_rembourse']
+                                        if 'reste_rembourser' in data_finance: exist.reste_rembourser = data_finance['reste_rembourser']
+                                        if 'nb_echeance_tombee' in data_finance: exist.nb_echeance_tombee = data_finance['nb_echeance_tombee']
+                                        if 'etat_dette' in data_finance: exist.etat_dette = data_finance['etat_dette']
+                                        count_upd += 1
+                                    else:
+                                        count_rejetes += 1
+                                        
+                                    if count_upd % batch_size == 0:
+                                        try: session.commit()
+                                        except Exception: session.rollback()
+
+                        try: session.commit()
+                        except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
+                        status.update(label=f"Succès ! {count_upd} dossiers financiers mis à jour. ({count_rejetes} dossiers rejetés car inconnus).", state="complete")
+                    st.balloons()
+                except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
+                finally: session.close()
+            st.markdown("</div>", unsafe_allow_html=True)
 
     if tab_equipes:
         with tab_equipes:
@@ -1104,9 +1211,14 @@ if st.session_state.user is None: login_page()
 else:
     page = sidebar_menu()
     
-    if "Espace de Travail" in page or "Base Globale" in page:
-        vue_admin = ("Base Globale" in page)
-        page_gestion(vue_admin=vue_admin)
+    if "Financement" in page and "Vue Globale" not in page and "Import" not in page:
+        page_gestion(mode="financement", vue_admin=False)
+    elif "Recouvrement" in page and "Vue Globale" not in page and "Import" not in page:
+        page_gestion(mode="recouvrement", vue_admin=False)
+    elif "Vue Globale Financement" in page:
+        page_gestion(mode="financement", vue_admin=True)
+    elif "Vue Globale Recouvrement" in page:
+        page_gestion(mode="recouvrement", vue_admin=True)
     elif "Corbeille" in page: page_corbeille()
-    elif "Supervision" in page and st.session_state.user['role'] == "admin": page_supervision()
+    elif "Supervision" in page: page_supervision()
     elif "Importation" in page or "Intégration" in page: page_integration_admin()
