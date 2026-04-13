@@ -5,18 +5,16 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 import unicodedata
 import re
-import plotly.express as px
-import plotly.graph_objects as go
+import io
 from fpdf import FPDF
 import tempfile
-import io
 from datetime import datetime
 import base64
 import urllib.parse
 from supabase import create_client, Client
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="ANGEM Workspace v27.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ANGEM Workspace v32.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
@@ -33,11 +31,10 @@ else:
     theme_color = "#2c3e50"
     theme_bg = "#f8f9fa"
 
-# --- LE STYLE CSS PREMIUM ---
+# --- STYLE CSS PREMIUM ---
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {theme_bg}; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
-    
     .modern-card {{
         background-color: #ffffff; padding: 25px; border-radius: 16px;
         box-shadow: 0 8px 24px rgba(0,0,0,0.04); margin-top: 15px; margin-bottom: 25px;
@@ -45,7 +42,6 @@ st.markdown(f"""
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }}
     .modern-card:hover {{ transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }}
-    
     .metric-card {{
         background: #ffffff; border-radius: 16px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: 1px solid #edf2f7;
@@ -59,13 +55,11 @@ st.markdown(f"""
     .metric-label {{ font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }}
     .metric-icon {{ font-size: 38px; opacity: 0.9; }}
     .metric-danger {{ border-left-color: #ef4444; }}
-    
     .user-badge {{
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         padding: 20px; border-radius: 16px; border: 1px solid #e2e8f0;
         box-shadow: 0 4px 12px rgba(0,0,0,0.04); text-align: center; margin-bottom: 25px;
     }}
-    
     .portal-card {{
         background: #ffffff; padding: 30px 20px; border-radius: 16px; text-align: center;
         border: 2px solid #edf2f7; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
@@ -75,42 +69,28 @@ st.markdown(f"""
     .portal-icon {{ font-size: 48px; margin-bottom: 15px; }}
     .portal-title {{ font-size: 20px; font-weight: bold; color: #2d3748; margin-bottom: 10px; }}
     .portal-desc {{ font-size: 14px; color: #718096; }}
-
     .profil-header {{
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); padding: 25px;
         border-radius: 12px; border-left: 8px solid {theme_color}; margin-bottom: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }}
-    
-    /* Blocs Visuels Financement vs Recouvrement */
     .block-finance {{ background-color: #eff6ff; border-left: 5px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
     .block-recouvrement {{ background-color: #f0fdf4; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
     .block-title {{ font-weight: bold; color: #1e293b; margin-bottom: 10px; font-size: 16px; text-transform: uppercase; }}
-    
     .alerte-urgente {{ background-color: #fef2f2; border-left: 6px solid #ef4444; padding: 15px 20px; border-radius: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 20px; animation: pulseRed 2s infinite; }}
     .alerte-nouveau {{ background-color: #f0fdf4; border-left: 6px solid #22c55e; padding: 15px 20px; border-radius: 8px; color: #15803d; font-weight: 600; margin-bottom: 20px; animation: pulseGreen 2s infinite; }}
     @keyframes pulseRed {{ 0% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }} }}
     @keyframes pulseGreen {{ 0% {{ box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }} 70% {{ box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }} }}
-    
     .action-btn-container {{ display: flex; gap: 12px; margin-top: 15px; margin-bottom: 25px; flex-wrap: wrap; }}
     .btn-action {{ flex: 1; min-width: 160px; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; text-align: center; color: white; transition: all 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; }}
     .btn-call {{ background-color: #3b82f6; }} .btn-call:hover {{ background-color: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(59,130,246,0.3); color: white; }}
     .btn-wa {{ background-color: #22c55e; }} .btn-wa:hover {{ background-color: #16a34a; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(34,197,94,0.3); color: white; }}
     .btn-maps {{ background-color: #ef4444; }} .btn-maps:hover {{ background-color: #dc2626; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(239,68,68,0.3); color: white; }}
-    
     .doc-link {{ display: flex; align-items: center; gap: 10px; background-color: #f1f5f9; padding: 12px 16px; border-radius: 8px; text-decoration: none; color: #334155; font-weight: 600; margin-bottom: 10px; border: 1px solid #e2e8f0; transition: all 0.2s; }}
     .doc-link:hover {{ background-color: #e2e8f0; color: #0f172a; transform: translateX(4px); }}
-    
     .stButton>button {{ border-radius: 8px; font-weight: 600; transition: all 0.2s; border: none; padding: 0.5rem 1rem; }}
     .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
-    
     .search-title {{ color: {theme_color}; font-weight: 800; font-size: 20px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }}
-    
-    @media (max-width: 768px) {{
-        .btn-action {{ min-width: 100%; margin-bottom: 8px; }}
-        .modern-card, .profil-header, .metric-card {{ padding: 15px; }}
-        .portal-card {{ margin-bottom: 15px; }}
-    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -156,6 +136,11 @@ class Dossier(Base):
     montant_rembourse = Column(Float, default=0.0)
     reste_rembourser = Column(Float, default=0.0)
     nb_echeance_tombee = Column(String)
+    # --- NOUVELLES COLONNES RECOUVREMENT ---
+    date_ech_tomb = Column(String, default="")
+    prochaine_ech = Column(String, default="")
+    total_echue = Column(Float, default=0.0)
+    # ---------------------------------------
     etat_dette = Column(String)
     statut_dossier = Column(String, default="Phase dépôt du dossier")
     documents = Column(String, default="") 
@@ -183,6 +168,9 @@ try:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS debut_consommation VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS etat_dette VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS est_nouveau VARCHAR DEFAULT 'NON'"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS date_ech_tomb VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS prochaine_ech VARCHAR DEFAULT ''"))
+        conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS total_echue FLOAT DEFAULT 0.0"))
         conn.commit()
 except: pass
 
@@ -252,8 +240,10 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(95, 8, f" Montant Recouvre : {dos.montant_rembourse:,.0f} DA", border='L')
     pdf.cell(95, 8, f" Reste a Rembourser : {dos.reste_rembourser:,.0f} DA", border='R', ln=True)
     pdf.cell(95, 8, f" Echeances tombees : {clean_pdf_text(dos.nb_echeance_tombee)}", border='L')
-    pdf.cell(95, 8, f" Etat : {clean_pdf_text(dos.etat_dette)}", border='R', ln=True)
-    pdf.cell(0, 8, "", border='T', ln=True) 
+    pdf.cell(95, 8, f" Date Echeance Tomb : {clean_pdf_text(dos.date_ech_tomb)}", border='R', ln=True)
+    pdf.cell(95, 8, f" Total Echue : {dos.total_echue:,.0f} DA", border='L')
+    pdf.cell(95, 8, f" Prochaine Echeance : {clean_pdf_text(dos.prochaine_ech)}", border='R', ln=True)
+    pdf.cell(0, 8, f" Etat : {clean_pdf_text(dos.etat_dette)}", border='LRB', ln=True)
     pdf.ln(8)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 4. NOTES ET RAPPORT DE VISITE", ln=True)
@@ -382,12 +372,15 @@ MAPPING_CONFIG_KEYWORDS = {
     'debut_consommation': ['DEBUTCONSOM', 'CONSOMMATION', 'DEBUTEXPLOIT'],
     'montant_pnr': ['PNR', 'MONTANTPNR', 'MTPNR', 'MONTANT'],
     'apport_personnel': ['APPORT'],
-    'montant_rembourse': ['TOTALREMB', 'VERSEMENT', 'REMBOURSE', 'TOTALVERS'],
-    'reste_rembourser': ['RESTAREMB', 'MONTANTRESTA', 'RESTE'],
-    'nb_echeance_tombee': ['ECHTOMB', 'ECHEANCES', 'RETARD'],
+    'montant_rembourse': ['TOTALREMB', 'VERSEMENT', 'REMBOURSE', 'TOTALVERS', 'TOTALREMBOURSS'],
+    'reste_rembourser': ['RESTAREMB', 'MONTANTRESTA', 'RESTE', 'RESTAREMBOURSS'],
+    'nb_echeance_tombee': ['ECHTOMB', 'ECHEANCES', 'RETARD', 'NBRECHTOMB'],
+    'date_ech_tomb': ['DATEECHTOMB', 'DATEECHEANCETOMBEE', 'DATEECH'],
+    'prochaine_ech': ['PROCHAINEECH', 'PROCHECH'],
+    'total_echue': ['TOTALECHUE', 'MONTECHEAN'],
     'etat_dette': ['ETATDETTE', 'ETAT']
 }
-COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel']
+COLONNES_ARGENT = ['montant_pnr', 'montant_rembourse', 'reste_rembourser', 'apport_personnel', 'total_echue']
 
 def calculer_alerte_bool(row):
     ech = str(row.get('nb_echeance_tombee', '')).strip()
@@ -469,7 +462,7 @@ def login_page():
                 else: st.error("⚠️ Mot de passe incorrect.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# --- MENU LATÉRAL PREMIUM (Rubriques Séparées) ---
+# --- MENU LATÉRAL PREMIUM ---
 def sidebar_menu():
     afficher_logo(180)
     env = st.session_state.user.get('env')
@@ -502,7 +495,7 @@ def sidebar_menu():
         st.rerun()
     return choix
 
-# --- AFFICHAGE DU PROFIL COMPLET (Coupé en Deux Blocs) ---
+# --- AFFICHAGE DU PROFIL COMPLET ---
 def afficher_profil_promoteur(dos_db, session):
     if dos_db.est_nouveau == "OUI" and dos_db.gestionnaire == st.session_state.user['nom']:
         dos_db.est_nouveau = "NON"
@@ -512,7 +505,7 @@ def afficher_profil_promoteur(dos_db, session):
     st.markdown(f"""
     <div class='profil-header'>
         <h2 style='margin:0; color:{theme_color}; font-weight: 800; text-transform: uppercase;'>{dos_db.nom} {dos_db.prenom}</h2>
-        <p style='margin:5px 0 0 0; font-size:16px; color: #475569;'><b>ID:</b> {dos_db.identifiant}  |  <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
+        <p style='margin:5px 0 0 0; font-size:16px; color: #475569;'><b>ID:</b> {dos_db.identifiant}  |  <b>Projet:</b> {dos_db.activite} ({dos_db.commune})</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -543,7 +536,10 @@ def afficher_profil_promoteur(dos_db, session):
             <b>Montant Remboursé :</b> {dos_db.montant_rembourse:,.0f} DA<br>
             <b>Reste à Rembourser :</b> <span style='color:red;'>{dos_db.reste_rembourser:,.0f} DA</span><br>
             <b>Échéances tombées :</b> {dos_db.nb_echeance_tombee}<br>
-            <b>État de la Dette :</b> {dos_db.etat_dette}
+            <b>Date Ech Tomb :</b> {dos_db.date_ech_tomb}<br>
+            <b>Total Echue :</b> {dos_db.total_echue:,.0f} DA<br>
+            <b>Prochaine Echeance :</b> {dos_db.prochaine_ech}<br>
+            <b>État :</b> {dos_db.etat_dette}
         </div>
         """, unsafe_allow_html=True)
         st.progress(min(taux, 1.0))
@@ -686,7 +682,6 @@ def page_gestion(mode="financement", vue_admin=False):
         if nb_orphelins > 0:
             st.markdown(f"<div class='alerte-urgente'>🚨 URGENT : Il y a {nb_orphelins} dossier(s) non attribué(s) dans la Daïra de {agent_daira} ! Allez dans la 'Corbeille & Affectation'.</div>", unsafe_allow_html=True)
 
-    # --- PANNEAU DE CONTRÔLE UNIFIÉ ---
     st.markdown("<div class='modern-card' style='padding: 20px;'>", unsafe_allow_html=True)
     titre_console = "🎯 Recherche Financement" if mode == "financement" else "🎯 Recherche Recouvrement"
     st.markdown(f"<div class='search-title'>{titre_console} ({env_actif})</div>", unsafe_allow_html=True)
@@ -756,34 +751,47 @@ def page_gestion(mode="financement", vue_admin=False):
 
     # CONFIGURATION DES COLONNES SELON LE MODE
     if mode == "financement":
+        cols_to_show = ["Ouvrir 📂", "identifiant", "nom", "prenom", "statut_dossier", "gestionnaire", "montant_pnr", "num_ordre_versement", "banque_nom", "date_financement", "id"]
+        df_final = df_affichage[cols_to_show]
         col_config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn("Ouvrir 📂", default=False),
-            "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None, "est_nouveau": None,
-            "Badge": None, "montant_rembourse": None, "reste_rembourser": None, "nb_echeance_tombee": None, "etat_dette": None, "apport_personnel": None, "credit_bancaire": None, "montant_total_credit": None,
+            "id": None, 
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
             "nom": st.column_config.TextColumn("Nom Promoteur", disabled=True),
+            "prenom": st.column_config.TextColumn("Prénom", disabled=True),
             "statut_dossier": st.column_config.SelectboxColumn("Étape du dossier", options=LISTE_STATUTS, width="medium"),
             "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=is_not_admin),
             "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA", disabled=True),
             "num_ordre_versement": st.column_config.TextColumn("Num OV", disabled=True),
             "banque_nom": st.column_config.TextColumn("Banque", disabled=True),
+            "date_financement": st.column_config.TextColumn("Date Financement", disabled=True)
         }
     else:
+        # EXACTEMENT L'ORDRE ET LES COLONNES DE TON IMAGE EXCEL
+        cols_to_show = ["Ouvrir 📂", "identifiant", "nom", "prenom", "date_naissance", "adresse", "telephone", "debut_consommation", "montant_pnr", "nb_echeance_tombee", "date_ech_tomb", "prochaine_ech", "total_echue", "montant_rembourse", "reste_rembourser", "etat_dette", "gestionnaire", "id"]
+        df_final = df_affichage[cols_to_show]
         col_config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn("Ouvrir 📂", default=False),
-            "id": None, "documents": None, "historique_visites": None, "prochaine_visite": None, "type_dispositif": None, "est_nouveau": None,
-            "banque_nom": None, "num_ordre_versement": None, "date_financement": None, "apport_personnel": None, "credit_bancaire": None, "montant_total_credit": None, "statut_dossier": None,
-            "Badge": st.column_config.TextColumn("État", disabled=True),
+            "id": None,
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
-            "nom": st.column_config.TextColumn("Nom Promoteur", disabled=True),
-            "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=is_not_admin),
+            "nom": st.column_config.TextColumn("Nom", disabled=True),
+            "prenom": st.column_config.TextColumn("Prenom", disabled=True),
+            "date_naissance": st.column_config.TextColumn("Date de Naissance", disabled=True),
+            "adresse": st.column_config.TextColumn("Adresse", disabled=True),
+            "telephone": st.column_config.TextColumn("Tel", disabled=True),
+            "debut_consommation": st.column_config.TextColumn("Début consom.", disabled=True),
             "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
-            "montant_rembourse": st.column_config.NumberColumn("Remboursé", format="%d DA", disabled=True),
-            "reste_rembourser": st.column_config.NumberColumn("Reste à payer", format="%d DA", disabled=True),
-            "etat_dette": st.column_config.TextColumn("Contentieux", disabled=True),
+            "nb_echeance_tombee": st.column_config.TextColumn("Nbr ECH Tomb.", disabled=True),
+            "date_ech_tomb": st.column_config.TextColumn("Date Ech Tomb", disabled=True),
+            "prochaine_ech": st.column_config.TextColumn("Prochaine Ech", disabled=True),
+            "total_echue": st.column_config.NumberColumn("Total Echue", format="%d DA", disabled=True),
+            "montant_rembourse": st.column_config.NumberColumn("Total Rembourssé", format="%d DA", disabled=True),
+            "reste_rembourser": st.column_config.NumberColumn("Montant rest à Rembourssé", format="%d DA", disabled=True),
+            "etat_dette": st.column_config.TextColumn("Etat", disabled=True),
+            "gestionnaire": st.column_config.SelectboxColumn("Gest", options=liste_agents, disabled=is_not_admin),
         }
 
-    edited_df = st.data_editor(df_affichage, use_container_width=True, hide_index=True, height=450, column_config=col_config)
+    edited_df = st.data_editor(df_final, use_container_width=True, hide_index=True, height=500, column_config=col_config)
 
     if st.button("💾 Enregistrer les modifications du tableau", type="primary"):
         session = get_session()
@@ -913,7 +921,6 @@ def page_supervision():
         st.download_button("🟢 Sauvegarde Complète (Excel)", data=buffer.getvalue(), file_name="Base_Dossiers.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- LA DOUBLE IMPORTATION BLINDÉE ---
 def page_integration_admin():
     env_actif = st.session_state.user.get('env')
     role_user = st.session_state.user['role']
@@ -929,7 +936,6 @@ def page_integration_admin():
     else:
         tab_fin, tab_rec, tab_equipes, tab_clean = st.tabs(["📥 Import FINANCEMENT", "📥 Import RECOUVREMENT", "🔐 Gestion des Équipes", "🧹 Nettoyage"])
     
-    # 1. IMPORTATEUR FINANCEMENT (CRÉATION)
     with tab_fin:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.info("💡 **Création Officielle :** Ce portail crée les dossiers. Il intègre toutes les données (Noms, Adresses, Crédits, etc.). S'ils sont reconnus, une étiquette '✨ NOUVEAU' apparaîtra pour l'agent.")
@@ -1027,11 +1033,10 @@ def page_integration_admin():
             finally: session.close()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. IMPORTATEUR RECOUVREMENT (MISE A JOUR STRICTE)
     if tab_rec:
         with tab_rec:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.warning("🛡️ **Importation Sécurisée Anti-Fantômes :** Cet outil met UNIQUEMENT à jour l'argent (Remboursement, Retard, Contentieux). Si un Identifiant du fichier n'existe pas déjà dans la Base Finance, il sera **automatiquement rejeté** pour éviter les doublons invisibles.")
+            st.warning("🛡️ **Importation Sécurisée Anti-Fantômes :** Cet outil met UNIQUEMENT à jour les informations de recouvrement. Si un Identifiant n'existe pas dans la Base Finance, il sera **automatiquement rejeté**.")
             
             file_rec = st.file_uploader(f"📂 Fichier RECOUVREMENT (.xlsx, .csv)", type=['xlsx', 'xls', 'csv'], key="file_rec")
             
@@ -1076,17 +1081,16 @@ def page_integration_admin():
                                 for idx, row in df.iterrows():
                                     if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1: progress_bar.progress(min(1.0, (idx + 1) / total_rows))
 
-                                    # On ne garde que les données financières pour ne RIEN écraser d'autre
                                     data_finance = {}
                                     for db_f, xl_c in col_map.items():
                                         val = row[xl_c]
                                         if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
                                         
                                         if db_f == 'identifiant': data_finance[db_f] = clean_identifiant(val)
-                                        elif db_f in ['montant_rembourse', 'reste_rembourser']:
+                                        elif db_f in ['montant_rembourse', 'reste_rembourser', 'total_echue']:
                                             amt = clean_money(val)
                                             if amt is not None: data_finance[db_f] = amt
-                                        elif db_f in ['nb_echeance_tombee', 'etat_dette']:
+                                        elif db_f in ['nb_echeance_tombee', 'etat_dette', 'date_ech_tomb', 'prochaine_ech']:
                                             data_finance[db_f] = str(val).strip().upper()
 
                                     ident = data_finance.get('identifiant', '')
@@ -1094,12 +1098,14 @@ def page_integration_admin():
 
                                     exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env_actif).first()
                                     
-                                    # LA RÈGLE D'OR : SI L'ID N'EXISTE PAS = REJETÉ
                                     if exist:
                                         if 'montant_rembourse' in data_finance: exist.montant_rembourse = data_finance['montant_rembourse']
                                         if 'reste_rembourser' in data_finance: exist.reste_rembourser = data_finance['reste_rembourser']
+                                        if 'total_echue' in data_finance: exist.total_echue = data_finance['total_echue']
                                         if 'nb_echeance_tombee' in data_finance: exist.nb_echeance_tombee = data_finance['nb_echeance_tombee']
                                         if 'etat_dette' in data_finance: exist.etat_dette = data_finance['etat_dette']
+                                        if 'date_ech_tomb' in data_finance: exist.date_ech_tomb = data_finance['date_ech_tomb']
+                                        if 'prochaine_ech' in data_finance: exist.prochaine_ech = data_finance['prochaine_ech']
                                         count_upd += 1
                                     else:
                                         count_rejetes += 1
@@ -1110,7 +1116,7 @@ def page_integration_admin():
 
                         try: session.commit()
                         except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
-                        status.update(label=f"Succès ! {count_upd} dossiers financiers mis à jour. ({count_rejetes} dossiers rejetés car inconnus).", state="complete")
+                        status.update(label=f"Succès ! {count_upd} dossiers mis à jour. ({count_rejetes} dossiers rejetés car inconnus).", state="complete")
                     st.balloons()
                 except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
                 finally: session.close()
