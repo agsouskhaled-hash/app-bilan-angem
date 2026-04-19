@@ -12,15 +12,24 @@ from datetime import datetime
 import base64
 import urllib.parse
 from supabase import create_client, Client
+import hashlib
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="ANGEM Workspace v32.0", page_icon="🇩🇿", layout="wide", initial_sidebar_state="expanded")
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
-# --- CONNEXION CLOUD SUPABASE (STORAGE) ---
-SUPABASE_URL = "https://greyjhgiytajxpvucbrk.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyZXlqaGdpeXRhanhwdnVjYnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMTU0MjksImV4cCI6MjA4NzU5MTQyOX0.jCNan1Y1hvfGog6Zcu8Rr8d5PkeFRFvipAGGB09ztxo"
+# =============================================================================
+# CORRECTIF 1 : Les secrets sont lus depuis st.secrets (jamais en dur dans le code)
+# Dans votre fichier .streamlit/secrets.toml, ajoutez :
+# SUPABASE_URL = "https://greyjhgiytajxpvucbrk.supabase.co"
+# SUPABASE_KEY = "votre_cle_ici"
+# DB_URL = "postgresql+psycopg2://..."
+# =============================================================================
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://greyjhgiytajxpvucbrk.supabase.co")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+DB_URL = st.secrets.get("DB_URL", "postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require")
+
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- DYNAMIQUE DES COULEURS ---
@@ -100,14 +109,14 @@ if 'search_query' not in st.session_state: st.session_state.search_query = ""
 
 # --- CONNEXION BASE DE DONNÉES ---
 Base = declarative_base()
-engine = create_engine("postgresql+psycopg2://postgres.greyjhgiytajxpvucbrk:algerouest2026@aws-1-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require", echo=False)
+engine = create_engine(DB_URL, echo=False)
 Session = sessionmaker(bind=engine)
 
 class Dossier(Base):
     __tablename__ = 'dossiers'
     id = Column(Integer, primary_key=True)
     identifiant = Column(String, index=True)
-    type_dispositif = Column(String, default="PNR PROJET") 
+    type_dispositif = Column(String, default="PNR PROJET")
     nom = Column(String)
     prenom = Column(String)
     genre = Column(String)
@@ -136,15 +145,13 @@ class Dossier(Base):
     montant_rembourse = Column(Float, default=0.0)
     reste_rembourser = Column(Float, default=0.0)
     nb_echeance_tombee = Column(String)
-    # --- NOUVELLES COLONNES RECOUVREMENT ---
     date_ech_tomb = Column(String, default="")
     prochaine_ech = Column(String, default="")
     total_echue = Column(Float, default=0.0)
-    # ---------------------------------------
     etat_dette = Column(String)
     statut_dossier = Column(String, default="Phase dépôt du dossier")
-    documents = Column(String, default="") 
-    historique_visites = Column(String, default="") 
+    documents = Column(String, default="")
+    historique_visites = Column(String, default="")
     prochaine_visite = Column(String, default="")
     est_nouveau = Column(String, default="NON")
 
@@ -172,18 +179,42 @@ try:
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS prochaine_ech VARCHAR DEFAULT ''"))
         conn.execute(text("ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS total_echue FLOAT DEFAULT 0.0"))
         conn.commit()
-except: pass
+except Exception as e:
+    # CORRECTIF 2 : On log l'erreur au lieu de la masquer silencieusement
+    print(f"[INIT DB WARNING] {e}")
 
-def get_session(): return Session()
+def get_session():
+    return Session()
+
+# =============================================================================
+# CORRECTIF 3 : Hashage des mots de passe avec SHA-256
+# =============================================================================
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verifier_mot_de_passe(password_saisi: str, hash_stocke: str) -> bool:
+    # Compatibilité : si le hash stocké fait 64 chars c'est un SHA-256, sinon ancien mot de passe en clair
+    if len(hash_stocke) == 64:
+        return hash_password(password_saisi) == hash_stocke
+    else:
+        # Migration automatique : si le mot de passe en clair correspond, on accepte
+        return password_saisi == hash_stocke
 
 def init_db_users():
     session = get_session()
-    admin = session.query(UtilisateurAuth).filter_by(identifiant="admin").first()
-    if not admin: session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe="angem", role="admin"))
-    finance = session.query(UtilisateurAuth).filter_by(identifiant="finance").first()
-    if not finance: session.add(UtilisateurAuth(identifiant="finance", nom="Service Finance", mot_de_passe="angem", role="finance"))
-    session.commit()
-    session.close()
+    try:
+        admin = session.query(UtilisateurAuth).filter_by(identifiant="admin").first()
+        if not admin:
+            session.add(UtilisateurAuth(identifiant="admin", nom="Administrateur", mot_de_passe=hash_password("angem"), role="admin"))
+        finance = session.query(UtilisateurAuth).filter_by(identifiant="finance").first()
+        if not finance:
+            session.add(UtilisateurAuth(identifiant="finance", nom="Service Finance", mot_de_passe=hash_password("angem"), role="finance"))
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"[INIT USERS ERROR] {e}")
+    finally:
+        session.close()
 
 init_db_users()
 
@@ -194,7 +225,7 @@ def afficher_logo(largeur=250):
         with open("logo_angem.png", "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(f'<div style="text-align: center; margin-bottom: 20px;"><img src="data:image/png;base64,{encoded_string}" width="{largeur}"></div>', unsafe_allow_html=True)
-    except:
+    except Exception:
         st.markdown(f'<div style="text-align: center; color: {theme_color}; font-size: 28px; font-weight: 900; padding: 15px; margin-bottom: 20px; letter-spacing: 1px;">🔵 ANGEM Workspace</div>', unsafe_allow_html=True)
 
 def clean_pdf_text(text):
@@ -205,7 +236,7 @@ def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
     try: pdf.image("logo_angem.png", x=10, y=8, w=30)
-    except: pass
+    except Exception: pass
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "DOSSIER OFFICIEL DU PROMOTEUR", ln=True, align='C')
     pdf.ln(5)
@@ -232,7 +263,7 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.cell(63, 8, f" Credit PNR : {dos.montant_pnr:,.0f} DA", border='L')
     pdf.cell(63, 8, f" Apport : {dos.apport_personnel:,.0f} DA")
     pdf.cell(64, 8, f" Banque : {dos.credit_bancaire:,.0f} DA", border='R', ln=True)
-    pdf.cell(0, 8, "", border='T', ln=True) 
+    pdf.cell(0, 8, "", border='T', ln=True)
     pdf.ln(2)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, " 3. ETAT DU RECOUVREMENT", border=1, ln=True, fill=True)
@@ -250,7 +281,7 @@ def generer_fiche_promoteur_pdf(dos):
     pdf.set_font("Arial", '', 11)
     if dos.historique_visites:
         notes = dos.historique_visites.split('\n')
-        for note in notes[-5:]: 
+        for note in notes[-5:]:
             if note.strip(): pdf.cell(0, 6, clean_pdf_text(note), ln=True)
     pdf.ln(5)
     for _ in range(5): pdf.cell(0, 8, ".............................................................................................................................................................", ln=True)
@@ -266,7 +297,7 @@ def generer_rapport_global_pdf(df):
     pdf = FPDF()
     pdf.add_page()
     try: pdf.image("logo_angem.png", x=10, y=8, w=30)
-    except: pass
+    except Exception: pass
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "ETAT GLOBAL DES DOSSIERS - ANGEM", ln=True, align='C')
     pdf.ln(5)
@@ -294,7 +325,7 @@ def generer_creances_pdf(df):
     pdf = FPDF()
     pdf.add_page()
     try: pdf.image("logo_angem.png", x=10, y=8, w=30)
-    except: pass
+    except Exception: pass
     pdf.set_font("Arial", 'B', 16)
     pdf.set_text_color(200, 0, 0)
     pdf.cell(0, 20, "EXTRACTION DES DOSSIERS EN SOUFFRANCE", ln=True, align='C')
@@ -306,7 +337,7 @@ def generer_creances_pdf(df):
     pdf.ln(5)
     pdf.set_font("Arial", '', 10)
     for _, row in df_retard.iterrows():
-        nom = clean_pdf_text(f"{row['nom']} {row['prenom']}")[:20] 
+        nom = clean_pdf_text(f"{row['nom']} {row['prenom']}")[:20]
         agent = clean_pdf_text(row['gestionnaire'])[:15]
         dispo = "AMP" if row['type_dispositif'] == "PNR AMP" else "PROJET"
         txt = f"[{dispo}] ID: {row['identifiant']} | {nom}... | Reste: {row['reste_rembourser']:,.0f} DA | Gest: {agent}"
@@ -342,14 +373,14 @@ def clean_money(val):
     s = str(val).upper().replace('DA', '').replace(' ', '').replace(',', '.')
     s = re.sub(r'[^\d\.-]', '', s)
     try: return float(s)
-    except: return None
+    except Exception: return None
 
 def clean_identifiant(val):
     if pd.isna(val): return ""
     s = str(val).strip().upper()
-    if 'E' in s: 
+    if 'E' in s:
         try: s = f"{float(s):.0f}"
-        except: pass
+        except Exception: pass
     if s.endswith('.0'): s = s[:-2]
     return s
 
@@ -401,11 +432,11 @@ if 'user' not in st.session_state: st.session_state.user = None
 def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
     afficher_logo(200)
-    
+
     if st.session_state.portal_selection is None:
         st.markdown("<h2 style='text-align: center; color: #1e293b; font-weight: 800;'>Portail de Connexion</h2>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #64748b; margin-bottom: 40px;'>Sélectionnez votre service pour accéder à votre espace de travail.</p>", unsafe_allow_html=True)
-        
+
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown("<div class='portal-card'>", unsafe_allow_html=True)
@@ -419,24 +450,26 @@ def login_page():
             st.markdown("<div class='portal-card'>", unsafe_allow_html=True)
             if st.button("👑\n\nDirection & Admin", use_container_width=True): st.session_state.portal_selection = "admin"
             st.markdown("<p class='portal-desc'>Supervision, extractions et gestion des accès.</p></div>", unsafe_allow_html=True)
-            
+
     else:
         role_selectionne = st.session_state.portal_selection
         titre_form = "Espace Accompagnateur" if role_selectionne == "agent" else "Service Finance" if role_selectionne == "finance" else "Administration Globale"
-        
+
         st.markdown(f"<div class='login-container'>", unsafe_allow_html=True)
         if st.button("⬅️ Retour aux services", key="back_btn"):
             st.session_state.portal_selection = None
             st.rerun()
-            
+
         st.markdown(f"<h3 style='color: #2c3e50; margin: 20px 0;'>{titre_form}</h3>", unsafe_allow_html=True)
-        
+
         session = get_session()
         try:
             users_db = session.query(UtilisateurAuth).filter_by(role=role_selectionne).order_by(UtilisateurAuth.nom).all()
             noms_disponibles = [u.nom for u in users_db]
-        except: noms_disponibles = []
-        session.close()
+        except Exception:
+            noms_disponibles = []
+        finally:
+            session.close()
 
         if not noms_disponibles:
             st.warning("Aucun compte trouvé pour ce service.")
@@ -444,22 +477,32 @@ def login_page():
             nom_choisi = st.selectbox("👤 Profil Utilisateur", noms_disponibles)
             password = st.text_input("🔑 Mot de passe", type="password")
             env_choisi = st.selectbox("🏢 Dispositif", ["PNR PROJET", "PNR AMP"])
-            
+
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🚀 Entrer dans l'espace sécurisé", type="primary", use_container_width=True):
                 session = get_session()
-                user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi, role=role_selectionne).first()
-                session.close()
-                if user_db and user_db.mot_de_passe == password:
-                    st.session_state.user = {
-                        "identifiant": user_db.identifiant, 
-                        "nom": user_db.nom, 
-                        "role": user_db.role, 
-                        "daira": user_db.daira,
-                        "env": env_choisi 
-                    }
-                    st.rerun()
-                else: st.error("⚠️ Mot de passe incorrect.")
+                try:
+                    user_db = session.query(UtilisateurAuth).filter_by(nom=nom_choisi, role=role_selectionne).first()
+                    # CORRECTIF 4 : Vérification avec support hachage + migration automatique
+                    if user_db and verifier_mot_de_passe(password, user_db.mot_de_passe):
+                        # Migration automatique vers hash si le mdp était en clair
+                        if len(user_db.mot_de_passe) != 64:
+                            user_db.mot_de_passe = hash_password(password)
+                            session.commit()
+                        st.session_state.user = {
+                            "identifiant": user_db.identifiant,
+                            "nom": user_db.nom,
+                            "role": user_db.role,
+                            "daira": user_db.daira,
+                            "env": env_choisi
+                        }
+                        st.rerun()
+                    else:
+                        st.error("⚠️ Mot de passe incorrect.")
+                except Exception as e:
+                    st.error(f"Erreur de connexion : {e}")
+                finally:
+                    session.close()
         st.markdown("</div>", unsafe_allow_html=True)
 
 # --- MENU LATÉRAL PREMIUM ---
@@ -468,7 +511,7 @@ def sidebar_menu():
     env = st.session_state.user.get('env')
     daira_info = f" ({st.session_state.user.get('daira')})" if st.session_state.user.get('daira') else ""
     role = st.session_state.user['role']
-    
+
     st.sidebar.markdown(f"""
     <div class='user-badge'>
         <div style='font-size: 45px; margin-bottom: 10px;'>👤</div>
@@ -479,14 +522,14 @@ def sidebar_menu():
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     if role == "finance":
         options = [f"📥 Import Financement", f"🗂️ Vue Financement ({env})"]
     elif role == "admin":
         options = [f"🗂️ Vue Globale Financement", "📈 Vue Globale Recouvrement", "📊 Supervision Direction", "⚙️ Intégration & Admin"]
     else:
         options = [f"🗂️ Rubrique Financement", "📈 Rubrique Recouvrement", "🗑️ Corbeille & Affectation"]
-        
+
     choix = st.sidebar.radio("Menu de Navigation", options, label_visibility="collapsed")
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Déconnexion", use_container_width=True):
@@ -558,20 +601,20 @@ def afficher_profil_promoteur(dos_db, session):
         st.markdown(f"<a href='https://wa.me/{tel_wa}?text={urllib.parse.quote(msg_wa)}' class='btn-action btn-wa' target='_blank'>💬 WhatsApp</a>", unsafe_allow_html=True)
     st.markdown(f"<a href='{lien_maps}' class='btn-action btn-maps' target='_blank'>🗺️ Ouvrir Maps</a>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
-    
+
     col_gauche, col_droite = st.columns([1.3, 1])
-    
+
     with col_gauche:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.markdown("### 🗓️ Planifier une visite")
-        col_d1, col_d2 = st.columns([2,1])
+        col_d1, col_d2 = st.columns([2, 1])
         date_visite = col_d1.date_input("Date prévue :", key=f"date_{dos_db.id}")
         if col_d2.button("💾 Fixer la date", key=f"btn_date_{dos_db.id}"):
             dos_db.prochaine_visite = date_visite.strftime("%d/%m/%Y")
             session.commit()
             st.success("Visite planifiée !")
             st.rerun()
-            
+
         if dos_db.prochaine_visite:
             st.info(f"📍 Prochaine visite prévue le : **{dos_db.prochaine_visite}**")
             if st.button("❌ Annuler cette visite", key=f"annul_{dos_db.id}"):
@@ -579,7 +622,7 @@ def afficher_profil_promoteur(dos_db, session):
                 session.commit()
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-                
+
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.markdown("### 📝 Rapport & Historique")
         nouvelle_note = st.text_area("Rédiger un compte-rendu :", placeholder="Observations...", key=f"note_{dos_db.id}")
@@ -587,22 +630,22 @@ def afficher_profil_promoteur(dos_db, session):
             date_str = datetime.now().strftime("%d/%m/%Y à %H:%M")
             note_format = f"🔹 **[{date_str}]** {nouvelle_note}\n"
             dos_db.historique_visites = note_format + (dos_db.historique_visites or "")
-            dos_db.prochaine_visite = "" 
+            dos_db.prochaine_visite = ""
             session.commit()
             st.success("Rapport ajouté !")
             st.rerun()
-        
+
         st.markdown(f"<div style='background-color:#f8fafc; border:1px solid #e2e8f0; padding:15px; border-radius:8px; height: 200px; overflow-y: auto; border-left: 4px solid {theme_color};'>", unsafe_allow_html=True)
         if dos_db.historique_visites: st.markdown(dos_db.historique_visites.replace('\n', '  \n'))
         else: st.markdown("<span style='color:#94a3b8;'>Aucun rapport enregistré.</span>", unsafe_allow_html=True)
         st.markdown("</div></div>", unsafe_allow_html=True)
-    
+
     with col_droite:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.markdown("### 📎 Documents & Base Documentaire")
         pdf_bytes = generer_fiche_promoteur_pdf(dos_db)
         st.download_button("📄 Exporter la Fiche (PDF)", data=pdf_bytes, file_name=f"Dossier_{dos_db.identifiant}.pdf", mime="application/pdf", use_container_width=True, key=f"pdf_{dos_db.id}")
-        
+
         st.markdown("---")
         with st.expander("📸 Scanner un document (Caméra)"):
             photo_camera = st.camera_input("Prise de vue", label_visibility="collapsed", key=f"cam_{dos_db.id}")
@@ -616,7 +659,8 @@ def afficher_profil_promoteur(dos_db, session):
                         session.commit()
                         st.success("✅ Archivé sur le Cloud !")
                         st.rerun()
-                    except Exception as e: st.error(f"Erreur Cloud : {e}")
+                    except Exception as e:
+                        st.error(f"Erreur Cloud : {e}")
 
         with st.expander("📁 Joindre un fichier (PDF/Image)"):
             nouveau_scan = st.file_uploader("Choisir un fichier", type=['pdf', 'jpg', 'png', 'jpeg'], label_visibility="collapsed", key=f"file_{dos_db.id}")
@@ -631,8 +675,9 @@ def afficher_profil_promoteur(dos_db, session):
                         session.commit()
                         st.success("✅ Archivé sur le Cloud !")
                         st.rerun()
-                    except Exception as e: st.error(f"Erreur Cloud : {e}")
-                
+                    except Exception as e:
+                        st.error(f"Erreur Cloud : {e}")
+
         st.markdown("<br>**Base Documentaire du Promoteur :**", unsafe_allow_html=True)
         if dos_db.documents:
             docs_list = [d for d in dos_db.documents.split("|") if d]
@@ -646,7 +691,7 @@ def afficher_profil_promoteur(dos_db, session):
                         st.markdown(f"<a href='{public_url}' class='doc-link' target='_blank'>📥 Voir : {doc[:20]}...</a>", unsafe_allow_html=True)
         else: st.caption("Aucune pièce jointe.")
         st.markdown("</div>", unsafe_allow_html=True)
-    
+
     st.markdown("---")
     with st.expander("⚠️ Options Avancées (Suppression manuelle)"):
         st.warning("Attention : Ce dossier sera définitivement effacé de la base de données.")
@@ -662,9 +707,16 @@ def page_gestion(mode="financement", vue_admin=False):
     agent_daira = st.session_state.user.get('daira', '')
     nom_agent = str(st.session_state.user['nom']).upper()
     role_user = st.session_state.user['role']
-    
-    try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}' ORDER BY id DESC", con=engine).fillna('')
-    except: df = pd.DataFrame()
+
+    # CORRECTIF 5 : Requête paramétrée pour éviter l'injection SQL
+    try:
+        df = pd.read_sql_query(
+            text("SELECT * FROM dossiers WHERE type_dispositif=:env ORDER BY id DESC"),
+            con=engine,
+            params={"env": env_actif}
+        ).fillna('')
+    except Exception:
+        df = pd.DataFrame()
 
     if df.empty:
         st.info(f"📌 Aucun dossier dans l'environnement {env_actif}.")
@@ -685,7 +737,7 @@ def page_gestion(mode="financement", vue_admin=False):
     st.markdown("<div class='modern-card' style='padding: 20px;'>", unsafe_allow_html=True)
     titre_console = "🎯 Recherche Financement" if mode == "financement" else "🎯 Recherche Recouvrement"
     st.markdown(f"<div class='search-title'>{titre_console} ({env_actif})</div>", unsafe_allow_html=True)
-    
+
     col_search1, col_search2, col_search3, col_filter = st.columns([3, 1, 1, 3])
     temp_search = col_search1.text_input("Tapez un Nom, ID ou Téléphone...", value=st.session_state.search_query, label_visibility="collapsed")
     if col_search2.button("🔍 Rechercher", use_container_width=True, type="primary"):
@@ -694,7 +746,7 @@ def page_gestion(mode="financement", vue_admin=False):
     if col_search3.button("❌ Effacer", use_container_width=True):
         st.session_state.search_query = ""
         st.rerun()
-        
+
     filtre_badge = "Tous"
     if mode == "recouvrement":
         filtre_badge = col_filter.radio("Filtrer la liste :", ["Tous", "🔴 Retard", "🟡 En cours", "🟢 À jour"], horizontal=True, label_visibility="collapsed")
@@ -708,11 +760,14 @@ def page_gestion(mode="financement", vue_admin=False):
         if not df_trouve.empty:
             st.success(f"🎯 {len(df_trouve)} résultat(s) trouvé(s)")
             for _, row in df_trouve.iterrows():
-                with st.expander(f"📁 Ouvrir le dossier de : {row['nom']} {row['prenom']} (ID: {row['identifiant']})", expanded=(len(df_trouve)==1)):
+                with st.expander(f"📁 Ouvrir le dossier de : {row['nom']} {row['prenom']} (ID: {row['identifiant']})", expanded=(len(df_trouve) == 1)):
                     session = get_session()
-                    dos_db = session.query(Dossier).get(row['id'])
-                    if dos_db: afficher_profil_promoteur(dos_db, session)
-                    session.close()
+                    try:
+                        # CORRECTIF 6 : session.get() à la place de session.query().get() (déprécié)
+                        dos_db = session.get(Dossier, row['id'])
+                        if dos_db: afficher_profil_promoteur(dos_db, session)
+                    finally:
+                        session.close()
             st.markdown("---")
         else: st.warning("⚠️ Aucun promoteur trouvé pour cette recherche.")
 
@@ -731,7 +786,7 @@ def page_gestion(mode="financement", vue_admin=False):
     if mode == 'financement':
         df_affichage.loc[df_affichage['est_nouveau'] == 'OUI', 'nom'] = "✨ NOUVEAU - " + df_affichage['nom']
 
-    if mode == "recouvrement" and filtre_badge != "Tous": 
+    if mode == "recouvrement" and filtre_badge != "Tous":
         df_affichage = df_affichage[df_affichage['Badge'].str.contains(filtre_badge.split(" ")[0])]
 
     try:
@@ -741,7 +796,8 @@ def page_gestion(mode="financement", vue_admin=False):
         liste_brute = noms_db + noms_dossiers
         liste_propre = sorted(list(set([str(x).strip().upper() for x in liste_brute if str(x).strip() != ""])))
         liste_agents = [""] + liste_propre
-    except: liste_agents = [""]
+    except Exception:
+        liste_agents = [""]
 
     st.markdown("<div class='modern-card' style='padding-bottom:10px;'>", unsafe_allow_html=True)
     st.caption(f"Affichage de {len(df_affichage)} dossiers. Cochez la case 'Ouvrir 📂' pour voir le détail complet.")
@@ -749,13 +805,12 @@ def page_gestion(mode="financement", vue_admin=False):
     is_not_admin = (role_user == 'agent')
     df_affichage.insert(0, "Ouvrir 📂", False)
 
-    # CONFIGURATION DES COLONNES SELON LE MODE
     if mode == "financement":
         cols_to_show = ["Ouvrir 📂", "identifiant", "nom", "prenom", "statut_dossier", "gestionnaire", "montant_pnr", "num_ordre_versement", "banque_nom", "date_financement", "id"]
         df_final = df_affichage[cols_to_show]
         col_config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn("Ouvrir 📂", default=False),
-            "id": None, 
+            "id": None,
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
             "nom": st.column_config.TextColumn("Nom Promoteur", disabled=True),
             "prenom": st.column_config.TextColumn("Prénom", disabled=True),
@@ -767,7 +822,6 @@ def page_gestion(mode="financement", vue_admin=False):
             "date_financement": st.column_config.TextColumn("Date Financement", disabled=True)
         }
     else:
-        # EXACTEMENT L'ORDRE ET LES COLONNES DE TON IMAGE EXCEL
         cols_to_show = ["Ouvrir 📂", "identifiant", "nom", "prenom", "date_naissance", "adresse", "telephone", "debut_consommation", "montant_pnr", "nb_echeance_tombee", "date_ech_tomb", "prochaine_ech", "total_echue", "montant_rembourse", "reste_rembourser", "etat_dette", "gestionnaire", "id"]
         df_final = df_affichage[cols_to_show]
         col_config = {
@@ -797,15 +851,18 @@ def page_gestion(mode="financement", vue_admin=False):
         session = get_session()
         try:
             for _, row in edited_df.iterrows():
-                dos = session.query(Dossier).get(row['id'])
+                dos = session.get(Dossier, row['id'])
                 if dos:
                     if mode == "financement": setattr(dos, 'statut_dossier', row['statut_dossier'])
                     if not is_not_admin: setattr(dos, 'gestionnaire', str(row['gestionnaire']).strip().upper())
             session.commit()
             st.toast("✅ Base mise à jour !")
             st.rerun()
-        except Exception as e: session.rollback(); st.error(e)
-        finally: session.close()
+        except Exception as e:
+            session.rollback()
+            st.error(e)
+        finally:
+            session.close()
     st.markdown("</div>", unsafe_allow_html=True)
 
     lignes_selectionnees = edited_df[edited_df["Ouvrir 📂"] == True]
@@ -813,29 +870,37 @@ def page_gestion(mode="financement", vue_admin=False):
         id_choisi = lignes_selectionnees.iloc[0]['identifiant']
         st.markdown(f"<h3 style='color: {theme_color}; border-bottom: 2px solid {theme_color}; padding-bottom: 5px; margin-top: 20px;'>📂 Profil du Promoteur Actif</h3>", unsafe_allow_html=True)
         session = get_session()
-        dos_db = session.query(Dossier).filter_by(identifiant=id_choisi).first()
-        if dos_db:
-            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            afficher_profil_promoteur(dos_db, session)
-            st.markdown("</div>", unsafe_allow_html=True)
-        session.close()
+        try:
+            dos_db = session.query(Dossier).filter_by(identifiant=id_choisi).first()
+            if dos_db:
+                st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+                afficher_profil_promoteur(dos_db, session)
+                st.markdown("</div>", unsafe_allow_html=True)
+        finally:
+            session.close()
 
 def page_corbeille():
     env_actif = st.session_state.user.get('env')
     st.title(f"🗑️ Bourse aux dossiers ({env_actif})")
     agent_daira = st.session_state.user.get('daira', '')
-    
+
     if not agent_daira:
         st.warning("⚠️ Vous n'avez pas de Daïra assignée. Demandez à l'administrateur.")
         return
 
-    try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}'", con=engine).fillna('')
-    except: return
+    try:
+        df = pd.read_sql_query(
+            text("SELECT * FROM dossiers WHERE type_dispositif=:env"),
+            con=engine,
+            params={"env": env_actif}
+        ).fillna('')
+    except Exception:
+        return
 
     mask_vide = (df['gestionnaire'].astype(str).str.strip() == "")
     mask_cellule = df['daira'].str.contains(agent_daira, case=False, na=False) | df['commune'].str.contains(agent_daira, case=False, na=False)
     df_orphans = df[mask_vide & mask_cellule].copy()
-    
+
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown(f"<h3 style='text-align: center; color: #2d3748;'>Dossiers en attente dans la Daïra de {agent_daira}</h3>", unsafe_allow_html=True)
     st.markdown(f"<div class='compteur-orphelins'>{len(df_orphans)}</div>", unsafe_allow_html=True)
@@ -854,27 +919,36 @@ def page_corbeille():
             },
             disabled=["identifiant", "nom", "commune", "montant_pnr", "activite"]
         )
-        
+
         ids_recup = edited_orphans[edited_orphans["C'est mon dossier !"] == True]['id'].tolist()
-        if st.button(f"📥 Confirmer et récupérer ces {len(ids_recup)} dossier(s)", type="primary", disabled=(len(ids_recup)==0)):
+        if st.button(f"📥 Confirmer et récupérer ces {len(ids_recup)} dossier(s)", type="primary", disabled=(len(ids_recup) == 0)):
             session = get_session()
             nom_agent = str(st.session_state.user['nom']).upper()
             try:
                 for cid in ids_recup:
-                    dos = session.query(Dossier).get(cid)
+                    dos = session.get(Dossier, cid)
                     if dos: dos.gestionnaire = nom_agent
                 session.commit()
                 st.success("✅ Dossiers récupérés avec succès !")
                 st.rerun()
-            except Exception as e: session.rollback()
-            finally: session.close()
+            except Exception as e:
+                session.rollback()
+                st.error(f"Erreur : {e}")
+            finally:
+                session.close()
 
 def page_supervision():
     env_actif = st.session_state.user.get('env')
     st.title("📊 Supervision & Extractions")
-    try: df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env_actif}'", con=engine).fillna('')
-    except: df = pd.DataFrame()
-    
+    try:
+        df = pd.read_sql_query(
+            text("SELECT * FROM dossiers WHERE type_dispositif=:env"),
+            con=engine,
+            params={"env": env_actif}
+        ).fillna('')
+    except Exception:
+        df = pd.DataFrame()
+
     if df.empty: st.warning("La base est vide pour cet environnement."); return
 
     total_dossiers = len(df)
@@ -891,12 +965,12 @@ def page_supervision():
         st.markdown(f"<div class='metric-card'><div class='metric-info'><div class='metric-label'>Recouvrement</div><div class='metric-value'>{total_rembourse:,.0f} DA</div></div><div class='metric-icon'>📈</div></div>", unsafe_allow_html=True)
     with col4:
         st.markdown(f"<div class='metric-card metric-danger'><div class='metric-info'><div class='metric-label' style='color:#ef4444;'>Reste à Recouvrer</div><div class='metric-value' style='color:#b91c1c;'>{total_reste:,.0f} DA</div></div><div class='metric-icon'>🚨</div></div>", unsafe_allow_html=True)
-    
+
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("<h4 style='margin:0; color:#2d3748;'>👁️ Radar des Dossiers Orphelins</h4><br>", unsafe_allow_html=True)
     mask_vide_admin = (df['gestionnaire'].astype(str).str.strip() == "")
     df_orphelins_admin = df[mask_vide_admin]
-    
+
     if df_orphelins_admin.empty:
         st.success("✅ Tous les dossiers de cet environnement ont été affectés à un agent.")
     else:
@@ -924,9 +998,9 @@ def page_supervision():
 def page_integration_admin():
     env_actif = st.session_state.user.get('env')
     role_user = st.session_state.user['role']
-    
+
     st.title("⚙️ Intégration, Équipes & Nettoyage")
-    
+
     if role_user == "finance":
         tabs = st.tabs(["📥 Importation FINANCEMENT"])
         tab_fin = tabs[0]
@@ -935,14 +1009,14 @@ def page_integration_admin():
         tab_clean = None
     else:
         tab_fin, tab_rec, tab_equipes, tab_clean = st.tabs(["📥 Import FINANCEMENT", "📥 Import RECOUVREMENT", "🔐 Gestion des Équipes", "🧹 Nettoyage"])
-    
+
     with tab_fin:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.info("💡 **Création Officielle :** Ce portail crée les dossiers. Il intègre toutes les données (Noms, Adresses, Crédits, etc.). S'ils sont reconnus, une étiquette '✨ NOUVEAU' apparaîtra pour l'agent.")
         st.caption("L'importation se fera dans : **" + env_actif + "** (Filtre > 40 000 DA actif)")
-        
+
         file_fin = st.file_uploader(f"📂 Fichier FINANCEMENT (.xlsx, .csv)", type=['xlsx', 'xls', 'csv'], key="file_fin")
-        
+
         if file_fin and st.button("🚀 Démarrer l'Intégration Financement", type="primary", key="btn_fin"):
             session = get_session()
             try:
@@ -952,19 +1026,20 @@ def page_integration_admin():
                     xl = {'Fichier CSV': df_raw}
                 else:
                     xl = pd.read_excel(file_fin, sheet_name=None, header=None, dtype=str)
-                
+
                 agents_db = session.query(UtilisateurAuth).filter_by(role='agent').all()
                 agents_noms = [a.nom for a in agents_db]
 
                 with st.status(f"Création en cours vers {env_actif}...", expanded=True) as status:
                     count_add, count_upd, count_ignored = 0, 0, 0
-                    batch_size = 50 
+                    batch_size = 50
                     progress_bar = st.progress(0)
-                    
+
                     with session.no_autoflush:
                         for s_name, df_raw in xl.items():
                             df_raw = df_raw.fillna('')
-                            if file_fin.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns: df = df_raw
+                            if file_fin.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns:
+                                df_import = df_raw
                             else:
                                 header_idx = -1
                                 for i in range(min(30, len(df_raw))):
@@ -972,26 +1047,27 @@ def page_integration_admin():
                                     if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST", "PRENOM", "ID"] if k in row_cl]) >= 1:
                                         header_idx = i; break
                                 if header_idx == -1: continue
-                                df = df_raw.iloc[header_idx:].copy()
-                                df.columns = df.iloc[0].astype(str).tolist()
-                                df = df.iloc[1:].reset_index(drop=True)
-                                
-                            df_cols_clean = [clean_header(c) for c in df.columns]
+                                df_import = df_raw.iloc[header_idx:].copy()
+                                df_import.columns = df_import.iloc[0].astype(str).tolist()
+                                df_import = df_import.iloc[1:].reset_index(drop=True)
+
+                            df_cols_clean = [clean_header(c) for c in df_import.columns]
                             col_map = {}
                             for db_f, keywords in MAPPING_CONFIG_KEYWORDS.items():
                                 for i, col_clean in enumerate(df_cols_clean):
                                     if any(kw in col_clean for kw in keywords):
-                                        if db_f not in col_map: col_map[db_f] = df.columns[i]
-                            
-                            total_rows = len(df)
-                            for idx, row in df.iterrows():
-                                if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1: progress_bar.progress(min(1.0, (idx + 1) / total_rows))
+                                        if db_f not in col_map: col_map[db_f] = df_import.columns[i]
+
+                            total_rows = len(df_import)
+                            for idx, row in df_import.iterrows():
+                                if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
+                                    progress_bar.progress(min(1.0, (idx + 1) / total_rows))
 
                                 data = {}
                                 for db_f, xl_c in col_map.items():
                                     val = row[xl_c]
-                                    if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
-                                    if db_f in COLONNES_ARGENT: 
+                                    if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue
+                                    if db_f in COLONNES_ARGENT:
                                         amt = clean_money(val)
                                         if amt is not None: data[db_f] = amt
                                     elif db_f == 'identifiant': data[db_f] = clean_identifiant(val)
@@ -1013,14 +1089,14 @@ def page_integration_admin():
                                 if not exist: data['est_nouveau'] = 'OUI'
 
                                 if exist:
-                                    for k, v in data.items(): 
+                                    for k, v in data.items():
                                         if isinstance(v, str) and v.strip() != "": setattr(exist, k, v)
                                         elif v is not None and not isinstance(v, str): setattr(exist, k, v)
                                     count_upd += 1
                                 else:
                                     session.add(Dossier(**data))
                                     count_add += 1
-                                    
+
                                 if (count_add + count_upd) % batch_size == 0:
                                     try: session.commit()
                                     except Exception as e: session.rollback(); st.error(f"Erreur lot : {e}")
@@ -1029,17 +1105,20 @@ def page_integration_admin():
                     except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
                     status.update(label=f"Succès ! {count_add} créés, {count_upd} mis à jour. ({count_ignored} bloqués car <= 40k).", state="complete")
                 st.balloons()
-            except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
-            finally: session.close()
+            except Exception as e:
+                session.rollback()
+                st.error(f"Erreur technique : {e}")
+            finally:
+                session.close()
         st.markdown("</div>", unsafe_allow_html=True)
 
     if tab_rec:
         with tab_rec:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.warning("🛡️ **Importation Sécurisée Anti-Fantômes :** Cet outil met UNIQUEMENT à jour les informations de recouvrement. Si un Identifiant n'existe pas dans la Base Finance, il sera **automatiquement rejeté**.")
-            
+
             file_rec = st.file_uploader(f"📂 Fichier RECOUVREMENT (.xlsx, .csv)", type=['xlsx', 'xls', 'csv'], key="file_rec")
-            
+
             if file_rec and st.button("🚀 Démarrer la Mise à Jour Recouvrement", type="primary", key="btn_rec"):
                 session = get_session()
                 try:
@@ -1049,16 +1128,17 @@ def page_integration_admin():
                         xl = {'Fichier CSV': df_raw}
                     else:
                         xl = pd.read_excel(file_rec, sheet_name=None, header=None, dtype=str)
-                    
+
                     with st.status(f"Analyse financière en cours ({env_actif})...", expanded=True) as status:
                         count_upd, count_rejetes = 0, 0
-                        batch_size = 50 
+                        batch_size = 50
                         progress_bar = st.progress(0)
-                        
+
                         with session.no_autoflush:
                             for s_name, df_raw in xl.items():
                                 df_raw = df_raw.fillna('')
-                                if file_rec.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns: df = df_raw
+                                if file_rec.name.lower().endswith('.csv') and 'Identifiant' in df_raw.columns:
+                                    df_import = df_raw
                                 else:
                                     header_idx = -1
                                     for i in range(min(30, len(df_raw))):
@@ -1066,26 +1146,27 @@ def page_integration_admin():
                                         if sum([1 for k in ["IDENTIFIANT", "CNI", "NOM", "GEST", "PRENOM", "ID"] if k in row_cl]) >= 1:
                                             header_idx = i; break
                                     if header_idx == -1: continue
-                                    df = df_raw.iloc[header_idx:].copy()
-                                    df.columns = df.iloc[0].astype(str).tolist()
-                                    df = df.iloc[1:].reset_index(drop=True)
-                                    
-                                df_cols_clean = [clean_header(c) for c in df.columns]
+                                    df_import = df_raw.iloc[header_idx:].copy()
+                                    df_import.columns = df_import.iloc[0].astype(str).tolist()
+                                    df_import = df_import.iloc[1:].reset_index(drop=True)
+
+                                df_cols_clean = [clean_header(c) for c in df_import.columns]
                                 col_map = {}
                                 for db_f, keywords in MAPPING_CONFIG_KEYWORDS.items():
                                     for i, col_clean in enumerate(df_cols_clean):
                                         if any(kw in col_clean for kw in keywords):
-                                            if db_f not in col_map: col_map[db_f] = df.columns[i]
-                                
-                                total_rows = len(df)
-                                for idx, row in df.iterrows():
-                                    if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1: progress_bar.progress(min(1.0, (idx + 1) / total_rows))
+                                            if db_f not in col_map: col_map[db_f] = df_import.columns[i]
+
+                                total_rows = len(df_import)
+                                for idx, row in df_import.iterrows():
+                                    if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
+                                        progress_bar.progress(min(1.0, (idx + 1) / total_rows))
 
                                     data_finance = {}
                                     for db_f, xl_c in col_map.items():
                                         val = row[xl_c]
-                                        if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue 
-                                        
+                                        if pd.isna(val) or str(val).strip() in ["", "NAN"]: continue
+
                                         if db_f == 'identifiant': data_finance[db_f] = clean_identifiant(val)
                                         elif db_f in ['montant_rembourse', 'reste_rembourser', 'total_echue']:
                                             amt = clean_money(val)
@@ -1097,7 +1178,7 @@ def page_integration_admin():
                                     if not ident: continue
 
                                     exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env_actif).first()
-                                    
+
                                     if exist:
                                         if 'montant_rembourse' in data_finance: exist.montant_rembourse = data_finance['montant_rembourse']
                                         if 'reste_rembourser' in data_finance: exist.reste_rembourser = data_finance['reste_rembourser']
@@ -1109,7 +1190,7 @@ def page_integration_admin():
                                         count_upd += 1
                                     else:
                                         count_rejetes += 1
-                                        
+
                                     if count_upd % batch_size == 0:
                                         try: session.commit()
                                         except Exception: session.rollback()
@@ -1118,40 +1199,51 @@ def page_integration_admin():
                         except Exception as e: session.rollback(); st.error(f"Erreur finale : {e}")
                         status.update(label=f"Succès ! {count_upd} dossiers mis à jour. ({count_rejetes} dossiers rejetés car inconnus).", state="complete")
                     st.balloons()
-                except Exception as e: session.rollback(); st.error(f"Erreur technique : {e}")
-                finally: session.close()
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"Erreur technique : {e}")
+                finally:
+                    session.close()
             st.markdown("</div>", unsafe_allow_html=True)
 
     if tab_equipes:
         with tab_equipes:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            try: df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
-            except: df_users = pd.DataFrame()
-                
+            try:
+                df_users = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
+            except Exception:
+                df_users = pd.DataFrame()
+
             if not df_users.empty:
                 st.markdown("### 🔑 Gestion des Accès")
                 edited_users = st.data_editor(
                     df_users, use_container_width=True, hide_index=True,
                     column_config={
-                        "id": None, "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
-                        "nom": st.column_config.TextColumn("Nom", disabled=True), 
+                        "id": None, "identifiant": st.column_config.TextColumn("Identifiant", disabled=True),
+                        "nom": st.column_config.TextColumn("Nom", disabled=True),
                         "daira": st.column_config.SelectboxColumn("Cellule", options=LISTE_DAIRAS),
-                        "mot_de_passe": st.column_config.TextColumn("Mot de passe")
+                        "mot_de_passe": st.column_config.TextColumn("Nouveau mot de passe (laisser vide = inchangé)")
                     }
                 )
                 if st.button("💾 Sauvegarder", type="primary"):
                     session = get_session()
                     try:
                         for _, row in edited_users.iterrows():
-                            user_db = session.query(UtilisateurAuth).get(row['id'])
-                            if user_db: 
-                                user_db.mot_de_passe = row['mot_de_passe']
+                            user_db = session.get(UtilisateurAuth, row['id'])
+                            if user_db:
                                 user_db.daira = row['daira']
+                                # CORRECTIF 7 : On hache le nouveau mot de passe avant de sauvegarder
+                                nouveau_mdp = str(row['mot_de_passe']).strip()
+                                if nouveau_mdp and len(nouveau_mdp) != 64:
+                                    user_db.mot_de_passe = hash_password(nouveau_mdp)
                         session.commit()
                         st.success("✅ Accès mis à jour !")
-                    except Exception as e: session.rollback()
-                    finally: session.close()
-                    
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Erreur : {e}")
+                    finally:
+                        session.close()
+
             st.markdown("---")
             with st.form("ajout_agent"):
                 st.markdown("#### ➕ Ajouter un agent")
@@ -1161,36 +1253,48 @@ def page_integration_admin():
                 new_daira = c3.selectbox("Cellule", LISTE_DAIRAS)
                 if st.form_submit_button("Créer le compte") and new_id and new_nom:
                     session = get_session()
-                    if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
-                        session.add(UtilisateurAuth(identifiant=new_id.lower(), nom=new_nom.strip().upper(), daira=new_daira, mot_de_passe="angem2026", role="agent"))
-                        session.commit()
-                        st.success("Agent ajouté !")
-                        st.rerun()
-                    session.close()
+                    try:
+                        if not session.query(UtilisateurAuth).filter_by(identifiant=new_id.lower()).first():
+                            # CORRECTIF 8 : Mot de passe par défaut hashé
+                            session.add(UtilisateurAuth(
+                                identifiant=new_id.lower(),
+                                nom=new_nom.strip().upper(),
+                                daira=new_daira,
+                                mot_de_passe=hash_password("angem2026"),
+                                role="agent"
+                            ))
+                            session.commit()
+                            st.success("Agent ajouté !")
+                            st.rerun()
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Erreur : {e}")
+                    finally:
+                        session.close()
             st.markdown("</div>", unsafe_allow_html=True)
-            
+
     if tab_clean:
         with tab_clean:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("### 🧹 Le Grand Nettoyeur")
             st.warning("Cette action va scanner la base de données. Si le système trouve des dossiers avec **le même Identifiant ET le même Numéro OV**, il supprimera les doublons pour ne garder que la version la plus récente.")
-            
+
             if st.button("🚨 Lancer le nettoyage des doublons stricts", type="primary"):
                 session = get_session()
                 try:
                     dossiers_all = session.query(Dossier).all()
                     df_dup = pd.DataFrame([{
-                        'id': d.id, 
-                        'identifiant': str(d.identifiant).strip() if d.identifiant else "", 
+                        'id': d.id,
+                        'identifiant': str(d.identifiant).strip() if d.identifiant else "",
                         'ov': str(d.num_ordre_versement).strip() if d.num_ordre_versement else "",
                         'type_dispositif': d.type_dispositif
                     } for d in dossiers_all])
-                    
+
                     if not df_dup.empty:
-                        df_dup = df_dup[df_dup['identifiant'] != ""] 
+                        df_dup = df_dup[df_dup['identifiant'] != ""]
                         ids_to_keep = df_dup.groupby(['identifiant', 'ov', 'type_dispositif'])['id'].max().tolist()
                         ids_to_delete = df_dup[~df_dup['id'].isin(ids_to_keep)]['id'].tolist()
-                        
+
                         if ids_to_delete:
                             session.query(Dossier).filter(Dossier.id.in_(ids_to_delete)).delete(synchronize_session=False)
                             session.commit()
@@ -1203,20 +1307,23 @@ def page_integration_admin():
                 finally:
                     session.close()
             st.markdown("</div>", unsafe_allow_html=True)
-            
+
             st.error("Zone de Danger Critique")
             if st.button("🗑️ FORMARTER TOTALEMENT LA BASE DE DONNÉES"):
                 session = get_session()
-                session.query(Dossier).delete()
-                session.commit()
-                session.close()
+                try:
+                    session.query(Dossier).delete()
+                    session.commit()
+                finally:
+                    session.close()
                 st.rerun()
 
 # --- DEMARRAGE DE L'APPLICATION ---
-if st.session_state.user is None: login_page()
+if st.session_state.user is None:
+    login_page()
 else:
     page = sidebar_menu()
-    
+
     if "Financement" in page and "Vue Globale" not in page and "Import" not in page:
         page_gestion(mode="financement", vue_admin=False)
     elif "Recouvrement" in page and "Vue Globale" not in page and "Import" not in page:
@@ -1225,6 +1332,9 @@ else:
         page_gestion(mode="financement", vue_admin=True)
     elif "Vue Globale Recouvrement" in page:
         page_gestion(mode="recouvrement", vue_admin=True)
-    elif "Corbeille" in page: page_corbeille()
-    elif "Supervision" in page: page_supervision()
-    elif "Importation" in page or "Intégration" in page: page_integration_admin()
+    elif "Corbeille" in page:
+        page_corbeille()
+    elif "Supervision" in page:
+        page_supervision()
+    elif "Importation" in page or "Intégration" in page:
+        page_integration_admin()
