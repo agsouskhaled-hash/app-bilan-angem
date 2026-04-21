@@ -17,7 +17,7 @@ from supabase import create_client, Client
 # 1. CONFIGURATION DE LA PAGE ET CLOUD
 # ==========================================
 st.set_page_config(
-    page_title="ANGEM Workspace", 
+    page_title="ANGEM Workspace Final", 
     page_icon="🇩🇿", 
     layout="wide", 
     initial_sidebar_state="expanded"
@@ -25,12 +25,12 @@ st.set_page_config(
 
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
-# Identifiants Supabase (Storage pour les scans)
+# Identifiants Supabase (Storage pour les scans et documents)
 SUPABASE_URL = "https://greyjhgiytajxpvucbrk.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdyZXlqaGdpeXRhanhwdnVjYnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMTU0MjksImV4cCI6MjA4NzU5MTQyOX0.jCNan1Y1hvfGog6Zcu8Rr8d5PkeFRFvipAGGB09ztxo"
 supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Initialisation des variables de session
+# Initialisation des variables de session obligatoires
 if 'user' not in st.session_state: 
     st.session_state.user = None
 if 'portal_selection' not in st.session_state: 
@@ -38,7 +38,7 @@ if 'portal_selection' not in st.session_state:
 if 'search_query' not in st.session_state: 
     st.session_state.search_query = ""
 
-# Dynamique des couleurs selon le dispositif
+# Dynamique des couleurs selon le dispositif sélectionné
 if st.session_state.user is not None:
     if st.session_state.user.get('env') == "PNR PROJET":
         theme_color = "#1f77b4"
@@ -51,7 +51,7 @@ else:
     theme_bg = "#f8f9fa"
 
 # ==========================================
-# 2. STYLE CSS PREMIUM (Décompressé)
+# 2. STYLE CSS PREMIUM
 # ==========================================
 st.markdown(f"""
 <style>
@@ -94,6 +94,9 @@ st.markdown(f"""
         cursor: pointer; 
         transition: all 0.3s ease; 
         height: 100%; 
+        display: flex; 
+        flex-direction: column; 
+        justify-content: center; 
     }}
     .portal-card:hover {{ 
         border-color: {theme_color}; 
@@ -150,6 +153,8 @@ st.markdown(f"""
         text-transform: uppercase; 
         letter-spacing: 1px; 
     }}
+    .alerte-nouveau {{ background-color: #f0fdf4; border-left: 6px solid #22c55e; padding: 15px 20px; border-radius: 8px; color: #15803d; font-weight: 600; margin-bottom: 20px; }}
+    .alerte-urgente {{ background-color: #fef2f2; border-left: 6px solid #ef4444; padding: 15px 20px; border-radius: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 20px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -165,6 +170,8 @@ class Dossier(Base):
     id = Column(Integer, primary_key=True)
     identifiant = Column(String, index=True)
     type_dispositif = Column(String, default="PNR PROJET") 
+    
+    # Identité
     nom = Column(String)
     prenom = Column(String)
     genre = Column(String)
@@ -173,6 +180,8 @@ class Dossier(Base):
     telephone = Column(String)
     niveau_instruction = Column(String)
     age = Column(String)
+    
+    # Projet
     activite = Column(String)
     code_activite = Column(String)
     secteur = Column(String)
@@ -205,9 +214,13 @@ class Dossier(Base):
     # Gestion et documents
     statut_dossier = Column(String, default="Phase dépôt du dossier")
     documents = Column(String, default="") 
-    historique_visites = Column(String, default="") # Servira aussi de "Coffre Fourre-Tout"
+    historique_visites = Column(String, default="")
     prochaine_visite = Column(String, default="")
     est_nouveau = Column(String, default="NON")
+    
+    # SYSTEME DE BADGES POUR ZÉRO CROISEMENT
+    in_finance = Column(String, default="NON")
+    in_recouvrement = Column(String, default="NON")
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -218,16 +231,16 @@ class UtilisateurAuth(Base):
     role = Column(String)
     daira = Column(String, default="")
 
-# Création des tables si elles n'existent pas
+# Création des tables
 Base.metadata.create_all(engine)
 
-# Migration automatique pour les colonnes ajoutées récemment
+# Migrations automatiques de sécurité
 try:
     with engine.connect() as conn:
         colonnes_string = [
             "type_dispositif", "date_naissance", "num_ordre_versement", 
             "debut_consommation", "etat_dette", "est_nouveau", 
-            "date_ech_tomb", "prochaine_ech"
+            "date_ech_tomb", "prochaine_ech", "in_finance", "in_recouvrement"
         ]
         for c in colonnes_string: 
             conn.execute(text(f"ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS {c} VARCHAR DEFAULT ''"))
@@ -235,6 +248,10 @@ try:
         colonnes_float = ["apport_personnel", "total_echue", "credit_bancaire"]
         for c in colonnes_float: 
             conn.execute(text(f"ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS {c} FLOAT DEFAULT 0.0"))
+        
+        # Mettre à jour les anciens dossiers pour qu'ils s'affichent partout par défaut s'ils n'ont pas de badge
+        conn.execute(text("UPDATE dossiers SET in_finance='OUI' WHERE in_finance='' OR in_finance IS NULL"))
+        conn.execute(text("UPDATE dossiers SET in_recouvrement='OUI' WHERE in_recouvrement='' OR in_recouvrement IS NULL"))
         
         conn.commit()
 except: 
@@ -255,7 +272,7 @@ def init_db_users():
 init_db_users()
 
 # ==========================================
-# 4. UTILITAIRES & MAPPING
+# 4. DICTIONNAIRE RADAR ET UTILITAIRES
 # ==========================================
 MAPPING_CONFIG_KEYWORDS = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'NAT', 'ID'], 
@@ -271,7 +288,7 @@ MAPPING_CONFIG_KEYWORDS = {
     'num_ordre_versement': ['NUMOV', 'ORDREVERSEMENT', 'OV'], 
     'date_financement': ['DATEOV', 'DATEVIREMENT', 'DATEFINAN'],
     'debut_consommation': ['DEBUTCONSOM', 'CONSOMMATION'], 
-    'montant_pnr': ['PNR', 'MONTANTPNR', 'MONTANT'],
+    'montant_pnr': ['PNR', 'MONTANTPNR', 'MONTANT', 'CREDIT'],
     'montant_rembourse': ['TOTALREMB', 'VERSEMENT', 'REMBOURSE', 'TOTALVERS'], 
     'reste_rembourser': ['RESTAREMB', 'MONTANTRESTA', 'RESTE'],
     'nb_echeance_tombee': ['ECHTOMB', 'ECHEANCES', 'NBRECHTOMB'], 
@@ -298,8 +315,7 @@ def clean_money(v):
 
 def clean_identifiant(v):
     s = str(v).strip().upper()
-    # Traitement des formats scientifiques Excel
-    if 'E' in s and s.replace('E','').replace('.','').isdigit():
+    if 'E' in s and s.replace('E','').replace('.','').replace('+','').isdigit():
         try:
             return f"{float(s):.0f}"
         except:
@@ -591,8 +607,12 @@ def page_gestion(mode="financement", vue_admin=False):
     role = st.session_state.user['role']
     nom_agent = st.session_state.user['nom'].upper()
     
+    # LA RÈGLE DES BADGES POUR LE ZÉRO CROISEMENT
+    colonne_badge = "in_finance" if mode == "financement" else "in_recouvrement"
+    
     try: 
-        df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env}' ORDER BY id DESC", con=engine).fillna('')
+        # On ne charge QUE les dossiers qui ont le badge de la rubrique demandée
+        df = pd.read_sql_query(f"SELECT * FROM dossiers WHERE type_dispositif='{env}' AND {colonne_badge}='OUI' ORDER BY id DESC", con=engine).fillna('')
     except: 
         df = pd.DataFrame()
         
@@ -624,7 +644,7 @@ def page_gestion(mode="financement", vue_admin=False):
 
     df.insert(0, "Ouvrir 📂", False)
     
-    # LA RÈGLE D'OR DE L'AFFICHAGE (Finance vs Recouvrement - 16 colonnes)
+    # CONFIGURATION DES COLONNES PAR RUBRIQUE
     if mode == "financement":
         cols = [
             "Ouvrir 📂", "identifiant", "nom", "prenom", "statut_dossier", 
@@ -634,36 +654,26 @@ def page_gestion(mode="financement", vue_admin=False):
         config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn(default=False), 
             "id": None, 
-            "montant_pnr": st.column_config.NumberColumn(format="%d DA")
+            "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA")
         }
     else:
-        # TES 16 COLONNES EXACTES
+        # LES 7 COLONNES ULTRA-EPURÉES + LE GESTIONNAIRE POUR LE LIEN
         cols = [
-            "Ouvrir 📂", "identifiant", "nom", "prenom", "date_naissance", 
-            "adresse", "telephone", "debut_consommation", "montant_pnr", 
-            "nb_echeance_tombee", "date_ech_tomb", "prochaine_ech", 
-            "total_echue", "montant_rembourse", "reste_rembourser", 
-            "etat_dette", "gestionnaire", "id"
+            "Ouvrir 📂", "identifiant", "nom", "prenom", "telephone", 
+            "montant_pnr", "montant_rembourse", "reste_rembourser", 
+            "gestionnaire", "id"
         ]
         config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn(default=False), 
             "id": None,
             "identifiant": st.column_config.TextColumn("Identifiant", disabled=True), 
             "nom": st.column_config.TextColumn("Nom", disabled=True),
-            "prenom": st.column_config.TextColumn("Prenom", disabled=True), 
-            "date_naissance": st.column_config.TextColumn("Date de Naissance", disabled=True),
-            "adresse": st.column_config.TextColumn("Adresse", disabled=True), 
-            "telephone": st.column_config.TextColumn("Tel", disabled=True),
-            "debut_consommation": st.column_config.TextColumn("Début consom.", disabled=True), 
-            "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA", disabled=True),
-            "nb_echeance_tombee": st.column_config.TextColumn("Nbr ECH Tomb.", disabled=True), 
-            "date_ech_tomb": st.column_config.TextColumn("Date Ech Tomb", disabled=True),
-            "prochaine_ech": st.column_config.TextColumn("Prochaine Ech", disabled=True), 
-            "total_echue": st.column_config.NumberColumn("Total Echue", format="%d DA", disabled=True),
-            "montant_rembourse": st.column_config.NumberColumn("Total Rembourssé", format="%d DA", disabled=True), 
-            "reste_rembourser": st.column_config.NumberColumn("Montant rest à Rembourssé", format="%d DA", disabled=True),
-            "etat_dette": st.column_config.TextColumn("Etat", disabled=True), 
-            "gestionnaire": st.column_config.TextColumn("Gest", disabled=True)
+            "prenom": st.column_config.TextColumn("Prénom", disabled=True), 
+            "telephone": st.column_config.TextColumn("Téléphone", disabled=True),
+            "montant_pnr": st.column_config.NumberColumn("Montant Crédit", format="%d DA", disabled=True),
+            "montant_rembourse": st.column_config.NumberColumn("Total Remboursé", format="%d DA", disabled=True), 
+            "reste_rembourser": st.column_config.NumberColumn("Reste à Rembourser", format="%d DA", disabled=True),
+            "gestionnaire": st.column_config.TextColumn("Agent Affecté", disabled=True)
         }
 
     st.markdown("<div class='modern-card' style='padding: 10px;'>", unsafe_allow_html=True)
@@ -694,7 +704,7 @@ def page_gestion(mode="financement", vue_admin=False):
         session.close()
 
 # ==========================================
-# 8. MAPPING INTERACTIF & FOURRE-TOUT
+# 8. MAPPING INTERACTIF & FOURRE-TOUT (SÉPARATION TOTALE)
 # ==========================================
 def get_header_row(df_raw):
     for i in range(min(30, len(df_raw))):
@@ -717,7 +727,7 @@ def page_integration_admin():
     
     with t1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.info("💡 **FINANCE (Création) :** Assigne le Gestionnaire et crée la fiche.")
+        st.info("💡 **FINANCE (Création) :** Attribue le Gestionnaire et crée la fiche UNIQUEMENT pour la rubrique Finance.")
         f_fin = st.file_uploader("Fichier Finance", type=['xlsx', 'xls', 'csv'], key="ff")
         
         if f_fin:
@@ -787,7 +797,6 @@ def page_integration_admin():
                         if not ident: 
                             continue
                         
-                        # Coffre Fourre-Tout
                         notes = ""
                         for col in df.columns:
                             if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
@@ -798,6 +807,10 @@ def page_integration_admin():
                             for k, v in data.items():
                                 if v is not None and v != "": 
                                     setattr(exist, k, v)
+                            
+                            # C'est un import Finance, on active le badge Finance
+                            exist.in_finance = "OUI"
+                            
                             if notes: 
                                 date_str = datetime.now().strftime('%d/%m/%Y')
                                 exist.historique_visites = f"🔹 **[Import Finance {date_str}] Infos supp :**\n{notes}\n" + (exist.historique_visites or "")
@@ -807,6 +820,9 @@ def page_integration_admin():
                                 continue
                             data['type_dispositif'] = env
                             data['est_nouveau'] = 'OUI'
+                            # C'est une création Finance, on active UNIQUEMENT le badge Finance
+                            data['in_finance'] = 'OUI'
+                            data['in_recouvrement'] = 'NON'
                             if notes: 
                                 date_str = datetime.now().strftime('%d/%m/%Y')
                                 data['historique_visites'] = f"🔹 **[Import Finance {date_str}] Infos supp :**\n{notes}\n"
@@ -815,13 +831,13 @@ def page_integration_admin():
                             
                     session.commit()
                     session.close()
-                    st.success(f"✅ {c_add} créés, {c_upd} mis à jour.")
+                    st.success(f"✅ {c_add} créés, {c_upd} mis à jour dans la rubrique Finance.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     if t2:
         with t2:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.warning("🛡️ **RECOUVREMENT (MAJ) :** Ne met à jour que l'argent. Rejette les ID inconnus. Ne modifie pas le Gestionnaire.")
+            st.warning("🛡️ **RECOUVREMENT (MAJ) :** Met à jour l'argent. Crée les nouveaux dossiers UNIQUEMENT dans la rubrique Recouvrement. Ne modifie JAMAIS le Gestionnaire.")
             f_rec = st.file_uploader("Fichier Recouvrement", type=['xlsx', 'xls', 'csv'], key="fr")
             
             if f_rec:
@@ -839,15 +855,15 @@ def page_integration_admin():
                     df = df.iloc[1:].reset_index(drop=True)
                     excel_cols = ["-- Ignorer --"] + list(df.columns)
                     
-                    st.write("### 🎛️ Étape 2 : Validation des Colonnes (Recouvrement)")
+                    st.write("### 🎛️ Étape 2 : Validation des Colonnes (Recouvrement 7 colonnes)")
                     mapping_rec = {}
                     
                     with st.form("form_rec"):
                         c1, c2 = st.columns(2)
+                        # Seulement les 7 colonnes nécessaires pour l'import recouvrement
                         targets_rec = [
-                            'identifiant', 'montant_rembourse', 'reste_rembourser', 
-                            'total_echue', 'nb_echeance_tombee', 'date_ech_tomb', 
-                            'prochaine_ech', 'etat_dette'
+                            'identifiant', 'nom', 'prenom', 'telephone', 
+                            'montant_pnr', 'montant_rembourse', 'reste_rembourser'
                         ]
                         
                         for idx, db_f in enumerate(targets_rec):
@@ -860,11 +876,11 @@ def page_integration_admin():
                             with (c1 if idx % 2 == 0 else c2): 
                                 mapping_rec[db_f] = st.selectbox(f"Colonne pour '{db_f}'", excel_cols, index=def_idx)
                                 
-                        sub_rec = st.form_submit_button("🚀 Mettre à jour l'Argent", type="primary")
+                        sub_rec = st.form_submit_button("🚀 Importer dans la Rubrique Recouvrement", type="primary")
                     
                     if sub_rec:
                         session = get_session()
-                        c_upd, c_rej = 0, 0
+                        c_upd, c_new = 0, 0
                         
                         for _, row in df.iterrows():
                             xl_id = mapping_rec.get('identifiant')
@@ -872,7 +888,6 @@ def page_integration_admin():
                             if not ident: 
                                 continue
                             
-                            # Coffre Fourre-Tout Recouvrement
                             notes = ""
                             mapped_cols = [v for v in mapping_rec.values() if v != "-- Ignorer --"]
                             for col in df.columns:
@@ -881,6 +896,7 @@ def page_integration_admin():
 
                             exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
                             if exist:
+                                # Le dossier existe déjà (probablement par la Finance). On met à jour l'argent.
                                 for db_f, xl_col in mapping_rec.items():
                                     if xl_col != "-- Ignorer --" and db_f != 'identifiant':
                                         val = row[xl_col]
@@ -891,16 +907,38 @@ def page_integration_admin():
                                         else:
                                             setattr(exist, db_f, str(val).strip().upper())
                                             
+                                # On active le badge Recouvrement pour qu'il apparaisse dans l'onglet
+                                exist.in_recouvrement = "OUI"
+                                            
                                 if notes: 
                                     date_str = datetime.now().strftime('%d/%m/%Y')
                                     exist.historique_visites = f"🔹 **[Import Recouv {date_str}] Infos supp :**\n{notes}\n" + (exist.historique_visites or "")
                                 c_upd += 1
                             else: 
-                                c_rej += 1
+                                # Le dossier n'existe pas. On le crée UNIQUEMENT pour le Recouvrement
+                                data_new = {}
+                                for db_f, xl_col in mapping_rec.items():
+                                    if xl_col != "-- Ignorer --":
+                                        val = row[xl_col]
+                                        if pd.isna(val) or str(val).strip() in ["", "NAN", "None"]: continue
+                                        if db_f in COLONNES_ARGENT: data_new[db_f] = clean_money(val)
+                                        elif db_f == 'identifiant': data_new[db_f] = clean_identifiant(val)
+                                        else: data_new[db_f] = str(val).strip().upper()
+                                        
+                                data_new['type_dispositif'] = env
+                                data_new['in_recouvrement'] = 'OUI' # Apparaîtra dans Recouvrement
+                                data_new['in_finance'] = 'NON'      # N'apparaîtra PAS dans Finance
+                                
+                                if notes: 
+                                    date_str = datetime.now().strftime('%d/%m/%Y')
+                                    data_new['historique_visites'] = f"🔹 **[Import Recouv {date_str}] Infos supp :**\n{notes}\n"
+                                
+                                session.add(Dossier(**data_new))
+                                c_new += 1
                                 
                         session.commit()
                         session.close()
-                        st.success(f"✅ {c_upd} maj, {c_rej} inconnus rejetés.")
+                        st.success(f"✅ {c_upd} dossiers mis à jour, {c_new} nouveaux dossiers créés (Visibles uniquement dans Recouvrement).")
             st.markdown("</div>", unsafe_allow_html=True)
 
     if t3:
