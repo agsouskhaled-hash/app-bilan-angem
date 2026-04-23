@@ -17,7 +17,7 @@ from supabase import create_client, Client
 # 1. CONFIGURATION DE LA PAGE ET CLOUD
 # ==========================================
 st.set_page_config(
-    page_title="ANGEM Workspace Final", 
+    page_title="ANGEM Workspace Ultra", 
     page_icon="🇩🇿", 
     layout="wide", 
     initial_sidebar_state="expanded"
@@ -40,8 +40,10 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # --- Initialisation des variables de session obligatoires ---
 if 'user' not in st.session_state: 
     st.session_state.user = None
+
 if 'portal_selection' not in st.session_state: 
     st.session_state.portal_selection = None
+
 if 'search_query' not in st.session_state: 
     st.session_state.search_query = ""
 
@@ -66,6 +68,7 @@ st.markdown(f"""
         background-color: {theme_bg}; 
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
     }}
+    
     .modern-card {{ 
         background-color: #ffffff; 
         padding: 25px; 
@@ -81,6 +84,7 @@ st.markdown(f"""
         transform: translateY(-2px); 
         box-shadow: 0 12px 32px rgba(0,0,0,0.08); 
     }}
+    
     .metric-card {{ 
         background: #ffffff; 
         border-radius: 16px; 
@@ -96,6 +100,7 @@ st.markdown(f"""
     .metric-value {{ font-size: 26px; font-weight: 800; color: #1e293b; margin-top: 5px; }}
     .metric-label {{ font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }}
     .metric-danger {{ border-left-color: #ef4444; }}
+    
     .portal-card {{ 
         background: #ffffff; 
         padding: 30px 20px; 
@@ -110,6 +115,7 @@ st.markdown(f"""
         justify-content: center; 
     }}
     .portal-card:hover {{ border-color: {theme_color}; transform: translateY(-5px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }}
+    
     .profil-header {{ 
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); 
         padding: 25px; 
@@ -124,6 +130,7 @@ st.markdown(f"""
     .block-finance {{ background-color: #eff6ff; border-left: 5px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
     .block-recouvrement {{ background-color: #f0fdf4; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
     .block-title {{ font-weight: bold; color: #1e293b; margin-bottom: 10px; font-size: 16px; text-transform: uppercase; }}
+    
     .action-btn-container {{ display: flex; gap: 12px; margin-top: 15px; margin-bottom: 25px; flex-wrap: wrap; }}
     .btn-action {{ 
         flex: 1; min-width: 160px; padding: 12px 20px; border-radius: 10px; text-decoration: none; 
@@ -133,9 +140,9 @@ st.markdown(f"""
     .btn-call {{ background-color: #3b82f6; }} .btn-call:hover {{ background-color: #2563eb; transform: translateY(-2px); }}
     .btn-wa {{ background-color: #22c55e; }} .btn-wa:hover {{ background-color: #16a34a; transform: translateY(-2px); }}
     .btn-maps {{ background-color: #ef4444; }} .btn-maps:hover {{ background-color: #dc2626; transform: translateY(-2px); }}
+    
     .search-title {{ color: {theme_color}; font-weight: 800; font-size: 20px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }}
     .alerte-nouveau {{ background-color: #f0fdf4; border-left: 6px solid #22c55e; padding: 15px 20px; border-radius: 8px; color: #15803d; font-weight: 600; margin-bottom: 20px; }}
-    .alerte-urgente {{ background-color: #fef2f2; border-left: 6px solid #ef4444; padding: 15px 20px; border-radius: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 20px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -184,7 +191,7 @@ class Dossier(Base):
     date_financement = Column(String)
     debut_consommation = Column(String)
     
-    # Recouvrement & Nouvelles Colonnes
+    # Recouvrement
     montant_rembourse = Column(Float, default=0.0)
     reste_rembourser = Column(Float, default=0.0)
     nb_echeance_tombee = Column(String)
@@ -203,7 +210,7 @@ class Dossier(Base):
     prochaine_visite = Column(String, default="")
     est_nouveau = Column(String, default="NON")
     
-    # SYSTEME DE BADGES (Séparation)
+    # SYSTEME DE BADGES
     in_finance = Column(String, default="NON")
     in_recouvrement = Column(String, default="NON")
 
@@ -256,7 +263,7 @@ def init_db_users():
 init_db_users()
 
 # ==========================================
-# 4. DICTIONNAIRE RADAR ET UTILITAIRES
+# 4. DICTIONNAIRE RADAR ET UTILITAIRES DE LECTURE
 # ==========================================
 MAPPING_CONFIG_KEYWORDS = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'NAT', 'ID'], 
@@ -295,6 +302,22 @@ COLONNES_ARGENT = [
     'apport_personnel', 
     'credit_bancaire'
 ]
+
+# FONCTION INDESTRUCTIBLE POUR LIRE LES CSV MÊME CORROMPUS
+def safe_read_dataframe(file_obj):
+    if file_obj.name.lower().endswith('.csv'):
+        try:
+            file_obj.seek(0)
+            return pd.read_csv(file_obj, sep=';', encoding='utf-8', header=None, dtype=str, on_bad_lines='skip')
+        except:
+            try:
+                file_obj.seek(0)
+                return pd.read_csv(file_obj, sep=';', encoding='latin1', header=None, dtype=str, on_bad_lines='skip')
+            except:
+                file_obj.seek(0)
+                return pd.read_csv(file_obj, sep=',', encoding='utf-8', header=None, dtype=str, on_bad_lines='skip')
+    else:
+        return pd.read_excel(file_obj, header=None, dtype=str)
 
 def clean_pdf_text(t): 
     if not t: return ""
@@ -524,7 +547,6 @@ def afficher_profil_complet(dos_db, session):
         </div>
         """, unsafe_allow_html=True)
         
-        # --- BARRE DE PROGRESSION ---
         st.progress(min(taux, 1.0))
         st.caption(f"Progression du remboursement : {taux*100:.1f}%")
     
@@ -662,7 +684,7 @@ def page_gestion(mode="financement", vue_admin=False):
             "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA")
         }
     else:
-        # LES 7 COLONNES ULTRA-EPURÉES
+        # LES 7 COLONNES
         cols = [
             "Ouvrir 📂", 
             "identifiant", 
@@ -727,7 +749,6 @@ def page_gestion(mode="financement", vue_admin=False):
 # 8. MAPPING INTERACTIF & FOURRE-TOUT
 # ==========================================
 def get_header_row(df_raw):
-    # ON FORCE LE RADAR À LIRE TOUT LE FICHIER JUSQU'À TROUVER LES BONS TITRES
     for i in range(min(30, len(df_raw))):
         row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
         mots_cles = ["IDENTIFIANT", "CNI", "NOM", "GEST", "PRENOM", "ID", "TEL", "TELEPHONE", "PNR", "MONTANT"]
@@ -755,125 +776,127 @@ def page_integration_admin():
         f_fin = st.file_uploader("Fichier Finance", type=['xlsx', 'xls', 'csv'], key="ff")
         
         if f_fin:
-            # LECTURE SÉCURISÉE AVEC HEADER=NONE
-            if f_fin.name.endswith('.csv'):
-                try: df_raw = pd.read_csv(f_fin, sep=None, engine='python', header=None, dtype=str)
-                except: df_raw = pd.read_csv(f_fin, sep=';', encoding='latin1', header=None, dtype=str)
-            else:
-                df_raw = pd.read_excel(f_fin, header=None, dtype=str)
+            error_reading = False
+            try:
+                df_raw = safe_read_dataframe(f_fin)
+            except Exception as e:
+                error_reading = True
+                st.error("🚨 Impossible de lire ce fichier Excel/CSV.")
+                st.warning("💡 SOLUTION : Ouvrez ce fichier dans Excel, cliquez sur 'Enregistrer sous', choisissez le format 'CSV (séparateur point-virgule)', puis importez ce fichier CSV.")
+            
+            if not error_reading:
+                df_raw = df_raw.fillna('')
+                header_idx = get_header_row(df_raw)
                 
-            df_raw = df_raw.fillna('')
-            header_idx = get_header_row(df_raw)
-            
-            df = df_raw.iloc[header_idx:].copy()
-            df.columns = df.iloc[0].astype(str).tolist()
-            df = df.iloc[1:].reset_index(drop=True)
-            excel_cols = ["-- Ignorer --"] + list(df.columns)
-            
-            st.write("### 🎛️ Étape 2 : Mapping des Colonnes (Finance)")
-            mapping = {}
-            
-            with st.form("form_fin"):
-                c1, c2 = st.columns(2)
-                targets_fin = [
-                    'identifiant', 'nom', 'prenom', 'date_naissance', 
-                    'adresse', 'telephone', 'commune', 'activite', 
-                    'gestionnaire', 'banque_nom', 'num_ordre_versement', 
-                    'date_financement', 'montant_pnr', 'apport_personnel', 
-                    'credit_bancaire'
-                ]
+                df = df_raw.iloc[header_idx:].copy()
+                df.columns = df.iloc[0].astype(str).tolist()
+                df = df.iloc[1:].reset_index(drop=True)
+                excel_cols = ["-- Ignorer --"] + list(df.columns)
                 
-                for idx, db_f in enumerate(targets_fin):
-                    def_idx = 0
-                    if db_f in MAPPING_CONFIG_KEYWORDS:
-                        for i, col in enumerate(df.columns):
-                            if any(kw in clean_header(col) for kw in MAPPING_CONFIG_KEYWORDS[db_f]): 
-                                def_idx = i + 1
-                                break
-                    with (c1 if idx % 2 == 0 else c2): 
-                        mapping[db_f] = st.selectbox(f"Colonne pour '{db_f}'", excel_cols, index=def_idx, key=f"map_fin_{db_f}")
-                        
-                sub = st.form_submit_button("🚀 Créer les dossiers en base", type="primary")
-            
-            if sub:
-                session = get_session()
-                agents_db = [a.nom for a in session.query(UtilisateurAuth).filter_by(role='agent').all()]
-                c_add = 0
-                c_upd = 0
-                total_rows = len(df)
+                st.write("### 🎛️ Étape 2 : Mapping des Colonnes (Finance)")
+                mapping = {}
                 
-                with st.status("Importation Finance en cours...", expanded=True) as status:
-                    progress_bar = st.progress(0)
+                with st.form("form_fin"):
+                    c1, c2 = st.columns(2)
+                    targets_fin = [
+                        'identifiant', 'nom', 'prenom', 'date_naissance', 
+                        'adresse', 'telephone', 'commune', 'activite', 
+                        'gestionnaire', 'banque_nom', 'num_ordre_versement', 
+                        'date_financement', 'montant_pnr', 'apport_personnel', 
+                        'credit_bancaire'
+                    ]
                     
-                    for idx, row in df.iterrows():
-                        if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
-                            progress_bar.progress(min(1.0, (idx + 1) / total_rows))
+                    for idx, db_f in enumerate(targets_fin):
+                        def_idx = 0
+                        if db_f in MAPPING_CONFIG_KEYWORDS:
+                            for i, col in enumerate(df.columns):
+                                if any(kw in clean_header(col) for kw in MAPPING_CONFIG_KEYWORDS[db_f]): 
+                                    def_idx = i + 1
+                                    break
+                        with (c1 if idx % 2 == 0 else c2): 
+                            mapping[db_f] = st.selectbox(f"Colonne pour '{db_f}'", excel_cols, index=def_idx, key=f"map_fin_{db_f}")
                             
-                        data = {}
-                        mapped_cols = [v for v in mapping.values() if v != "-- Ignorer --"]
+                    sub = st.form_submit_button("🚀 Créer les dossiers en base", type="primary")
+                
+                if sub:
+                    session = get_session()
+                    agents_db = [a.nom for a in session.query(UtilisateurAuth).filter_by(role='agent').all()]
+                    c_add = 0
+                    c_upd = 0
+                    total_rows = len(df)
+                    
+                    with st.status("Importation Finance en cours...", expanded=True) as status:
+                        progress_bar = st.progress(0)
                         
-                        for db_f, xl_col in mapping.items():
-                            if xl_col != "-- Ignorer --":
-                                val = row[xl_col]
-                                if pd.isna(val) or str(val).strip() in ["", "NAN", "None"]: 
-                                    continue
-                                    
-                                if db_f in COLONNES_ARGENT: 
-                                    data[db_f] = clean_money(val)
-                                elif db_f == 'identifiant': 
-                                    data[db_f] = clean_identifiant(val)
-                                elif db_f == 'gestionnaire': 
-                                    data[db_f] = trouver_agent_intelligent(val, agents_db)
-                                else: 
-                                    data[db_f] = str(val).strip().upper()
-                        
-                        ident = data.get('identifiant')
-                        if not ident: 
-                            continue
+                        for idx, row in df.iterrows():
+                            if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
+                                progress_bar.progress(min(1.0, (idx + 1) / total_rows))
+                                
+                            data = {}
+                            mapped_cols = [v for v in mapping.values() if v != "-- Ignorer --"]
                             
-                        valeur_pnr = data.get('montant_pnr')
-                        if valeur_pnr is None:
-                            valeur_pnr = 0.0
-                        else:
-                            valeur_pnr = float(valeur_pnr)
+                            for db_f, xl_col in mapping.items():
+                                if xl_col != "-- Ignorer --":
+                                    val = row[xl_col]
+                                    if pd.isna(val) or str(val).strip() in ["", "NAN", "None"]: 
+                                        continue
+                                        
+                                    if db_f in COLONNES_ARGENT: 
+                                        data[db_f] = clean_money(val)
+                                    elif db_f == 'identifiant': 
+                                        data[db_f] = clean_identifiant(val)
+                                    elif db_f == 'gestionnaire': 
+                                        data[db_f] = trouver_agent_intelligent(val, agents_db)
+                                    else: 
+                                        data[db_f] = str(val).strip().upper()
                             
-                        notes = ""
-                        for col in df.columns:
-                            if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
-                                notes += f"- {col} : {str(row[col]).strip()}\n"
-                        
-                        exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
-                        
-                        if exist:
-                            for k, v in data.items():
-                                if v is not None and v != "": 
-                                    setattr(exist, k, v)
-                            
-                            exist.in_finance = "OUI"
-                            
-                            if notes: 
-                                date_str = datetime.now().strftime('%d/%m/%Y')
-                                exist.historique_visites = f"🔹 **[Import Finance {date_str}] Infos supp :**\n{notes}\n" + (exist.historique_visites or "")
-                            c_upd += 1
-                        else:
-                            if valeur_pnr <= 40000: 
+                            ident = data.get('identifiant')
+                            if not ident: 
                                 continue
                                 
-                            data['type_dispositif'] = env
-                            data['est_nouveau'] = 'OUI'
-                            data['in_finance'] = 'OUI'
-                            data['in_recouvrement'] = 'NON'
-                            
-                            if notes: 
-                                date_str = datetime.now().strftime('%d/%m/%Y')
-                                data['historique_visites'] = f"🔹 **[Import Finance {date_str}] Infos supp :**\n{notes}\n"
+                            valeur_pnr = data.get('montant_pnr')
+                            if valeur_pnr is None:
+                                valeur_pnr = 0.0
+                            else:
+                                valeur_pnr = float(valeur_pnr)
                                 
-                            session.add(Dossier(**data))
-                            c_add += 1
+                            notes = ""
+                            for col in df.columns:
+                                if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
+                                    notes += f"- {col} : {str(row[col]).strip()}\n"
                             
-                    session.commit()
-                    session.close()
-                    status.update(label=f"✅ Terminé ! {c_add} créés, {c_upd} mis à jour.", state="complete")
+                            exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
+                            
+                            if exist:
+                                for k, v in data.items():
+                                    if v is not None and v != "": 
+                                        setattr(exist, k, v)
+                                
+                                exist.in_finance = "OUI"
+                                
+                                if notes: 
+                                    date_str = datetime.now().strftime('%d/%m/%Y')
+                                    exist.historique_visites = f"🔹 **[Import Finance {date_str}] Infos supp :**\n{notes}\n" + (exist.historique_visites or "")
+                                c_upd += 1
+                            else:
+                                if valeur_pnr <= 40000: 
+                                    continue
+                                    
+                                data['type_dispositif'] = env
+                                data['est_nouveau'] = 'OUI'
+                                data['in_finance'] = 'OUI'
+                                data['in_recouvrement'] = 'NON'
+                                
+                                if notes: 
+                                    date_str = datetime.now().strftime('%d/%m/%Y')
+                                    data['historique_visites'] = f"🔹 **[Import Finance {date_str}] Infos supp :**\n{notes}\n"
+                                    
+                                session.add(Dossier(**data))
+                                c_add += 1
+                                
+                        session.commit()
+                        session.close()
+                        status.update(label=f"✅ Terminé ! {c_add} créés, {c_upd} mis à jour.", state="complete")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # --- ONGLET 2 : IMPORTATION RECOUVREMENT ---
@@ -884,124 +907,125 @@ def page_integration_admin():
             f_rec = st.file_uploader("Fichier Recouvrement", type=['xlsx', 'xls', 'csv'], key="fr")
             
             if f_rec:
-                # LECTURE SÉCURISÉE AVEC HEADER=NONE
-                if f_rec.name.endswith('.csv'):
-                    try: df_raw = pd.read_csv(f_rec, sep=None, engine='python', header=None, dtype=str)
-                    except: df_raw = pd.read_csv(f_rec, sep=';', encoding='latin1', header=None, dtype=str)
-                else:
-                    df_raw = pd.read_excel(f_rec, header=None, dtype=str)
-                    
-                df_raw = df_raw.fillna('')
-                header_idx = get_header_row(df_raw)
+                error_reading_rec = False
+                try:
+                    df_raw = safe_read_dataframe(f_rec)
+                except Exception as e:
+                    error_reading_rec = True
+                    st.error("🚨 Impossible de lire ce fichier Excel/CSV.")
+                    st.warning("💡 SOLUTION : Ouvrez ce fichier dans Excel, cliquez sur 'Enregistrer sous', choisissez le format 'CSV (séparateur point-virgule)', puis importez ce fichier CSV.")
                 
-                df = df_raw.iloc[header_idx:].copy()
-                df.columns = df.iloc[0].astype(str).tolist()
-                df = df.iloc[1:].reset_index(drop=True)
-                excel_cols = ["-- Ignorer --"] + list(df.columns)
-                
-                st.write("### 🎛️ Étape 2 : Mapping des 20 Colonnes (Recouvrement)")
-                mapping_rec = {}
-                
-                with st.form("form_rec"):
-                    c1, c2, c3 = st.columns(3)
+                if not error_reading_rec:
+                    df_raw = df_raw.fillna('')
+                    header_idx = get_header_row(df_raw)
                     
-                    # TES 20 COLONNES EXIGÉES EXACTEMENT
-                    targets_rec = [
-                        'identifiant', 'nom', 'prenom', 'date_naissance', 
-                        'adresse', 'telephone', 'commune', 'daira', 
-                        'type_dispositif', 'debut_consommation', 'montant_pnr', 
-                        'nb_echeance_tombee', 'date_ech_tomb', 'prochaine_ech', 
-                        'total_echue', 'montant_rembourse', 'reste_rembourser',
-                        'observations', 'anticip', 'ech_anticip'
-                    ]
+                    df = df_raw.iloc[header_idx:].copy()
+                    df.columns = df.iloc[0].astype(str).tolist()
+                    df = df.iloc[1:].reset_index(drop=True)
+                    excel_cols = ["-- Ignorer --"] + list(df.columns)
                     
-                    for idx, db_f in enumerate(targets_rec):
-                        def_idx = 0
-                        if db_f in MAPPING_CONFIG_KEYWORDS:
-                            for i, col in enumerate(df.columns):
-                                if any(kw in clean_header(col) for kw in MAPPING_CONFIG_KEYWORDS[db_f]): 
-                                    def_idx = i + 1
-                                    break
-                        target_col = c1 if idx % 3 == 0 else c2 if idx % 3 == 1 else c3
-                        with target_col: 
-                            mapping_rec[db_f] = st.selectbox(f"'{db_f}'", excel_cols, index=def_idx, key=f"map_rec_{db_f}")
-                            
-                    sub_rec = st.form_submit_button("🚀 Mettre à jour la base Recouvrement", type="primary")
-                
-                if sub_rec:
-                    session = get_session()
-                    c_upd = 0
-                    c_new = 0
-                    total_rows = len(df)
+                    st.write("### 🎛️ Étape 2 : Mapping des 20 Colonnes (Recouvrement)")
+                    mapping_rec = {}
                     
-                    with st.status("Importation Recouvrement en cours...", expanded=True) as status:
-                        progress_bar = st.progress(0)
+                    with st.form("form_rec"):
+                        c1, c2, c3 = st.columns(3)
                         
-                        for idx, row in df.iterrows():
-                            if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
-                                progress_bar.progress(min(1.0, (idx + 1) / total_rows))
+                        targets_rec = [
+                            'identifiant', 'nom', 'prenom', 'date_naissance', 
+                            'adresse', 'telephone', 'commune', 'daira', 
+                            'type_dispositif', 'debut_consommation', 'montant_pnr', 
+                            'nb_echeance_tombee', 'date_ech_tomb', 'prochaine_ech', 
+                            'total_echue', 'montant_rembourse', 'reste_rembourser',
+                            'observations', 'anticip', 'ech_anticip'
+                        ]
+                        
+                        for idx, db_f in enumerate(targets_rec):
+                            def_idx = 0
+                            if db_f in MAPPING_CONFIG_KEYWORDS:
+                                for i, col in enumerate(df.columns):
+                                    if any(kw in clean_header(col) for kw in MAPPING_CONFIG_KEYWORDS[db_f]): 
+                                        def_idx = i + 1
+                                        break
+                            target_col = c1 if idx % 3 == 0 else c2 if idx % 3 == 1 else c3
+                            with target_col: 
+                                mapping_rec[db_f] = st.selectbox(f"'{db_f}'", excel_cols, index=def_idx, key=f"map_rec_{db_f}")
                                 
-                            xl_id = mapping_rec.get('identifiant')
-                            ident = clean_identifiant(row[xl_id]) if xl_id != "-- Ignorer --" else ""
-                            if not ident: 
-                                continue
+                        sub_rec = st.form_submit_button("🚀 Mettre à jour la base Recouvrement", type="primary")
+                    
+                    if sub_rec:
+                        session = get_session()
+                        c_upd = 0
+                        c_new = 0
+                        total_rows = len(df)
+                        
+                        with st.status("Importation Recouvrement en cours...", expanded=True) as status:
+                            progress_bar = st.progress(0)
                             
-                            notes = ""
-                            mapped_cols = [v for v in mapping_rec.values() if v != "-- Ignorer --"]
-                            for col in df.columns:
-                                if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
-                                    notes += f"- {col} : {str(row[col]).strip()}\n"
+                            for idx, row in df.iterrows():
+                                if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
+                                    progress_bar.progress(min(1.0, (idx + 1) / total_rows))
+                                    
+                                xl_id = mapping_rec.get('identifiant')
+                                ident = clean_identifiant(row[xl_id]) if xl_id != "-- Ignorer --" else ""
+                                if not ident: 
+                                    continue
+                                
+                                notes = ""
+                                mapped_cols = [v for v in mapping_rec.values() if v != "-- Ignorer --"]
+                                for col in df.columns:
+                                    if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
+                                        notes += f"- {col} : {str(row[col]).strip()}\n"
 
-                            exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
-                            
-                            if exist:
-                                for db_f, xl_col in mapping_rec.items():
-                                    if xl_col != "-- Ignorer --" and db_f != 'identifiant':
-                                        val = row[xl_col]
-                                        if pd.isna(val) or str(val).strip() in ["", "NAN", "None"]: 
-                                            continue
-                                            
-                                        if db_f in COLONNES_ARGENT:
-                                            setattr(exist, db_f, clean_money(val))
-                                        else:
-                                            setattr(exist, db_f, str(val).strip().upper())
-                                            
-                                exist.in_recouvrement = "OUI"
-                                            
-                                if notes: 
-                                    date_str = datetime.now().strftime('%d/%m/%Y')
-                                    exist.historique_visites = f"🔹 **[Import Recouv {date_str}] Infos supp :**\n{notes}\n" + (exist.historique_visites or "")
-                                c_upd += 1
+                                exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
                                 
-                            else: 
-                                data_new = {}
-                                for db_f, xl_col in mapping_rec.items():
-                                    if xl_col != "-- Ignorer --":
-                                        val = row[xl_col]
-                                        if pd.isna(val) or str(val).strip() in ["", "NAN", "None"]: 
-                                            continue
+                                if exist:
+                                    for db_f, xl_col in mapping_rec.items():
+                                        if xl_col != "-- Ignorer --" and db_f != 'identifiant':
+                                            val = row[xl_col]
+                                            if pd.isna(val) or str(val).strip() in ["", "NAN", "None"]: 
+                                                continue
+                                                
+                                            if db_f in COLONNES_ARGENT:
+                                                setattr(exist, db_f, clean_money(val))
+                                            else:
+                                                setattr(exist, db_f, str(val).strip().upper())
+                                                
+                                    exist.in_recouvrement = "OUI"
+                                                
+                                    if notes: 
+                                        date_str = datetime.now().strftime('%d/%m/%Y')
+                                        exist.historique_visites = f"🔹 **[Import Recouv {date_str}] Infos supp :**\n{notes}\n" + (exist.historique_visites or "")
+                                    c_upd += 1
+                                    
+                                else: 
+                                    data_new = {}
+                                    for db_f, xl_col in mapping_rec.items():
+                                        if xl_col != "-- Ignorer --":
+                                            val = row[xl_col]
+                                            if pd.isna(val) or str(val).strip() in ["", "NAN", "None"]: 
+                                                continue
+                                                
+                                            if db_f in COLONNES_ARGENT: 
+                                                data_new[db_f] = clean_money(val)
+                                            elif db_f == 'identifiant': 
+                                                data_new[db_f] = clean_identifiant(val)
+                                            else: 
+                                                data_new[db_f] = str(val).strip().upper()
                                             
-                                        if db_f in COLONNES_ARGENT: 
-                                            data_new[db_f] = clean_money(val)
-                                        elif db_f == 'identifiant': 
-                                            data_new[db_f] = clean_identifiant(val)
-                                        else: 
-                                            data_new[db_f] = str(val).strip().upper()
-                                        
-                                data_new['type_dispositif'] = env
-                                data_new['in_recouvrement'] = 'OUI' 
-                                data_new['in_finance'] = 'NON'      
-                                
-                                if notes: 
-                                    date_str = datetime.now().strftime('%d/%m/%Y')
-                                    data_new['historique_visites'] = f"🔹 **[Import Recouv {date_str}] Infos supp :**\n{notes}\n"
-                                
-                                session.add(Dossier(**data_new))
-                                c_new += 1
-                                
-                        session.commit()
-                        session.close()
-                        status.update(label=f"✅ {c_upd} dossiers mis à jour, {c_new} nouveaux (Visibles uniquement Recouvrement).", state="complete")
+                                    data_new['type_dispositif'] = env
+                                    data_new['in_recouvrement'] = 'OUI' 
+                                    data_new['in_finance'] = 'NON'      
+                                    
+                                    if notes: 
+                                        date_str = datetime.now().strftime('%d/%m/%Y')
+                                        data_new['historique_visites'] = f"🔹 **[Import Recouv {date_str}] Infos supp :**\n{notes}\n"
+                                    
+                                    session.add(Dossier(**data_new))
+                                    c_new += 1
+                                    
+                            session.commit()
+                            session.close()
+                            status.update(label=f"✅ {c_upd} dossiers mis à jour, {c_new} nouveaux (Visibles uniquement Recouvrement).", state="complete")
             st.markdown("</div>", unsafe_allow_html=True)
 
     # --- ONGLET 3 : MAINTENANCE ---
