@@ -59,6 +59,7 @@ else:
     theme_color = "#2c3e50"
     theme_bg = "#f8f9fa"
 
+
 # ==========================================
 # 2. STYLE CSS PREMIUM DÉTAILLÉ
 # ==========================================
@@ -146,6 +147,7 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+
 # ==========================================
 # 3. MODÈLES DE BASE DE DONNÉES
 # ==========================================
@@ -210,7 +212,7 @@ class Dossier(Base):
     prochaine_visite = Column(String, default="")
     est_nouveau = Column(String, default="NON")
     
-    # SYSTEME DE BADGES
+    # SYSTEME DE BADGES POUR ZÉRO CROISEMENT
     in_finance = Column(String, default="NON")
     in_recouvrement = Column(String, default="NON")
 
@@ -223,8 +225,10 @@ class UtilisateurAuth(Base):
     role = Column(String)
     daira = Column(String, default="")
 
+# Création physique des tables
 Base.metadata.create_all(engine)
 
+# Migrations automatiques 
 try:
     with engine.connect() as conn:
         colonnes_string = [
@@ -262,8 +266,9 @@ def init_db_users():
 
 init_db_users()
 
+
 # ==========================================
-# 4. DICTIONNAIRE RADAR ET UTILITAIRES DE LECTURE
+# 4. DICTIONNAIRE RADAR ET UTILITAIRES SÉCURISÉS
 # ==========================================
 MAPPING_CONFIG_KEYWORDS = {
     'identifiant': ['IDENTIFIANT', 'CNI', 'NCINPC', 'NAT', 'ID'], 
@@ -303,7 +308,7 @@ COLONNES_ARGENT = [
     'credit_bancaire'
 ]
 
-# FONCTION INDESTRUCTIBLE POUR LIRE LES CSV MÊME CORROMPUS
+# --- FONCTION INDESTRUCTIBLE POUR LIRE LES EXCEL/CSV CORROMPUS ---
 def safe_read_dataframe(file_obj):
     if file_obj.name.lower().endswith('.csv'):
         try:
@@ -317,6 +322,7 @@ def safe_read_dataframe(file_obj):
                 file_obj.seek(0)
                 return pd.read_csv(file_obj, sep=',', encoding='utf-8', header=None, dtype=str, on_bad_lines='skip')
     else:
+        file_obj.seek(0)
         return pd.read_excel(file_obj, header=None, dtype=str)
 
 def clean_pdf_text(t): 
@@ -357,6 +363,7 @@ def calculer_alerte_bool(row):
     etat = row.get('etat_dette')
     if statut == "Contentieux / Retard" or etat == "CONTENTIEUX": return True
     return False
+
 
 # ==========================================
 # 5. MOTEURS DE GÉNÉRATION PDF
@@ -684,7 +691,7 @@ def page_gestion(mode="financement", vue_admin=False):
             "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA")
         }
     else:
-        # LES 7 COLONNES
+        # LES 7 COLONNES ULTRA-EPURÉES
         cols = [
             "Ouvrir 📂", 
             "identifiant", 
@@ -746,7 +753,7 @@ def page_gestion(mode="financement", vue_admin=False):
         session.close()
 
 # ==========================================
-# 8. MAPPING INTERACTIF & FOURRE-TOUT
+# 8. MAPPING INTERACTIF, FOURRE-TOUT ET GESTIONNAIRES
 # ==========================================
 def get_header_row(df_raw):
     for i in range(min(30, len(df_raw))):
@@ -765,9 +772,9 @@ def page_integration_admin():
     if role == "finance":
         tabs = st.tabs(["💰 IMPORT FINANCE (CRÉATION)"])
         t1 = tabs[0]
-        t2, t3, t4 = None, None, None
+        t2, t3, t4, t5 = None, None, None, None
     else:
-        t1, t2, t3, t4 = st.tabs(["💰 IMPORT FINANCE", "📈 IMPORT RECOUVREMENT", "🧹 DOUBLONS", "🔐 EQUIPES"])
+        t1, t2, t3, t4, t5 = st.tabs(["💰 IMPORT FINANCE", "📈 IMPORT RECOUVREMENT", "👥 MAJ GESTIONNAIRES", "🧹 DOUBLONS", "🔐 EQUIPES"])
     
     # --- ONGLET 1 : IMPORTATION FINANCE ---
     with t1:
@@ -782,7 +789,6 @@ def page_integration_admin():
             except Exception as e:
                 error_reading = True
                 st.error("🚨 Impossible de lire ce fichier Excel/CSV.")
-                st.warning("💡 SOLUTION : Ouvrez ce fichier dans Excel, cliquez sur 'Enregistrer sous', choisissez le format 'CSV (séparateur point-virgule)', puis importez ce fichier CSV.")
             
             if not error_reading:
                 df_raw = df_raw.fillna('')
@@ -913,7 +919,6 @@ def page_integration_admin():
                 except Exception as e:
                     error_reading_rec = True
                     st.error("🚨 Impossible de lire ce fichier Excel/CSV.")
-                    st.warning("💡 SOLUTION : Ouvrez ce fichier dans Excel, cliquez sur 'Enregistrer sous', choisissez le format 'CSV (séparateur point-virgule)', puis importez ce fichier CSV.")
                 
                 if not error_reading_rec:
                     df_raw = df_raw.fillna('')
@@ -1028,9 +1033,92 @@ def page_integration_admin():
                             status.update(label=f"✅ {c_upd} dossiers mis à jour, {c_new} nouveaux (Visibles uniquement Recouvrement).", state="complete")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- ONGLET 3 : MAINTENANCE ---
+    # --- ONGLET 3 : MISE A JOUR DES GESTIONNAIRES ---
     if t3:
         with t3:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.warning("👥 **AFFECTATION DES DOSSIERS :** Importez un fichier avec (Identifiant, Nom, Prénom, Gestionnaire) pour assigner massivement les dossiers de Recouvrement.")
+            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx', 'xls', 'csv'], key="fgest")
+            
+            if f_gest:
+                error_reading_gest = False
+                try:
+                    df_gest_raw = safe_read_dataframe(f_gest)
+                except Exception as e:
+                    error_reading_gest = True
+                    st.error("🚨 Impossible de lire ce fichier.")
+                
+                if not error_reading_gest:
+                    df_gest_raw = df_gest_raw.fillna('')
+                    header_idx = get_header_row(df_gest_raw)
+                    
+                    df_gest = df_gest_raw.iloc[header_idx:].copy()
+                    df_gest.columns = df_gest.iloc[0].astype(str).tolist()
+                    df_gest = df_gest.iloc[1:].reset_index(drop=True)
+                    excel_cols_gest = ["-- Ignorer --"] + list(df_gest.columns)
+                    
+                    st.write("### 🎛️ Étape 2 : Mapping des colonnes")
+                    mapping_gest = {}
+                    
+                    with st.form("form_gest"):
+                        c1, c2 = st.columns(2)
+                        targets_gest = ['identifiant', 'nom', 'prenom', 'gestionnaire']
+                        
+                        for idx, db_f in enumerate(targets_gest):
+                            def_idx = 0
+                            if db_f in MAPPING_CONFIG_KEYWORDS:
+                                for i, col in enumerate(df_gest.columns):
+                                    if any(kw in clean_header(col) for kw in MAPPING_CONFIG_KEYWORDS[db_f]): 
+                                        def_idx = i + 1
+                                        break
+                            with (c1 if idx % 2 == 0 else c2): 
+                                mapping_gest[db_f] = st.selectbox(f"'{db_f}'", excel_cols_gest, index=def_idx, key=f"map_gest_{db_f}")
+                                
+                        sub_gest = st.form_submit_button("🚀 Assigner les Gestionnaires", type="primary")
+                    
+                    if sub_gest:
+                        session = get_session()
+                        c_affect = 0
+                        agents_db = [a.nom for a in session.query(UtilisateurAuth).filter_by(role='agent').all()]
+                        
+                        with st.status("Affectation en cours...", expanded=True) as status:
+                            for _, row in df_gest.iterrows():
+                                xl_id = mapping_gest.get('identifiant')
+                                xl_nom = mapping_gest.get('nom')
+                                xl_prenom = mapping_gest.get('prenom')
+                                xl_gest = mapping_gest.get('gestionnaire')
+                                
+                                ident = clean_identifiant(row[xl_id]) if xl_id != "-- Ignorer --" else ""
+                                nom = str(row[xl_nom]).strip().upper() if xl_nom != "-- Ignorer --" else ""
+                                prenom = str(row[xl_prenom]).strip().upper() if xl_prenom != "-- Ignorer --" else ""
+                                gest_brut = row[xl_gest] if xl_gest != "-- Ignorer --" else ""
+                                
+                                if pd.isna(gest_brut) or str(gest_brut).strip() in ["", "NAN", "None"]:
+                                    continue
+                                    
+                                gest_propre = trouver_agent_intelligent(gest_brut, agents_db)
+                                
+                                # Recherche par ID d'abord
+                                dossier = None
+                                if ident:
+                                    dossier = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
+                                
+                                # Si pas trouvé par ID, on cherche par Nom et Prénom
+                                if not dossier and nom and prenom:
+                                    dossier = session.query(Dossier).filter_by(nom=nom, prenom=prenom, type_dispositif=env).first()
+                                    
+                                if dossier:
+                                    dossier.gestionnaire = gest_propre
+                                    c_affect += 1
+                                    
+                            session.commit()
+                            session.close()
+                            status.update(label=f"✅ {c_affect} dossiers ont été affectés à un gestionnaire.", state="complete")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- ONGLET 4 : MAINTENANCE ---
+    if t4:
+        with t4:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             if st.button("🚨 Nettoyer Doublons Stricts (Même ID + Même OV)", type="primary"):
                 session = get_session()
@@ -1060,9 +1148,9 @@ def page_integration_admin():
                 session.close()
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- ONGLET 4 : EQUIPES ---
-    if t4:
-        with t4:
+    # --- ONGLET 5 : EQUIPES ---
+    if t5:
+        with t5:
             st.markdown("<div class='modern-card'>### 🔑 Équipes", unsafe_allow_html=True)
             try: 
                 df_u = pd.read_sql_query("SELECT id, identifiant, nom, daira, mot_de_passe FROM utilisateurs_auth WHERE role='agent'", con=engine)
