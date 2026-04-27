@@ -2,8 +2,8 @@ streamlit
 pandas
 sqlalchemy
 psycopg2-binary
-plotly
+bcrypt
 fpdf
+supabase
 openpyxl
 xlrd
-supabase
