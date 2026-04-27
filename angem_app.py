@@ -69,6 +69,7 @@ st.markdown(f"""
         background-color: {theme_bg}; 
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
     }}
+    
     .modern-card {{ 
         background-color: #ffffff; 
         padding: 25px; 
@@ -84,6 +85,7 @@ st.markdown(f"""
         transform: translateY(-2px); 
         box-shadow: 0 12px 32px rgba(0,0,0,0.08); 
     }}
+    
     .metric-card {{ 
         background: #ffffff; 
         border-radius: 16px; 
@@ -99,6 +101,7 @@ st.markdown(f"""
     .metric-value {{ font-size: 26px; font-weight: 800; color: #1e293b; margin-top: 5px; }}
     .metric-label {{ font-size: 13px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }}
     .metric-danger {{ border-left-color: #ef4444; }}
+    
     .portal-card {{ 
         background: #ffffff; 
         padding: 30px 20px; 
@@ -113,6 +116,7 @@ st.markdown(f"""
         justify-content: center; 
     }}
     .portal-card:hover {{ border-color: {theme_color}; transform: translateY(-5px); box-shadow: 0 12px 24px rgba(0,0,0,0.1); }}
+    
     .profil-header {{ 
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); 
         padding: 25px; 
@@ -127,6 +131,7 @@ st.markdown(f"""
     .block-finance {{ background-color: #eff6ff; border-left: 5px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
     .block-recouvrement {{ background-color: #f0fdf4; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-bottom: 15px; }}
     .block-title {{ font-weight: bold; color: #1e293b; margin-bottom: 10px; font-size: 16px; text-transform: uppercase; }}
+    
     .action-btn-container {{ display: flex; gap: 12px; margin-top: 15px; margin-bottom: 25px; flex-wrap: wrap; }}
     .btn-action {{ 
         flex: 1; min-width: 160px; padding: 12px 20px; border-radius: 10px; text-decoration: none; 
@@ -136,6 +141,7 @@ st.markdown(f"""
     .btn-call {{ background-color: #3b82f6; }} .btn-call:hover {{ background-color: #2563eb; transform: translateY(-2px); }}
     .btn-wa {{ background-color: #22c55e; }} .btn-wa:hover {{ background-color: #16a34a; transform: translateY(-2px); }}
     .btn-maps {{ background-color: #ef4444; }} .btn-maps:hover {{ background-color: #dc2626; transform: translateY(-2px); }}
+    
     .search-title {{ color: {theme_color}; font-weight: 800; font-size: 20px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }}
     .alerte-nouveau {{ background-color: #f0fdf4; border-left: 6px solid #22c55e; padding: 15px 20px; border-radius: 8px; color: #15803d; font-weight: 600; margin-bottom: 20px; }}
 </style>
@@ -262,6 +268,9 @@ def init_db_users():
             mot_de_passe="angem", 
             role="admin"
         ))
+    else:
+        # FORCE LE MOT DE PASSE EN CAS D'ERREUR PRECEDENTE
+        admin_exist.mot_de_passe = "angem"
         
     finance_exist = session.query(UtilisateurAuth).filter_by(identifiant="finance").first()
     if not finance_exist: 
@@ -271,6 +280,9 @@ def init_db_users():
             mot_de_passe="angem", 
             role="finance"
         ))
+    else:
+        # FORCE LE MOT DE PASSE EN CAS D'ERREUR PRECEDENTE
+        finance_exist.mot_de_passe = "angem"
         
     session.commit()
     session.close()
@@ -613,7 +625,6 @@ def afficher_profil_complet(dos_db, session):
     
     if len(tel) >= 9: 
         num_wa = '213' + tel[1:] if tel.startswith('0') else tel
-        # --- BOUTONS D'APPELS ET MESSAGES ---
         st.markdown(f"<a href='tel:{tel}' class='btn-action btn-call' target='_blank'>📞 Appeler le promoteur</a>", unsafe_allow_html=True)
         st.markdown(f"<a href='https://wa.me/{num_wa}' class='btn-action btn-wa' target='_blank'>💬 Message WhatsApp</a>", unsafe_allow_html=True)
         
@@ -674,11 +685,9 @@ def page_gestion(mode="financement", vue_admin=False):
     role = st.session_state.user['role']
     nom_agent = st.session_state.user['nom'].upper()
     
-    # --- LA RÈGLE DES BADGES POUR LE ZÉRO CROISEMENT ---
     colonne_badge = "in_finance" if mode == "financement" else "in_recouvrement"
     
     try: 
-        # On ne charge QUE les dossiers qui ont le badge de la rubrique demandée
         query = f"SELECT * FROM dossiers WHERE type_dispositif='{env}' AND {colonne_badge}='OUI' ORDER BY id DESC"
         df = pd.read_sql_query(query, con=engine).fillna('')
     except: 
@@ -688,13 +697,11 @@ def page_gestion(mode="financement", vue_admin=False):
         st.info("Base vide ou aucun dossier dans cette rubrique.")
         return
 
-    # Notification de nouveaux dossiers pour les agents
     if role == 'agent' and mode == 'financement':
         nvx = len(df[(df['gestionnaire'].str.upper() == nom_agent) & (df['est_nouveau'] == "OUI")])
         if nvx > 0: 
             st.markdown(f"<div class='alerte-nouveau'>🎉 Vous avez {nvx} nouveau(x) dossier(s) affecté(s) !</div>", unsafe_allow_html=True)
 
-    # Moteur de recherche
     st.markdown(f"<div class='modern-card'><div class='search-title'>🔍 Recherche {mode}</div>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns([4, 1, 1])
@@ -710,17 +717,14 @@ def page_gestion(mode="financement", vue_admin=False):
         
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Filtrage par recherche
     if st.session_state.search_query: 
         df = df[df.apply(lambda x: x.astype(str).str.contains(st.session_state.search_query, case=False).any(), axis=1)]
         
-    # Filtrage par agent (sauf admin et finance)
     if not vue_admin and role == "agent": 
         df = df[df['gestionnaire'].str.upper() == nom_agent]
 
     df.insert(0, "Ouvrir 📂", False)
     
-    # Préparation de la liste des agents pour le menu déroulant
     try:
         df_agents = pd.read_sql_query("SELECT nom FROM utilisateurs_auth WHERE role='agent'", con=engine)
         noms_db = df_agents['nom'].dropna().tolist()
@@ -729,7 +733,6 @@ def page_gestion(mode="financement", vue_admin=False):
     except: 
         liste_agents = [""]
     
-    # --- CONFIGURATION DES COLONNES PAR RUBRIQUE ---
     if mode == "financement":
         cols = [
             "Ouvrir 📂", 
@@ -747,13 +750,12 @@ def page_gestion(mode="financement", vue_admin=False):
         config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn(default=False), 
             "id": None, 
-            # --- LES MENUS DÉROULANTS ---
             "statut_dossier": st.column_config.SelectboxColumn("Étape du dossier", options=LISTE_STATUTS, width="medium"),
             "gestionnaire": st.column_config.SelectboxColumn("Agent Affecté", options=liste_agents, disabled=(role=='agent')),
             "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA")
         }
     else:
-        # --- LES 7 COLONNES ULTRA-EPURÉES + GESTIONNAIRE ---
+        # LES 7 COLONNES
         cols = [
             "Ouvrir 📂", 
             "identifiant", 
@@ -781,7 +783,6 @@ def page_gestion(mode="financement", vue_admin=False):
 
     st.markdown("<div class='modern-card' style='padding: 10px;'>", unsafe_allow_html=True)
     
-    # Affichage du tableau interactif
     edited = st.data_editor(
         df[cols], 
         use_container_width=True, 
@@ -790,7 +791,6 @@ def page_gestion(mode="financement", vue_admin=False):
         height=600
     )
     
-    # Sauvegarde des modifications (Seulement en mode finance ou admin)
     if mode == "financement" and st.button("💾 Sauvegarder les modifications", type="primary"):
         session = get_session()
         for _, r in edited.iterrows():
@@ -806,7 +806,6 @@ def page_gestion(mode="financement", vue_admin=False):
         
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Affichage du profil complet si une ligne est cochée
     sel = edited[edited["Ouvrir 📂"] == True]
     if not sel.empty:
         session = get_session()
@@ -818,10 +817,9 @@ def page_gestion(mode="financement", vue_admin=False):
         session.close()
 
 # ==========================================
-# 8. MAPPING INTERACTIF & FOURRE-TOUT
+# 8. MAPPING INTERACTIF, FOURRE-TOUT ET GESTIONNAIRES
 # ==========================================
 def get_header_row(df_raw):
-    # ON CHERCHE LES TITRES POUR EVITER LE MELANGE DANS LE DROPDOWN
     for i in range(min(30, len(df_raw))):
         row_cl = [clean_header(str(x)) for x in df_raw.iloc[i].values]
         mots_cles = ["IDENTIFIANT", "CNI", "NOM", "GEST", "PRENOM", "ID", "TEL", "TELEPHONE", "PNR", "MONTANT"]
@@ -860,7 +858,6 @@ def page_integration_admin():
                 df_raw = df_raw.fillna('')
                 header_idx = get_header_row(df_raw)
                 
-                # Récupération propre des colonnes (évite le mélange des données dans les dropdown)
                 df = df_raw.iloc[header_idx:].copy()
                 df.columns = df.iloc[0].astype(str).tolist()
                 df = df.iloc[1:].reset_index(drop=True)
@@ -886,7 +883,6 @@ def page_integration_admin():
                                 if any(kw in clean_header(col) for kw in MAPPING_CONFIG_KEYWORDS[db_f]): 
                                     def_idx = i + 1
                                     break
-                        # CLE UNIQUE POUR LE DROPDOWN FINANCE
                         with (c1 if idx % 2 == 0 else c2): 
                             mapping[db_f] = st.selectbox(f"Colonne pour '{db_f}'", excel_cols, index=def_idx, key=f"map_fin_{db_f}")
                             
@@ -899,19 +895,16 @@ def page_integration_admin():
                     c_upd = 0
                     total_rows = len(df)
                     
-                    # --- LA BARRE DE PROGRESSION ---
                     with st.status("Importation Finance en cours...", expanded=True) as status:
                         progress_bar = st.progress(0)
                         
                         for idx, row in df.iterrows():
-                            # Mise à jour visuelle de la barre
                             if idx % max(1, (total_rows // 100)) == 0 or idx == total_rows - 1:
                                 progress_bar.progress(min(1.0, (idx + 1) / total_rows))
                                 
                             data = {}
                             mapped_cols = [v for v in mapping.values() if v != "-- Ignorer --"]
                             
-                            # Extraction des données mappées
                             for db_f, xl_col in mapping.items():
                                 if xl_col != "-- Ignorer --":
                                     val = row[xl_col]
@@ -931,20 +924,17 @@ def page_integration_admin():
                             if not ident: 
                                 continue
                                 
-                            # --- CORRECTION DU BOGUE PNR VIDE ---
                             valeur_pnr = data.get('montant_pnr')
                             if valeur_pnr is None:
                                 valeur_pnr = 0.0
                             else:
                                 valeur_pnr = float(valeur_pnr)
                                 
-                            # Construction du Coffre Fourre-Tout
                             notes = ""
                             for col in df.columns:
                                 if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
                                     notes += f"- {col} : {str(row[col]).strip()}\n"
                             
-                            # Sauvegarde en base de données
                             exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
                             
                             if exist:
@@ -952,7 +942,6 @@ def page_integration_admin():
                                     if v is not None and v != "": 
                                         setattr(exist, k, v)
                                 
-                                # C'est un import Finance, on active le badge Finance
                                 exist.in_finance = "OUI"
                                 
                                 if notes: 
@@ -965,8 +954,6 @@ def page_integration_admin():
                                     
                                 data['type_dispositif'] = env
                                 data['est_nouveau'] = 'OUI'
-                                
-                                # C'est une création Finance, on active UNIQUEMENT le badge Finance
                                 data['in_finance'] = 'OUI'
                                 data['in_recouvrement'] = 'NON'
                                 
@@ -1012,7 +999,6 @@ def page_integration_admin():
                     with st.form("form_rec"):
                         c1, c2, c3 = st.columns(3)
                         
-                        # LES 20 COLONNES EXIGÉES EXACTEMENT
                         targets_rec = [
                             'identifiant', 'nom', 'prenom', 'date_naissance', 
                             'adresse', 'telephone', 'commune', 'daira', 
@@ -1029,7 +1015,6 @@ def page_integration_admin():
                                     if any(kw in clean_header(col) for kw in MAPPING_CONFIG_KEYWORDS[db_f]): 
                                         def_idx = i + 1
                                         break
-                            # CLE UNIQUE POUR LE DROPDOWN RECOUVREMENT
                             target_col = c1 if idx % 3 == 0 else c2 if idx % 3 == 1 else c3
                             with target_col: 
                                 mapping_rec[db_f] = st.selectbox(f"'{db_f}'", excel_cols, index=def_idx, key=f"map_rec_{db_f}")
@@ -1042,7 +1027,6 @@ def page_integration_admin():
                         c_new = 0
                         total_rows = len(df)
                         
-                        # --- LA BARRE DE PROGRESSION ---
                         with st.status("Importation Recouvrement en cours...", expanded=True) as status:
                             progress_bar = st.progress(0)
                             
@@ -1064,6 +1048,7 @@ def page_integration_admin():
                                 exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
                                 
                                 if exist:
+                                    # Mise à jour UNIQUEMENT de l'argent (on ne touche pas au gestionnaire)
                                     for db_f, xl_col in mapping_rec.items():
                                         if xl_col != "-- Ignorer --" and db_f != 'identifiant':
                                             val = row[xl_col]
@@ -1075,7 +1060,6 @@ def page_integration_admin():
                                             else:
                                                 setattr(exist, db_f, str(val).strip().upper())
                                                 
-                                    # On active le badge Recouvrement
                                     exist.in_recouvrement = "OUI"
                                                 
                                     if notes: 
@@ -1099,7 +1083,6 @@ def page_integration_admin():
                                                 data_new[db_f] = str(val).strip().upper()
                                             
                                     data_new['type_dispositif'] = env
-                                    # C'est une création Recouvrement, on active UNIQUEMENT le badge Recouvrement
                                     data_new['in_recouvrement'] = 'OUI' 
                                     data_new['in_finance'] = 'NON'      
                                     
