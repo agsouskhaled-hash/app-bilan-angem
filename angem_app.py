@@ -213,7 +213,7 @@ class Dossier(Base):
     prochaine_visite = Column(String, default="")
     est_nouveau = Column(String, default="NON")
     
-    # --- SYSTEME DE BADGES (Séparation Finance / Recouvrement) ---
+    # --- SYSTEME DE BADGES (SÉPARATION TOTALE) ---
     in_finance = Column(String, default="NON")
     in_recouvrement = Column(String, default="NON")
 
@@ -245,10 +245,6 @@ try:
         colonnes_float = ["apport_personnel", "total_echue", "credit_bancaire"]
         for col in colonnes_float: 
             conn.execute(text(f"ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS {col} FLOAT DEFAULT 0.0"))
-        
-        # Mettre à jour les anciens dossiers pour qu'ils s'affichent partout par défaut s'ils n'ont pas de badge
-        conn.execute(text("UPDATE dossiers SET in_finance='OUI' WHERE in_finance='' OR in_finance IS NULL"))
-        conn.execute(text("UPDATE dossiers SET in_recouvrement='OUI' WHERE in_recouvrement='' OR in_recouvrement IS NULL"))
         
         conn.commit()
 except Exception as e: 
@@ -685,6 +681,7 @@ def page_gestion(mode="financement", vue_admin=False):
     role = st.session_state.user['role']
     nom_agent = st.session_state.user['nom'].upper()
     
+    # --- LA RÈGLE DES BADGES POUR LA VUE ---
     colonne_badge = "in_finance" if mode == "financement" else "in_recouvrement"
     
     try: 
@@ -733,6 +730,7 @@ def page_gestion(mode="financement", vue_admin=False):
     except: 
         liste_agents = [""]
     
+    # --- CONFIGURATION DES COLONNES PAR RUBRIQUE ---
     if mode == "financement":
         cols = [
             "Ouvrir 📂", 
@@ -755,7 +753,7 @@ def page_gestion(mode="financement", vue_admin=False):
             "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA")
         }
     else:
-        # LES 7 COLONNES
+        # LES 7 COLONNES ULTRA-EPURÉES
         cols = [
             "Ouvrir 📂", 
             "identifiant", 
@@ -817,7 +815,7 @@ def page_gestion(mode="financement", vue_admin=False):
         session.close()
 
 # ==========================================
-# 8. MAPPING INTERACTIF, FOURRE-TOUT ET GESTIONNAIRES
+# 8. MAPPING INTERACTIF & SÉPARATION TOTALE (LE MUR DE BÉTON)
 # ==========================================
 def get_header_row(df_raw):
     for i in range(min(30, len(df_raw))):
@@ -831,7 +829,7 @@ def page_integration_admin():
     env = st.session_state.user['env']
     role = st.session_state.user['role']
     
-    st.title("⚙️ Intégration : Mapping & Fourre-Tout")
+    st.title("⚙️ Intégration : Mapping & Base Séparée")
     
     if role == "finance":
         tabs = st.tabs(["💰 IMPORT FINANCE (CRÉATION)"])
@@ -840,10 +838,10 @@ def page_integration_admin():
     else:
         t1, t2, t3, t4, t5 = st.tabs(["💰 IMPORT FINANCE", "📈 IMPORT RECOUVREMENT", "👥 MAJ GESTIONNAIRES", "🧹 DOUBLONS", "🔐 EQUIPES"])
     
-    # --- ONGLET 1 : IMPORTATION FINANCE ---
+    # --- ONGLET 1 : IMPORTATION FINANCE (ISOLÉ) ---
     with t1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        st.info("💡 **FINANCE (Création) :** Attribue le Gestionnaire et crée la fiche UNIQUEMENT pour la rubrique Finance.")
+        st.info("💡 **FINANCE :** Crée ou met à jour les fiches UNIQUEMENT pour la rubrique Finance.")
         f_fin = st.file_uploader("Fichier Finance", type=['xlsx', 'xls', 'csv'], key="ff")
         
         if f_fin:
@@ -886,7 +884,7 @@ def page_integration_admin():
                         with (c1 if idx % 2 == 0 else c2): 
                             mapping[db_f] = st.selectbox(f"Colonne pour '{db_f}'", excel_cols, index=def_idx, key=f"map_fin_{db_f}")
                             
-                    sub = st.form_submit_button("🚀 Créer les dossiers en base", type="primary")
+                    sub = st.form_submit_button("🚀 Créer les dossiers Finance", type="primary")
                 
                 if sub:
                     session = get_session()
@@ -935,14 +933,13 @@ def page_integration_admin():
                                 if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
                                     notes += f"- {col} : {str(row[col]).strip()}\n"
                             
-                            exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
+                            # RECHERCHE STRICTE SEULEMENT DANS LA FINANCE
+                            exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env, in_finance="OUI").first()
                             
                             if exist:
                                 for k, v in data.items():
                                     if v is not None and v != "": 
                                         setattr(exist, k, v)
-                                
-                                exist.in_finance = "OUI"
                                 
                                 if notes: 
                                     date_str = datetime.now().strftime('%d/%m/%Y')
@@ -955,7 +952,7 @@ def page_integration_admin():
                                 data['type_dispositif'] = env
                                 data['est_nouveau'] = 'OUI'
                                 data['in_finance'] = 'OUI'
-                                data['in_recouvrement'] = 'NON'
+                                data['in_recouvrement'] = 'NON' # MUR DE BETON : N'ira pas dans le Recouvrement
                                 
                                 if notes: 
                                     date_str = datetime.now().strftime('%d/%m/%Y')
@@ -966,14 +963,14 @@ def page_integration_admin():
                                 
                         session.commit()
                         session.close()
-                        status.update(label=f"✅ Terminé ! {c_add} créés, {c_upd} mis à jour.", state="complete")
+                        status.update(label=f"✅ Terminé ! {c_add} créés, {c_upd} mis à jour dans la vue Finance.", state="complete")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- ONGLET 2 : IMPORTATION RECOUVREMENT ---
+    # --- ONGLET 2 : IMPORTATION RECOUVREMENT (ISOLÉ) ---
     if t2:
         with t2:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.warning("🛡️ **RECOUVREMENT (MAJ) :** Lit vos 20 colonnes. Crée les nouveaux dossiers UNIQUEMENT dans la rubrique Recouvrement. Ne modifie JAMAIS le Gestionnaire.")
+            st.warning("🛡️ **RECOUVREMENT :** Crée ou met à jour des fiches séparées UNIQUEMENT pour la vue Recouvrement.")
             f_rec = st.file_uploader("Fichier Recouvrement", type=['xlsx', 'xls', 'csv'], key="fr")
             
             if f_rec:
@@ -1019,7 +1016,7 @@ def page_integration_admin():
                             with target_col: 
                                 mapping_rec[db_f] = st.selectbox(f"'{db_f}'", excel_cols, index=def_idx, key=f"map_rec_{db_f}")
                                 
-                        sub_rec = st.form_submit_button("🚀 Mettre à jour la base Recouvrement", type="primary")
+                        sub_rec = st.form_submit_button("🚀 Créer les dossiers Recouvrement", type="primary")
                     
                     if sub_rec:
                         session = get_session()
@@ -1045,10 +1042,10 @@ def page_integration_admin():
                                     if col not in mapped_cols and str(row[col]).strip() not in ["", "NAN", "None"]: 
                                         notes += f"- {col} : {str(row[col]).strip()}\n"
 
-                                exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
+                                # RECHERCHE STRICTE SEULEMENT DANS LE RECOUVREMENT
+                                exist = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env, in_recouvrement="OUI").first()
                                 
                                 if exist:
-                                    # Mise à jour UNIQUEMENT de l'argent (on ne touche pas au gestionnaire)
                                     for db_f, xl_col in mapping_rec.items():
                                         if xl_col != "-- Ignorer --" and db_f != 'identifiant':
                                             val = row[xl_col]
@@ -1059,8 +1056,6 @@ def page_integration_admin():
                                                 setattr(exist, db_f, clean_money(val))
                                             else:
                                                 setattr(exist, db_f, str(val).strip().upper())
-                                                
-                                    exist.in_recouvrement = "OUI"
                                                 
                                     if notes: 
                                         date_str = datetime.now().strftime('%d/%m/%Y')
@@ -1084,7 +1079,7 @@ def page_integration_admin():
                                             
                                     data_new['type_dispositif'] = env
                                     data_new['in_recouvrement'] = 'OUI' 
-                                    data_new['in_finance'] = 'NON'      
+                                    data_new['in_finance'] = 'NON' # MUR DE BETON : N'ira pas dans la Finance     
                                     
                                     if notes: 
                                         date_str = datetime.now().strftime('%d/%m/%Y')
@@ -1095,14 +1090,14 @@ def page_integration_admin():
                                     
                             session.commit()
                             session.close()
-                            status.update(label=f"✅ {c_upd} dossiers mis à jour, {c_new} nouveaux (Visibles uniquement Recouvrement).", state="complete")
+                            status.update(label=f"✅ {c_upd} dossiers mis à jour, {c_new} créés dans la vue Recouvrement.", state="complete")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- ONGLET 3 : MISE A JOUR DES GESTIONNAIRES ---
+    # --- ONGLET 3 : MISE A JOUR DES GESTIONNAIRES (LA PASSERELLE) ---
     if t3:
         with t3:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.warning("👥 **AFFECTATION DES DOSSIERS :** Importez un fichier avec (Identifiant, Nom, Prénom, Gestionnaire) pour assigner massivement les dossiers.")
+            st.warning("👥 **AFFECTATION DES DOSSIERS :** Cet outil assignera le gestionnaire sur TOUTES les fiches portant le même ID (Finance et Recouvrement).")
             f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx', 'xls', 'csv'], key="fgest")
             
             if f_gest:
@@ -1163,29 +1158,29 @@ def page_integration_admin():
                                     
                                 gest_propre = trouver_agent_intelligent(gest_brut, agents_db)
                                 
-                                # Recherche par ID d'abord
-                                dossier = None
+                                dossiers = []
                                 if ident:
-                                    dossier = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).first()
+                                    # On met à jour toutes les fiches (Finance ET Recouvrement)
+                                    dossiers = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).all()
                                 
-                                # Si pas trouvé par ID, on cherche par Nom et Prénom
-                                if not dossier and nom and prenom:
-                                    dossier = session.query(Dossier).filter_by(nom=nom, prenom=prenom, type_dispositif=env).first()
+                                if not dossiers and nom and prenom:
+                                    dossiers = session.query(Dossier).filter_by(nom=nom, prenom=prenom, type_dispositif=env).all()
                                     
-                                if dossier:
-                                    dossier.gestionnaire = gest_propre
-                                    c_affect += 1
+                                if dossiers:
+                                    for d in dossiers:
+                                        d.gestionnaire = gest_propre
+                                        c_affect += 1
                                     
                             session.commit()
                             session.close()
-                            status.update(label=f"✅ {c_affect} dossiers ont été affectés à un gestionnaire.", state="complete")
+                            status.update(label=f"✅ {c_affect} fiches ont reçu un gestionnaire.", state="complete")
             st.markdown("</div>", unsafe_allow_html=True)
 
     # --- ONGLET 4 : MAINTENANCE ---
     if t4:
         with t4:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            if st.button("🚨 Nettoyer Doublons Stricts (Même ID + Même OV)", type="primary"):
+            if st.button("🚨 Nettoyer Doublons Stricts", type="primary"):
                 session = get_session()
                 dossiers_db = session.query(Dossier).all()
                 
@@ -1194,32 +1189,35 @@ def page_integration_admin():
                         'id': d.id, 
                         'identifiant': str(d.identifiant).strip(), 
                         'ov': str(d.num_ordre_versement).strip(), 
-                        'type': d.type_dispositif
+                        'type': d.type_dispositif,
+                        'source_f': d.in_finance,
+                        'source_r': d.in_recouvrement
                     } 
                     for d in dossiers_db
                 ])
                 df_dup = df_dup[df_dup['identifiant'] != ""]
                 
                 if not df_dup.empty:
-                    ids_to_keep = df_dup.groupby(['identifiant', 'ov', 'type'])['id'].max().tolist()
+                    # Ne supprime les doublons que s'ils sont dans le MÊME compartiment
+                    ids_to_keep = df_dup.groupby(['identifiant', 'ov', 'type', 'source_f', 'source_r'])['id'].max().tolist()
                     ids_del = df_dup[~df_dup['id'].isin(ids_to_keep)]['id'].tolist()
                     
                     if ids_del: 
                         session.query(Dossier).filter(Dossier.id.in_(ids_del)).delete(synchronize_session=False)
                         session.commit()
-                        st.success(f"Opération réussie. {len(ids_del)} doublons ont été supprimés.")
+                        st.success(f"Opération réussie. {len(ids_del)} doublons effacés.")
                     else: 
-                        st.info("La base est propre. Aucun doublon détecté.")
+                        st.info("La base est propre. Aucun doublon détecté dans les compartiments.")
                 session.close()
                 
             st.markdown("---")
-            st.error("⚠️ Zone de Danger")
+            st.error("⚠️ Zone de Danger Absolue")
             if st.button("🗑️ FORMATER TOTALEMENT LA BASE DE DONNÉES"):
                 session = get_session()
                 session.query(Dossier).delete()
                 session.commit()
                 session.close()
-                st.success("La base a été entièrement vidée.")
+                st.success("La base a été entièrement vidée. Toutes les fiches sont effacées.")
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1294,7 +1292,7 @@ def page_supervision():
         
     c1, c2, c3, c4 = st.columns(4)
     with c1: 
-        st.markdown(f"<div class='metric-card'><div class='metric-info'><div class='metric-label'>Total Dossiers</div><div class='metric-value'>{len(df)}</div></div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-info'><div class='metric-label'>Total Fiches Créées</div><div class='metric-value'>{len(df)}</div></div></div>", unsafe_allow_html=True)
     with c2: 
         st.markdown(f"<div class='metric-card'><div class='metric-info'><div class='metric-label'>PNR Engagé</div><div class='metric-value'>{df['montant_pnr'].astype(float).sum():,.0f} DA</div></div></div>", unsafe_allow_html=True)
     with c3: 
