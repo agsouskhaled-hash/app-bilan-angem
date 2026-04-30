@@ -691,7 +691,7 @@ def page_gestion(mode="financement", vue_admin=False):
     if st.session_state.search_query: 
         df = df[df.apply(lambda x: x.astype(str).str.contains(st.session_state.search_query, case=False).any(), axis=1)]
         
-    # --- LE FILTRE INTELLIGENT (TOLÉRANCE MME, MR, ESPACES) ---
+    # --- LE FILTRE INTELLIGENT (CORRIGÉ POUR IGNORER LES VIDES) ---
     if not vue_admin and role == "agent": 
         nom_connecte = nom_agent.strip().upper()
         
@@ -699,12 +699,16 @@ def page_gestion(mode="financement", vue_admin=False):
             nom_propre = str(nom_db).strip().upper()
             agent_propre = nom_connecte
             
+            # SECURITE : Si la case "Gestionnaire" est vide dans la DB, on cache le dossier immédiatement
+            if not nom_propre:
+                return False
+                
             parasites = ["MME ", "M. ", "MR ", "MLLE ", "MELLE ", "MME. ", "MR. "]
             for p in parasites:
                 nom_propre = nom_propre.replace(p, "").strip()
                 agent_propre = agent_propre.replace(p, "").strip()
                 
-            if agent_propre and (agent_propre in nom_propre or nom_propre in agent_propre):
+            if agent_propre and nom_propre and (agent_propre in nom_propre or nom_propre in agent_propre):
                 return True
             return False
             
