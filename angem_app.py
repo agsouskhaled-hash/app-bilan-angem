@@ -248,7 +248,7 @@ try:
         
         conn.commit()
 except Exception as e: 
-    print("Erreur silencieuse migration DB :", e)
+    pass
 
 def get_session(): 
     return Session()
@@ -265,7 +265,6 @@ def init_db_users():
             role="admin"
         ))
     else:
-        # FORCE LE MOT DE PASSE EN CAS D'ERREUR PRECEDENTE
         admin_exist.mot_de_passe = "angem"
         
     finance_exist = session.query(UtilisateurAuth).filter_by(identifiant="finance").first()
@@ -277,7 +276,6 @@ def init_db_users():
             role="finance"
         ))
     else:
-        # FORCE LE MOT DE PASSE EN CAS D'ERREUR PRECEDENTE
         finance_exist.mot_de_passe = "angem"
         
     session.commit()
@@ -326,7 +324,6 @@ COLONNES_ARGENT = [
     'credit_bancaire'
 ]
 
-# --- FONCTION INDESTRUCTIBLE POUR LIRE LES EXCEL/CSV CORROMPUS ---
 def safe_read_dataframe(file_obj):
     if file_obj.name.lower().endswith('.csv'):
         try:
@@ -403,49 +400,36 @@ def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
     pdf.add_page()
     
-    # Titre
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 15, "FICHE OFFICIELLE PROMOTEUR - ANGEM", ln=True, align='C')
     
-    # Bloc 1 : Identification
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "1. IDENTIFICATION", border=1, ln=True, fill=True)
-    
     pdf.set_font("Arial", '', 10)
     pdf.cell(95, 8, f"ID : {clean_pdf_text(dos.identifiant)}", border='L')
     pdf.cell(95, 8, f"Agent : {clean_pdf_text(dos.gestionnaire)}", border='R', ln=True)
-    
     pdf.cell(95, 8, f"Nom : {clean_pdf_text(dos.nom)} {clean_pdf_text(dos.prenom)}", border='L')
     pdf.cell(95, 8, f"Tel : {clean_pdf_text(dos.telephone)}", border='R', ln=True)
-    
     pdf.cell(0, 8, f"Adresse : {clean_pdf_text(dos.adresse)} - {clean_pdf_text(dos.commune)}", border='LRB', ln=True)
     pdf.ln(3)
     
-    # Bloc 2 : Financement
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "2. FINANCEMENT", border=1, ln=True, fill=True)
-    
     pdf.set_font("Arial", '', 10)
     pdf.cell(95, 8, f"Dispositif : {clean_pdf_text(dos.type_dispositif)}", border='L')
     pdf.cell(95, 8, f"Banque : {clean_pdf_text(dos.banque_nom)}", border='R', ln=True)
-    
     pdf.cell(95, 8, f"Activite : {clean_pdf_text(dos.activite)}", border='L')
     pdf.cell(95, 8, f"Num OV : {clean_pdf_text(dos.num_ordre_versement)}", border='R', ln=True)
-    
     pdf.cell(0, 8, f"Credit PNR : {dos.montant_pnr:,.0f} DA", border='LRB', ln=True)
     pdf.ln(3)
     
-    # Bloc 3 : Recouvrement
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "3. RECOUVREMENT", border=1, ln=True, fill=True)
-    
     pdf.set_font("Arial", '', 10)
     pdf.cell(95, 8, f"Rembourse : {dos.montant_rembourse:,.0f} DA", border='L')
     pdf.cell(95, 8, f"Reste : {dos.reste_rembourser:,.0f} DA", border='R', ln=True)
-    
     pdf.cell(95, 8, f"Ech. Tombees : {clean_pdf_text(dos.nb_echeance_tombee)} ({clean_pdf_text(dos.date_ech_tomb)})", border='L')
     pdf.cell(95, 8, f"Echue : {dos.total_echue:,.0f} DA", border='R', ln=True)
-    
     pdf.cell(0, 8, f"Etat : {clean_pdf_text(dos.etat_dette)} | Prochaine : {clean_pdf_text(dos.prochaine_ech)}", border='LRB', ln=True)
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -456,16 +440,13 @@ def generer_fiche_promoteur_pdf(dos):
 def generer_rapport_global_pdf(df):
     pdf = FPDF()
     pdf.add_page()
-    
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 20, "ETAT GLOBAL DES DOSSIERS", ln=True, align='C')
-    
     pdf.set_font("Arial", '', 12)
     pdf.cell(0, 10, f"Total Dossiers : {len(df)}", ln=True)
     pdf.cell(0, 10, f"PNR Engage : {df['montant_pnr'].astype(float).sum():,.0f} DA", ln=True)
     pdf.cell(0, 10, f"Total Recouvre : {df['montant_rembourse'].astype(float).sum():,.0f} DA", ln=True)
     pdf.cell(0, 10, f"Reste a Recouvrer : {df['reste_rembourser'].astype(float).sum():,.0f} DA", ln=True)
-    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f:
@@ -474,19 +455,15 @@ def generer_rapport_global_pdf(df):
 def generer_creances_pdf(df):
     pdf = FPDF()
     pdf.add_page()
-    
     pdf.set_font("Arial", 'B', 16)
     pdf.set_text_color(200, 0, 0)
     pdf.cell(0, 20, "DOSSIERS EN SOUFFRANCE", ln=True, align='C')
     pdf.set_text_color(0, 0, 0)
-    
     df_retard = df[df.apply(calculer_alerte_bool, axis=1)]
     pdf.set_font("Arial", '', 10)
-    
     for _, row in df_retard.iterrows():
         texte = f"ID: {row['identifiant']} | Nom: {clean_pdf_text(row['nom'])} | Reste: {row['reste_rembourser']:,.0f} DA | Agent: {clean_pdf_text(row['gestionnaire'])}"
         pdf.cell(0, 8, texte, ln=True, border='B')
-        
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
         with open(tmp.name, "rb") as f:
@@ -612,7 +589,6 @@ def afficher_profil_complet(dos_db, session):
         </div>
         """, unsafe_allow_html=True)
         
-        # --- BARRE DE PROGRESSION ---
         st.progress(min(taux, 1.0))
         st.caption(f"Progression du remboursement : {taux*100:.1f}%")
     
@@ -632,7 +608,6 @@ def afficher_profil_complet(dos_db, session):
     with col_g:
         st.markdown("<div class='modern-card'>### 📝 Historique & Observations", unsafe_allow_html=True)
         
-        # Affiche la colonne 'observations' de l'Excel si remplie
         if dos_db.observations:
             st.info(f"**Obs Excel :** {dos_db.observations}")
             
@@ -681,7 +656,6 @@ def page_gestion(mode="financement", vue_admin=False):
     role = st.session_state.user['role']
     nom_agent = st.session_state.user['nom'].upper()
     
-    # --- LA RÈGLE DES BADGES POUR LA VUE ---
     colonne_badge = "in_finance" if mode == "financement" else "in_recouvrement"
     
     try: 
@@ -717,8 +691,24 @@ def page_gestion(mode="financement", vue_admin=False):
     if st.session_state.search_query: 
         df = df[df.apply(lambda x: x.astype(str).str.contains(st.session_state.search_query, case=False).any(), axis=1)]
         
+    # --- LE FILTRE INTELLIGENT (TOLÉRANCE MME, MR, ESPACES) ---
     if not vue_admin and role == "agent": 
-        df = df[df['gestionnaire'].str.upper() == nom_agent]
+        nom_connecte = nom_agent.strip().upper()
+        
+        def filtre_tolerant(nom_db):
+            nom_propre = str(nom_db).strip().upper()
+            agent_propre = nom_connecte
+            
+            parasites = ["MME ", "M. ", "MR ", "MLLE ", "MELLE ", "MME. ", "MR. "]
+            for p in parasites:
+                nom_propre = nom_propre.replace(p, "").strip()
+                agent_propre = agent_propre.replace(p, "").strip()
+                
+            if agent_propre and (agent_propre in nom_propre or nom_propre in agent_propre):
+                return True
+            return False
+            
+        df = df[df['gestionnaire'].apply(filtre_tolerant)]
 
     df.insert(0, "Ouvrir 📂", False)
     
@@ -730,7 +720,6 @@ def page_gestion(mode="financement", vue_admin=False):
     except: 
         liste_agents = [""]
     
-    # --- CONFIGURATION DES COLONNES PAR RUBRIQUE ---
     if mode == "financement":
         cols = [
             "Ouvrir 📂", 
@@ -753,7 +742,6 @@ def page_gestion(mode="financement", vue_admin=False):
             "montant_pnr": st.column_config.NumberColumn("PNR Débloqué", format="%d DA")
         }
     else:
-        # LES 7 COLONNES ULTRA-EPURÉES
         cols = [
             "Ouvrir 📂", 
             "identifiant", 
@@ -815,7 +803,7 @@ def page_gestion(mode="financement", vue_admin=False):
         session.close()
 
 # ==========================================
-# 8. MAPPING INTERACTIF & SÉPARATION TOTALE (LE MUR DE BÉTON)
+# 8. MAPPING INTERACTIF & SÉPARATION TOTALE
 # ==========================================
 def get_header_row(df_raw):
     for i in range(min(30, len(df_raw))):
@@ -952,7 +940,7 @@ def page_integration_admin():
                                 data['type_dispositif'] = env
                                 data['est_nouveau'] = 'OUI'
                                 data['in_finance'] = 'OUI'
-                                data['in_recouvrement'] = 'NON' # MUR DE BETON : N'ira pas dans le Recouvrement
+                                data['in_recouvrement'] = 'NON'
                                 
                                 if notes: 
                                     date_str = datetime.now().strftime('%d/%m/%Y')
@@ -1079,7 +1067,7 @@ def page_integration_admin():
                                             
                                     data_new['type_dispositif'] = env
                                     data_new['in_recouvrement'] = 'OUI' 
-                                    data_new['in_finance'] = 'NON' # MUR DE BETON : N'ira pas dans la Finance     
+                                    data_new['in_finance'] = 'NON'     
                                     
                                     if notes: 
                                         date_str = datetime.now().strftime('%d/%m/%Y')
@@ -1093,7 +1081,7 @@ def page_integration_admin():
                             status.update(label=f"✅ {c_upd} dossiers mis à jour, {c_new} créés dans la vue Recouvrement.", state="complete")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- ONGLET 3 : MISE A JOUR DES GESTIONNAIRES (LA PASSERELLE) ---
+    # --- ONGLET 3 : MISE A JOUR DES GESTIONNAIRES ---
     if t3:
         with t3:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -1160,7 +1148,6 @@ def page_integration_admin():
                                 
                                 dossiers = []
                                 if ident:
-                                    # On met à jour toutes les fiches (Finance ET Recouvrement)
                                     dossiers = session.query(Dossier).filter_by(identifiant=ident, type_dispositif=env).all()
                                 
                                 if not dossiers and nom and prenom:
@@ -1198,7 +1185,6 @@ def page_integration_admin():
                 df_dup = df_dup[df_dup['identifiant'] != ""]
                 
                 if not df_dup.empty:
-                    # Ne supprime les doublons que s'ils sont dans le MÊME compartiment
                     ids_to_keep = df_dup.groupby(['identifiant', 'ov', 'type', 'source_f', 'source_r'])['id'].max().tolist()
                     ids_del = df_dup[~df_dup['id'].isin(ids_to_keep)]['id'].tolist()
                     
@@ -1207,7 +1193,7 @@ def page_integration_admin():
                         session.commit()
                         st.success(f"Opération réussie. {len(ids_del)} doublons effacés.")
                     else: 
-                        st.info("La base est propre. Aucun doublon détecté dans les compartiments.")
+                        st.info("La base est propre. Aucun doublon détecté.")
                 session.close()
                 
             st.markdown("---")
