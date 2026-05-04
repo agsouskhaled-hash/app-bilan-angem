@@ -965,15 +965,42 @@ def page_gestion(mode="financement", vue_admin=False):
         q = st.session_state.search_query
         df = df[df.apply(lambda x: x.astype(str).str.contains(q, case=False).any(), axis=1)]
 
-    # Filtre agent
+    # Filtre agent — matching robuste par tokens
     if not vue_admin and role == "agent":
-        def filtre_tolerant(nom_db):
-            nom_propre = re.sub(r'(MME|MR|M\.|MLLE|MELLE)\.?\s*', '', str(nom_db).strip().upper())
-            agent_propre = re.sub(r'(MME|MR|M\.|MLLE|MELLE)\.?\s*', '', nom_agent)
-            if not nom_propre:
+        def filtre_agent_robuste(nom_db):
+            """
+            Compare les tokens du nom DB vs nom de connexion.
+            Ex: 'MME BENALI FATIMA' matche avec 'Fatima Benali'
+            car les tokens {BENALI, FATIMA} ont une intersection.
+            Un seul token commun suffit (le nom de famille).
+            """
+            prefixes = r'(MME|MR|M\.|MLLE|MELLE|MR\.|DR|PR)\.?\s*'
+            def tokeniser(s):
+                s = re.sub(prefixes, '', str(s).strip().upper())
+                s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+                tokens = set(re.split(r'[\s\-_\./]+', s))
+                tokens -= {'', 'NAN', 'NONE', 'NON', '-', 'N/A'}
+                tokens = {t for t in tokens if len(t) > 1}
+                return tokens
+
+            tokens_db    = tokeniser(nom_db)
+            tokens_agent = tokeniser(nom_agent)
+            if not tokens_db or not tokens_agent:
                 return False
-            return agent_propre in nom_propre or nom_propre in agent_propre
-        df = df[df['gestionnaire'].apply(filtre_tolerant)]
+            return len(tokens_db & tokens_agent) >= 1
+
+        df_filtre = df[df['gestionnaire'].apply(filtre_agent_robuste)]
+
+        # Diagnostic si 0 résultats
+        if df_filtre.empty and not df.empty:
+            with st.expander("⚠️ Aucun dossier trouvé à votre nom — Diagnostic", expanded=True):
+                st.warning(f"Votre nom de connexion : **{nom_agent}**")
+                st.info("Noms de gestionnaires dans la base :")
+                noms = [n for n in df['gestionnaire'].dropna().unique().tolist()
+                        if str(n).strip() not in ('', 'NAN')]
+                st.write(noms[:30] if noms else "Aucun gestionnaire assigné.")
+                st.caption("👉 Demandez à l'admin de corriger l'orthographe de votre nom dans l'Excel importé.")
+        df = df_filtre
 
     df.insert(0, "Ouvrir 📂", False)
 
@@ -1341,34 +1368,105 @@ def page_supervision():
 def page_corbeille():
     env   = st.session_state.user['env']
     agent = st.session_state.user['nom']
-    daira = st.session_state.user.get('daira', '')
-    if not daira:
-        st.warning("Vous n'avez pas de Daïra assignée.")
-        return
+    daira = st.session_state.user.get('daira', '').strip()
+
+    st.title("🗑️ Corbeille — Dossiers non assignés")
+
     try:
         with engine.connect() as conn:
-            df = pd.read_sql_query(text("SELECT * FROM dossiers WHERE type_dispositif=:env"), conn, params={"env": env}).fillna('')
+            df = pd.read_sql_query(
+                text("SELECT * FROM dossiers WHERE type_dispositif=:env ORDER BY id DESC"),
+                conn, params={"env": env}
+            ).fillna('')
     except Exception:
         df = pd.DataFrame()
 
-    mask_vide  = df['gestionnaire'].str.strip() == ""
-    mask_daira = df['daira'].str.contains(daira, case=False) | df['commune'].str.contains(daira, case=False)
-    orphans = df[mask_vide & mask_daira].copy()
+    if df.empty:
+        st.info("La base est vide.")
+        return
 
-    st.markdown(f"<div class='modern-card'><h3 style='text-align:center;'>Dossiers non assignés à {daira} : {len(orphans)}</h3></div>", unsafe_allow_html=True)
+    # Dossiers non assignés : gestionnaire vide/NAN/tiret
+    def est_non_assigne(val):
+        return str(val).strip().upper() in ('', 'NAN', 'NONE', 'NON', '-', 'N/A')
 
-    if not orphans.empty:
-        orphans["C'est à moi !"] = False
-        ed = st.data_editor(orphans[["C'est à moi !", "identifiant", "nom", "prenom", "commune", "id"]],
-                            hide_index=True, column_config={"id": None, "C'est à moi !": st.column_config.CheckboxColumn(default=False)})
-        ids = ed[ed["C'est à moi !"] == True]['id'].tolist()
-        if st.button(f"📥 S'attribuer {len(ids)} dossier(s)", type="primary") and ids:
-            with get_session() as session:
-                session.query(Dossier).filter(Dossier.id.in_(ids)).update({"gestionnaire": agent.upper()}, synchronize_session=False)
-            st.success("Dossiers récupérés.")
-            st.rerun()
+    df_non_assignes = df[df['gestionnaire'].apply(est_non_assigne)].copy()
+
+    if df_non_assignes.empty:
+        st.success("✅ Tous les dossiers sont assignés. Aucune corbeille.")
+        return
+
+    # Filtre zone : dossier de la même daïra OU sans zone définie
+    if daira:
+        def dossier_de_ma_zone(row):
+            daira_dos   = str(row.get('daira',   '')).strip().upper()
+            commune_dos = str(row.get('commune', '')).strip().upper()
+            ma_daira    = daira.strip().upper()
+            if ma_daira in daira_dos or ma_daira in commune_dos:
+                return True
+            # Dossier sans zone → visible pour tous
+            if not daira_dos and not commune_dos:
+                return True
+            return False
+        orphans = df_non_assignes[df_non_assignes.apply(dossier_de_ma_zone, axis=1)].copy()
     else:
-        st.success("Aucun dossier orphelin dans votre secteur.")
+        # Pas de daïra → l'agent voit tout
+        st.warning("⚠️ Vous n'avez pas de Daïra assignée. Vous voyez tous les dossiers non assignés.")
+        orphans = df_non_assignes.copy()
+
+    nb_sans_zone = len(df_non_assignes[
+        df_non_assignes.apply(
+            lambda r: not str(r.get('daira','')).strip() and not str(r.get('commune','')).strip(), axis=1)
+    ])
+
+    # Métriques
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total non assignés (base)", len(df_non_assignes))
+    c2.metric(f"Dans votre zone ({daira or 'toutes'})", len(orphans))
+    c3.metric("Sans zone définie", nb_sans_zone)
+
+    if orphans.empty:
+        st.success(f"✅ Aucun dossier orphelin dans votre secteur ({daira}).")
+        return
+
+    # Recherche dans la corbeille
+    rech = st.text_input("🔍 Filtrer...", placeholder="Nom, ID, commune...")
+    if rech:
+        orphans = orphans[orphans.apply(
+            lambda x: x.astype(str).str.contains(rech, case=False).any(), axis=1)]
+
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    orphans_aff = orphans.copy()
+    orphans_aff["✅ C'est le mien !"] = False
+    cols_aff = [c for c in ["✅ C'est le mien !", "identifiant", "nom", "prenom",
+                             "activite", "commune", "daira", "montant_pnr", "id"]
+                if c in orphans_aff.columns or c == "✅ C'est le mien !"]
+
+    ed = st.data_editor(
+        orphans_aff[cols_aff], hide_index=True, use_container_width=True, height=500,
+        column_config={
+            "id": None,
+            "✅ C'est le mien !": st.column_config.CheckboxColumn("Prendre", default=False),
+            "montant_pnr": st.column_config.NumberColumn("PNR (DA)", format="%d DA"),
+        }
+    )
+    ids_sel = ed[ed["✅ C'est le mien !"] == True]['id'].tolist()
+
+    col_b1, col_b2 = st.columns([2, 1])
+    with col_b1:
+        if ids_sel:
+            st.info(f"**{len(ids_sel)} dossier(s) sélectionné(s)**")
+        else:
+            st.caption("Cochez les dossiers à prendre en charge.")
+    with col_b2:
+        if st.button(f"📥 M'attribuer {len(ids_sel)} dossier(s)", type="primary",
+                     use_container_width=True, disabled=(len(ids_sel) == 0)):
+            with get_session() as session:
+                session.query(Dossier).filter(Dossier.id.in_(ids_sel)).update(
+                    {"gestionnaire": agent.strip().upper(), "est_nouveau": "NON"},
+                    synchronize_session=False)
+            st.success(f"✅ {len(ids_sel)} dossier(s) attribué(s) à {agent}.")
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
 # 18. ROUTEUR PRINCIPAL
