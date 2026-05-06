@@ -221,63 +221,237 @@ else:
     theme_color, theme_bg = "#2c3e50", "#f8f9fa"
 
 st.markdown(f"""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-    .stApp {{ background-color:{theme_bg}; font-family:'Segoe UI',sans-serif; }}
+    :root {{
+        --primary: {theme_color};
+        --bg: {theme_bg};
+        --surface: #ffffff;
+        --surface-2: #f8fafc;
+        --text: #0f172a;
+        --text-muted: #64748b;
+        --border: #e2e8f0;
+        --success: #10b981;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --accent: #0ea5e9;
+    }}
+
+    * {{ font-family: 'Manrope', -apple-system, sans-serif; }}
+    h1, h2, h3, h4 {{ font-family: 'Outfit', sans-serif; letter-spacing: -0.02em; }}
+
+    .stApp {{
+        background:
+            radial-gradient(circle at 0% 0%, rgba(31,119,180,0.04) 0%, transparent 50%),
+            radial-gradient(circle at 100% 100%, rgba(40,167,69,0.04) 0%, transparent 50%),
+            var(--bg);
+    }}
+
     .modern-card {{
-        background:#fff; padding:25px; border-radius:16px;
-        box-shadow:0 8px 24px rgba(0,0,0,0.04); margin:15px 0 25px;
-        border:1px solid #edf2f7; border-top:4px solid {theme_color};
+        background: var(--surface);
+        padding: 28px;
+        border-radius: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 8px 24px rgba(0,0,0,0.04);
+        margin: 16px 0 24px;
+        border: 1px solid var(--border);
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(.4,0,.2,1);
     }}
+    .modern-card::before {{
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, var(--primary), var(--accent));
+    }}
+    .modern-card:hover {{ transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.04), 0 16px 40px rgba(0,0,0,0.08); }}
+
     .metric-card {{
-        background:#fff; border-radius:16px; padding:20px;
-        box-shadow:0 4px 15px rgba(0,0,0,0.03); border-left:6px solid {theme_color};
-        display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;
+        background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+        border-radius: 16px;
+        padding: 22px;
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        margin-bottom: 16px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.25s ease;
     }}
-    .metric-value {{ font-size:26px; font-weight:800; color:#1e293b; margin-top:5px; }}
-    .metric-label {{ font-size:13px; color:#64748b; text-transform:uppercase; font-weight:700; }}
-    .metric-danger {{ border-left-color:#ef4444; }}
+    .metric-card:hover {{ transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }}
+    .metric-card::after {{
+        content: '';
+        position: absolute;
+        right: -20px; top: -20px;
+        width: 80px; height: 80px;
+        background: var(--primary);
+        opacity: 0.06;
+        border-radius: 50%;
+    }}
+
+    .metric-value {{
+        font-family: 'Outfit', sans-serif;
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--text);
+        letter-spacing: -0.03em;
+        margin-top: 4px;
+    }}
+    .metric-label {{
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+    }}
+    .metric-danger {{ background: linear-gradient(135deg, #fef2f2 0%, #fff 100%); border-color: #fecaca; }}
+    .metric-danger::after {{ background: var(--danger); }}
+
     .profil-header {{
-        background:linear-gradient(135deg,#fff 0%,#f8fafc 100%);
-        padding:25px; border-radius:12px; border-left:8px solid {theme_color};
-        margin-bottom:15px; box-shadow:0 4px 15px rgba(0,0,0,0.05);
+        background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+        padding: 28px;
+        border-radius: 20px;
+        border-left: 6px solid var(--primary);
+        margin-bottom: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }}
-    .block-finance {{ background:#eff6ff; border-left:5px solid #3b82f6; padding:15px; border-radius:8px; margin-bottom:15px; }}
-    .block-recouvrement {{ background:#f0fdf4; border-left:5px solid #22c55e; padding:15px; border-radius:8px; margin-bottom:15px; }}
-    .block-dynamique {{ background:#fefce8; border-left:5px solid #eab308; padding:15px; border-radius:8px; margin-bottom:15px; }}
-    .block-title {{ font-weight:bold; color:#1e293b; margin-bottom:10px; font-size:16px; text-transform:uppercase; }}
+    .profil-header h2 {{ margin: 0; font-size: 26px; font-weight: 700; color: var(--text); }}
+
+    .block-finance, .block-recouvrement, .block-dynamique {{
+        padding: 18px 20px;
+        border-radius: 14px;
+        margin-bottom: 14px;
+        border: 1px solid var(--border);
+    }}
+    .block-finance {{ background: linear-gradient(135deg, #eff6ff 0%, #fff 100%); border-left: 4px solid #3b82f6; }}
+    .block-recouvrement {{ background: linear-gradient(135deg, #f0fdf4 0%, #fff 100%); border-left: 4px solid #10b981; }}
+    .block-dynamique {{ background: linear-gradient(135deg, #fefce8 0%, #fff 100%); border-left: 4px solid #eab308; }}
+    .block-title {{
+        font-family: 'Outfit', sans-serif;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 12px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }}
+
     .btn-action {{
-        flex:1; min-width:160px; padding:12px 20px; border-radius:10px;
-        font-weight:bold; text-align:center; color:white !important;
-        transition:all 0.3s; box-shadow:0 4px 6px rgba(0,0,0,0.1);
-        display:inline-flex; align-items:center; justify-content:center;
-        gap:8px; font-size:15px; text-decoration:none; margin:4px;
+        flex: 1;
+        min-width: 150px;
+        padding: 13px 22px;
+        border-radius: 12px;
+        font-weight: 600;
+        text-align: center;
+        color: white !important;
+        transition: all 0.25s cubic-bezier(.4,0,.2,1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 14px;
+        text-decoration: none;
+        margin: 4px;
     }}
-    .btn-call {{ background:#3b82f6; }} .btn-wa {{ background:#22c55e; }} .btn-maps {{ background:#ef4444; }}
+    .btn-action:hover {{ transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.15); }}
+    .btn-call {{ background: linear-gradient(135deg, #3b82f6, #2563eb); }}
+    .btn-wa {{ background: linear-gradient(135deg, #22c55e, #16a34a); }}
+    .btn-maps {{ background: linear-gradient(135deg, #ef4444, #dc2626); }}
+
     .badge-nouveau {{
-        background:#dc2626; color:white; border-radius:20px;
-        padding:2px 10px; font-size:11px; font-weight:700;
-        display:inline-block; animation:pulse 1.5s infinite;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+        border-radius: 999px;
+        padding: 4px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        display: inline-block;
+        animation: pulse 1.8s infinite;
+        box-shadow: 0 2px 8px rgba(239,68,68,0.3);
     }}
-    @keyframes pulse {{ 0%,100% {{ opacity:1; }} 50% {{ opacity:0.6; }} }}
+    @keyframes pulse {{
+        0%,100% {{ opacity: 1; transform: scale(1); }}
+        50% {{ opacity: 0.85; transform: scale(0.96); }}
+    }}
+
     .alerte-nouveau {{
-        background:#f0fdf4; border-left:6px solid #22c55e;
-        padding:15px 20px; border-radius:8px; color:#15803d;
-        font-weight:600; margin-bottom:20px;
+        background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+        border-left: 5px solid #10b981;
+        padding: 16px 22px;
+        border-radius: 12px;
+        color: #065f46;
+        font-weight: 600;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(16,185,129,0.08);
     }}
+
     .import-rapide-box {{
-        background:linear-gradient(135deg,#1e3a5f,#2563eb);
-        padding:20px; border-radius:14px; color:white; margin-bottom:20px;
+        background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+        padding: 24px;
+        border-radius: 18px;
+        color: white;
+        margin-bottom: 24px;
+        box-shadow: 0 10px 40px rgba(37,99,235,0.25);
+        position: relative;
+        overflow: hidden;
     }}
+    .import-rapide-box::before {{
+        content: '';
+        position: absolute;
+        top: -50%; right: -10%;
+        width: 300px; height: 300px;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        border-radius: 50%;
+    }}
+
     .agent-card {{
-        background:#fff; border-radius:16px; padding:20px; text-align:center;
-        border:2px solid #edf2f7; margin-bottom:15px;
-        box-shadow:0 4px 12px rgba(0,0,0,0.05); transition:all 0.2s;
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 24px;
+        text-align: center;
+        border: 2px solid var(--border);
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        transition: all 0.3s cubic-bezier(.4,0,.2,1);
     }}
-    .bilan-card {{
-        background:#fff; border-radius:12px; padding:18px;
-        border-left:5px solid {theme_color}; margin-bottom:12px;
-        box-shadow:0 2px 8px rgba(0,0,0,0.04);
+    .agent-card:hover {{ transform: translateY(-4px); border-color: var(--primary); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }}
+
+    .stat-agent-card {{
+        background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+        border-radius: 14px;
+        padding: 18px;
+        text-align: center;
+        border: 1px solid var(--border);
+        transition: all 0.2s ease;
     }}
+    .stat-agent-card:hover {{ transform: translateY(-2px); }}
+    .stat-icon {{ font-size: 22px; margin-bottom: 6px; }}
+    .stat-val {{ font-family: 'Outfit', sans-serif; font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; }}
+    .stat-lbl {{ font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.08em; margin-top: 2px; }}
+
+    /* Streamlit overrides */
+    .stButton > button {{
+        border-radius: 12px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        border: 1px solid var(--border);
+    }}
+    .stButton > button:hover {{ transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }}
+    .stTextInput > div > div > input, .stSelectbox > div > div {{ border-radius: 12px !important; }}
+    [data-testid="stMetric"] {{
+        background: var(--surface);
+        padding: 18px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }}
+    [data-testid="stMetricValue"] {{ font-family: 'Outfit', sans-serif; font-weight: 800; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -897,28 +1071,55 @@ def page_gestion(mode="financement", vue_admin=False):
         return
 
     if role == 'agent':
-        if role == 'agent':
-    nvx = len(df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80) & (df['est_nouveau'] == 'OUI')])
-    if nvx > 0:
-        st.markdown(f"<div class='alerte-nouveau'>🎉 {nvx} nouveau(x) dossier(s) vous ont été affectés !</div>", unsafe_allow_html=True)
-
-    # ✅ STATISTIQUES AGENT
-    df_agent = df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80)]
-    total_dos   = len(df_agent)
-    total_pnr   = df_agent['montant_pnr'].astype(float).sum()
-    total_remb  = df_agent['montant_rembourse'].astype(float).sum()
-    total_reste = df_agent['reste_rembourser'].astype(float).sum()
-    taux        = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("📂 Mes Dossiers", total_dos)
-    c2.metric("💰 PNR Total", f"{total_pnr:,.0f} DA")
-    c3.metric("✅ Recouvré", f"{total_remb:,.0f} DA")
-    c4.metric("⏳ Reste", f"{total_reste:,.0f} DA")
-    c5.metric("📈 Taux", f"{taux:.1f}%")
-    st.progress(min(taux / 100, 1.0))
+        nvx = len(df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80) & (df['est_nouveau'] == 'OUI')])
         if nvx > 0:
             st.markdown(f"<div class='alerte-nouveau'>🎉 {nvx} nouveau(x) dossier(s) vous ont été affectés !</div>", unsafe_allow_html=True)
+
+        # ✅ STATISTIQUES PERSONNELLES DE L'AGENT
+        df_agent_stats = df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80)]
+        try:
+            df_agent_stats['montant_pnr']        = pd.to_numeric(df_agent_stats['montant_pnr'], errors='coerce').fillna(0.0)
+            df_agent_stats['montant_rembourse']  = pd.to_numeric(df_agent_stats['montant_rembourse'], errors='coerce').fillna(0.0)
+            df_agent_stats['reste_rembourser']   = pd.to_numeric(df_agent_stats['reste_rembourser'], errors='coerce').fillna(0.0)
+        except Exception:
+            pass
+        nb_dos     = len(df_agent_stats)
+        tot_pnr    = float(df_agent_stats['montant_pnr'].sum()) if 'montant_pnr' in df_agent_stats else 0
+        tot_remb   = float(df_agent_stats['montant_rembourse'].sum()) if 'montant_rembourse' in df_agent_stats else 0
+        tot_reste  = float(df_agent_stats['reste_rembourser'].sum()) if 'reste_rembourser' in df_agent_stats else 0
+        taux_perso = (tot_remb / tot_pnr * 100) if tot_pnr > 0 else 0
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-family:Outfit; font-size:18px; font-weight:700; margin-bottom:14px;'>📊 Mon tableau de bord</div>", unsafe_allow_html=True)
+        sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+        with sc1:
+            st.markdown(f"<div class='stat-agent-card'><div class='stat-icon'>📂</div><div class='stat-val'>{nb_dos}</div><div class='stat-lbl'>Mes Dossiers</div></div>", unsafe_allow_html=True)
+        with sc2:
+            st.markdown(f"<div class='stat-agent-card'><div class='stat-icon'>💰</div><div class='stat-val'>{tot_pnr/1_000_000:.1f}M</div><div class='stat-lbl'>PNR Total (DA)</div></div>", unsafe_allow_html=True)
+        with sc3:
+            st.markdown(f"<div class='stat-agent-card'><div class='stat-icon'>✅</div><div class='stat-val'>{tot_remb/1_000_000:.1f}M</div><div class='stat-lbl'>Recouvré (DA)</div></div>", unsafe_allow_html=True)
+        with sc4:
+            st.markdown(f"<div class='stat-agent-card'><div class='stat-icon'>⏳</div><div class='stat-val'>{tot_reste/1_000_000:.1f}M</div><div class='stat-lbl'>Reste (DA)</div></div>", unsafe_allow_html=True)
+        with sc5:
+            st.markdown(f"<div class='stat-agent-card'><div class='stat-icon'>📈</div><div class='stat-val'>{taux_perso:.1f}%</div><div class='stat-lbl'>Taux Recouvr.</div></div>", unsafe_allow_html=True)
+        st.progress(min(taux_perso/100, 1.0))
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # ✅ STATISTIQUES AGENT
+        df_agent    = df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80)]
+        total_dos   = len(df_agent)
+        total_pnr   = df_agent['montant_pnr'].astype(float).sum()
+        total_remb  = df_agent['montant_rembourse'].astype(float).sum()
+        total_reste = df_agent['reste_rembourser'].astype(float).sum()
+        taux        = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("📂 Mes Dossiers", total_dos)
+        c2.metric("💰 PNR Total", f"{total_pnr:,.0f} DA")
+        c3.metric("✅ Recouvré", f"{total_remb:,.0f} DA")
+        c4.metric("⏳ Reste", f"{total_reste:,.0f} DA")
+        c5.metric("📈 Taux", f"{taux:.1f}%")
+        st.progress(min(taux / 100, 1.0))
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([4, 1, 1])
