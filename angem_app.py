@@ -1312,9 +1312,9 @@ def page_integration_admin():
 
     if role == "finance":
         tabs = st.tabs(["💰 Import Finance"])
-        t1, t2, t3, t4, t5 = tabs[0], None, None, None, None
+        t1, t2, t3, t4, t5, t6 = tabs[0], None, None, None, None, None
     else:
-        t1, t2, t3, t4, t5 = st.tabs(["💰 Import Finance", "📈 Import Recouvrement", "👥 Gestionnaires", "🧹 Maintenance", "🔐 Équipes"])
+        t1, t2, t3, t4, t5, t6 = st.tabs(["💰 Import Finance", "📈 Import Recouvrement", "👥 Gestionnaires", "🧹 Maintenance", "🔐 Équipes", "🔄 Gestion Agents"])
 
     with t1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -1411,6 +1411,193 @@ def page_integration_admin():
                             st.success(f"Compte {n_nom} créé !")
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
+
+    if t6:
+        with t6:
+            _outil_gestion_agents()
+
+def _outil_gestion_agents():
+    """3 outils : fusion doublons, passation, réécriture noms."""
+    st.markdown("### 🔄 Gestion des Agents & Dossiers")
+
+    sous_tabs = st.tabs(["🔁 Fusion Doublons", "📦 Passation de Dossiers", "✏️ Réécriture des Noms"])
+
+    # ==========================================
+    # OUTIL 1 — FUSION DOUBLONS AGENTS
+    # ==========================================
+    with sous_tabs[0]:
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.info("Détecte automatiquement les comptes similaires et les fusionne en un seul.")
+
+        with get_session() as session:
+            agents = session.query(UtilisateurAuth).filter_by(role='agent').all()
+            agents_data = [(a.id, a.nom, a.daira, a.mot_de_passe) for a in agents]
+
+        # Détecter les groupes similaires
+        groupes = []
+        traites = set()
+        for i, (id1, nom1, d1, pwd1) in enumerate(agents_data):
+            if id1 in traites:
+                continue
+            groupe = [(id1, nom1, d1, pwd1)]
+            for j, (id2, nom2, d2, pwd2) in enumerate(agents_data):
+                if i != j and id2 not in traites:
+                    if similarite(nom1, nom2) >= 0.80:
+                        groupe.append((id2, nom2, d2, pwd2))
+                        traites.add(id2)
+            if len(groupe) > 1:
+                traites.add(id1)
+                groupes.append(groupe)
+
+        if not groupes:
+            st.success("✅ Aucun doublon détecté. Tous les comptes sont uniques.")
+        else:
+            st.warning(f"⚠️ **{len(groupes)}** groupe(s) de doublons détectés :")
+            for g_idx, groupe in enumerate(groupes):
+                st.markdown(f"**Groupe {g_idx+1} :**")
+                noms_groupe = [f"{nom} ({daira or '—'})" for _, nom, daira, _ in groupe]
+                choix = st.selectbox(
+                    "Compte à garder :",
+                    options=[n[1] for n in groupe],
+                    key=f"fusion_keep_{g_idx}"
+                )
+                st.caption(f"Comptes détectés : {', '.join(noms_groupe)}")
+
+                if st.button(f"🔁 Fusionner ce groupe", key=f"btn_fusion_{g_idx}", type="primary"):
+                    id_garde = next(n[0] for n in groupe if n[1] == choix)
+                    ids_suppr = [n[0] for n in groupe if n[0] != id_garde]
+                    noms_suppr = [n[1] for n in groupe if n[0] != id_garde]
+
+                    with get_session() as session:
+                        # Réaffecter tous les dossiers des comptes supprimés vers le compte gardé
+                        c_reaffect = 0
+                        for nom_s in noms_suppr:
+                            dossiers = session.query(Dossier).filter(
+                                Dossier.gestionnaire.ilike(f"%{nom_s.split()[0]}%")
+                            ).all()
+                            for d in dossiers:
+                                if similarite(d.gestionnaire, nom_s) >= 0.75:
+                                    d.gestionnaire = choix
+                                    c_reaffect += 1
+                        # Supprimer les comptes doublons
+                        for id_s in ids_suppr:
+                            u = session.get(UtilisateurAuth, id_s)
+                            if u:
+                                session.delete(u)
+
+                    st.success(f"✅ Comptes fusionnés. {c_reaffect} dossiers réaffectés vers **{choix}**.")
+                    st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ==========================================
+    # OUTIL 2 — PASSATION DE DOSSIERS
+    # ==========================================
+    with sous_tabs[1]:
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.info("Transfère tous les dossiers d'un agent vers un autre (changement de poste, départ, etc.)")
+
+        with get_session() as session:
+            agents_noms = [a.nom for a in session.query(UtilisateurAuth).filter_by(role='agent').order_by(UtilisateurAuth.nom).all()]
+
+        if len(agents_noms) < 2:
+            st.warning("Il faut au moins 2 agents.")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                agent_source = st.selectbox("👤 Agent qui PART (source)", agents_noms, key="pass_source")
+            with col2:
+                agents_dest = [a for a in agents_noms if a != agent_source]
+                agent_dest  = st.selectbox("👤 Agent qui REPREND (destination)", agents_dest, key="pass_dest")
+
+            env_pass = st.session_state.user['env']
+            filtre_daira = st.checkbox("Filtrer par daïra spécifique", key="pass_filtre")
+            daira_choisie = ""
+            if filtre_daira:
+                daira_choisie = st.selectbox("Daïra", LISTE_DAIRAS, key="pass_daira")
+
+            motif = st.text_input("Motif de la passation (optionnel)", placeholder="Ex: Mutation vers Chéraga")
+
+            # Aperçu
+            try:
+                with engine.connect() as conn:
+                    df_pass = pd.read_sql_query(
+                        text("SELECT * FROM dossiers WHERE type_dispositif=:env"),
+                        conn, params={"env": env_pass}
+                    ).fillna('')
+                mask = df_pass['gestionnaire'].apply(lambda x: similarite(x, agent_source) >= 0.80)
+                if daira_choisie:
+                    mask = mask & df_pass['daira'].str.contains(daira_choisie, case=False, na=False)
+                df_concernes = df_pass[mask]
+                st.metric("Dossiers concernés", len(df_concernes))
+                if not df_concernes.empty:
+                    st.dataframe(df_concernes[['identifiant','nom','prenom','daira','commune']].head(10), use_container_width=True)
+            except Exception:
+                df_concernes = pd.DataFrame()
+
+            if st.button("📦 Confirmer la passation", type="primary", key="btn_passation",
+                         disabled=df_concernes.empty if not df_concernes.empty else True):
+                date_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+                note = f"🔄 **[Passation {date_str}]** Transféré de {agent_source} vers {agent_dest}"
+                if motif:
+                    note += f" — Motif : {motif}"
+                with get_session() as session:
+                    c = 0
+                    for _, row in df_concernes.iterrows():
+                        d = session.get(Dossier, int(row['id']))
+                        if d:
+                            d.gestionnaire = agent_dest.strip().upper()
+                            d.historique_visites = note + "\n" + (d.historique_visites or "")
+                            c += 1
+                st.success(f"✅ {c} dossiers transférés de **{agent_source}** vers **{agent_dest}**.")
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ==========================================
+    # OUTIL 3 — RÉÉCRITURE DES NOMS
+    # ==========================================
+    with sous_tabs[2]:
+        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.info("Scanne toute la base et corrige les noms de gestionnaires mal écrits pour les aligner sur les comptes officiels.")
+
+        with get_session() as session:
+            agents_officiels = [a.nom for a in session.query(UtilisateurAuth).filter_by(role='agent').all()]
+
+        env_ree = st.session_state.user['env']
+
+        if st.button("🔍 Analyser la base", key="btn_analyse_noms"):
+            try:
+                with engine.connect() as conn:
+                    df_all = pd.read_sql_query(
+                        text("SELECT id, gestionnaire FROM dossiers WHERE type_dispositif=:env"),
+                        conn, params={"env": env_ree}
+                    ).fillna('')
+            except Exception:
+                df_all = pd.DataFrame()
+
+            corrections = []
+            for _, row in df_all.iterrows():
+                gest = str(row['gestionnaire']).strip()
+                if not gest or gest.upper() in ('NAN','NONE',''):
+                    continue
+                meilleur = max(agents_officiels, key=lambda a: similarite(gest, a), default=None)
+                if meilleur and similarite(gest, meilleur) >= 0.80 and gest != meilleur:
+                    corrections.append({'id': row['id'], 'avant': gest, 'apres': meilleur})
+
+            if not corrections:
+                st.success("✅ Tous les noms sont déjà corrects.")
+            else:
+                df_corr = pd.DataFrame(corrections)
+                st.warning(f"**{len(df_corr)}** corrections à appliquer :")
+                st.dataframe(df_corr[['avant','apres']], use_container_width=True, hide_index=True)
+                if st.button(f"✏️ Appliquer {len(df_corr)} corrections", type="primary", key="btn_appliquer_noms"):
+                    with get_session() as session:
+                        for corr in corrections:
+                            d = session.get(Dossier, corr['id'])
+                            if d:
+                                d.gestionnaire = corr['apres']
+                    st.success(f"✅ {len(corrections)} noms corrigés dans la base.")
+                    st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 def _onglet_import_generique(file_obj, env, badge, form_key, label):
     try:
