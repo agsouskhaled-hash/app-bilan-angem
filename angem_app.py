@@ -12,7 +12,7 @@ from fpdf import FPDF
 import tempfile
 import os
 from supabase import create_client, Client
-
+import difflib
 # ==========================================
 # 1. CONFIGURATION PAGE
 # ==========================================
@@ -443,25 +443,25 @@ def trouver_agent_par_zone(daira: str, commune: str, session) -> str:
     return ""
 
 def trouver_agent_intelligent(nom_excel: str, agents_db: list) -> str:
-    """Matching flou sur le nom de l'agent."""
+    """Matching par similarité 80% — tolère fautes de frappe et préfixes."""
     if not nom_excel or str(nom_excel).strip().upper() in ['', 'NAN', 'NONE']:
         return ""
-    nom_ex = str(nom_excel).strip().upper()
-    # Match exact
+    prefixes = r'(MME|MR|M\.|MLLE|MELLE|DR|PR)\.?\s*'
+    def normaliser(s):
+        s = re.sub(prefixes, '', str(s).strip().upper())
+        return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii').strip()
+    nom_norm = normaliser(nom_excel)
+    meilleur_score = 0
+    meilleur_agent = ""
     for agent in agents_db:
-        if agent.upper() == nom_ex:
-            return agent
-    # Match partiel
-    for agent in agents_db:
-        if agent.upper() in nom_ex or nom_ex in agent.upper():
-            return agent
-    # Match par token (prénom + nom séparés)
-    tokens_ex = set(re.split(r'\s+', nom_ex))
-    for agent in agents_db:
-        tokens_ag = set(re.split(r'\s+', agent.upper()))
-        if len(tokens_ex & tokens_ag) >= 1:
-            return agent
-    return nom_ex  # On garde la valeur brute si aucun match
+        agent_norm = normaliser(agent)
+        score = difflib.SequenceMatcher(None, nom_norm, agent_norm).ratio()
+        if score > meilleur_score:
+            meilleur_score = score
+            meilleur_agent = agent
+    if meilleur_score >= 0.80:
+        return meilleur_agent
+    return normaliser(nom_excel)
 
 def verifier_doublon(session, identifiant: str, env: str, badge: str) -> object:
     """
@@ -967,28 +967,17 @@ def afficher_profil_complet(dos_id: int):
 
 # ==========================================
 # 13. VUE GESTION (TABLEAU PRINCIPAL)
-# ==========================================
-
-def page_gestion(mode="financement", vue_admin=False):
-    env       = st.session_state.user['env']
-    role      = st.session_state.user['role']
-    nom_agent = st.session_state.user['nom'].upper()
-    badge     = "in_finance" if mode == "financement" else "in_recouvrement"
-
-    # ✅ BOUTON IMPORT RAPIDE (Finance uniquement)
-    if mode == "financement" and role in ("finance", "admin"):
-        st.markdown("<div class='import-rapide-box'>", unsafe_allow_html=True)
-        col_imp1, col_imp2 = st.columns([3, 1])
-        with col_imp1:
-            st.markdown("**📥 Import rapide — Nouveaux dossiers financés**")
-            st.caption("Importe et affecte automatiquement les dossiers aux accompagnateurs.")
-        with col_imp2:
-            if st.button("📂 Importer un fichier", key="btn_import_rapide", use_container_width=True):
-                st.session_state.import_quick_open = not st.session_state.import_quick_open
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        if st.session_state.import_quick_open:
-            with st.expander("🚀 Interface d'import rapide", expanded=True):
+def filtre_agent_robuste(nom_db):
+            prefixes = r'(MME|MR|M\.|MLLE|MELLE|DR|PR)\.?\s*'
+            def normaliser(s):
+                s = re.sub(prefixes, '', str(s).strip().upper())
+                return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii').strip()
+            nom_db_norm    = normaliser(nom_db)
+            nom_agent_norm = normaliser(nom_agent)
+            if not nom_db_norm or not nom_agent_norm:
+                return False
+            score = difflib.SequenceMatcher(None, nom_db_norm, nom_agent_norm).ratio()
+            return score >= 0.80
                 _widget_import_rapide(env)
 
     # Récupérer les dossiers
@@ -1234,13 +1223,22 @@ def page_integration_admin():
         with t3:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.warning("👥 Assigne le gestionnaire sur TOUTES les fiches portant le même ID.")
-            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest")
-            if f_gest:
-                _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest", "Gestionnaires")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    # --- ONGLET 4 : MAINTENANCE ---
-    if t4:
+           if st.form_submit_button("Créer le compte") and n_id and n_nom:
+                    with get_session() as session:
+                        agents_existants = session.query(UtilisateurAuth).filter_by(role='agent').all()
+                        prefixes = r'(MME|MR|M\.|MLLE|MELLE|DR|PR)\.?\s*'
+                        def norm(s):
+                            s = re.sub(prefixes, '', str(s).strip().upper())
+                            return unicodedata.normalize('NFKD', s).encode('ascii','ignore').decode('ascii')
+                        doublon = next((a for a in agents_existants
+                                        if difflib.SequenceMatcher(None, norm(a.nom), norm(n_nom)).ratio() >= 0.80), None)
+                        if doublon:
+                            st.warning(f"⚠️ Un compte similaire existe déjà : **{doublon.nom}**. Vérifiez avant de créer.")
+                        else:
+                            session.add(UtilisateurAuth(identifiant=n_id.lower(), nom=n_nom.strip().upper(),
+                                                        daira=n_dai, mot_de_passe="angem2026", role="agent"))
+                            st.success(f"Compte {n_nom} créé !")
+                    st.rerun()
         with t4:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             if st.button("🧹 Nettoyer Doublons", type="primary"):
