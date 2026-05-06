@@ -987,7 +987,8 @@ def page_gestion(mode="financement", vue_admin=False):
             tokens_agent = tokeniser(nom_agent)
             if not tokens_db or not tokens_agent:
                 return False
-            intersection = tokens_db & tokens_agent return len(intersection) >= min(2, len(tokens_agent))
+            intersection = tokens_db & tokens_agent
+            return len(intersection) >= min(2, len(tokens_agent))
 
         df_filtre = df[df['gestionnaire'].apply(filtre_agent_robuste)]
 
