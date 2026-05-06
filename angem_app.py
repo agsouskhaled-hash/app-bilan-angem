@@ -897,7 +897,26 @@ def page_gestion(mode="financement", vue_admin=False):
         return
 
     if role == 'agent':
-        nvx = len(df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80) & (df['est_nouveau'] == 'OUI')])
+        if role == 'agent':
+    nvx = len(df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80) & (df['est_nouveau'] == 'OUI')])
+    if nvx > 0:
+        st.markdown(f"<div class='alerte-nouveau'>🎉 {nvx} nouveau(x) dossier(s) vous ont été affectés !</div>", unsafe_allow_html=True)
+
+    # ✅ STATISTIQUES AGENT
+    df_agent = df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80)]
+    total_dos   = len(df_agent)
+    total_pnr   = df_agent['montant_pnr'].astype(float).sum()
+    total_remb  = df_agent['montant_rembourse'].astype(float).sum()
+    total_reste = df_agent['reste_rembourser'].astype(float).sum()
+    taux        = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("📂 Mes Dossiers", total_dos)
+    c2.metric("💰 PNR Total", f"{total_pnr:,.0f} DA")
+    c3.metric("✅ Recouvré", f"{total_remb:,.0f} DA")
+    c4.metric("⏳ Reste", f"{total_reste:,.0f} DA")
+    c5.metric("📈 Taux", f"{taux:.1f}%")
+    st.progress(min(taux / 100, 1.0))
         if nvx > 0:
             st.markdown(f"<div class='alerte-nouveau'>🎉 {nvx} nouveau(x) dossier(s) vous ont été affectés !</div>", unsafe_allow_html=True)
 
