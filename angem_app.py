@@ -1158,39 +1158,67 @@ def page_gestion(mode="financement", vue_admin=False):
     except Exception:
         liste_agents = [""]
 
+    # ✅ ADMIN : édition libre de TOUTES les colonnes
+    is_admin = (role == 'admin')
     if mode == "financement":
-        cols = ["Ouvrir 📂","identifiant","nom","prenom","statut_dossier","gestionnaire","montant_pnr","num_ordre_versement","banque_nom","date_financement","est_nouveau","id"]
+        if is_admin:
+            cols = ["Ouvrir 📂","identifiant","nom","prenom","telephone","adresse","commune","daira","activite","statut_dossier","gestionnaire","montant_pnr","num_ordre_versement","banque_nom","agence_bancaire","date_financement","est_nouveau","id"]
+        else:
+            cols = ["Ouvrir 📂","identifiant","nom","prenom","statut_dossier","gestionnaire","montant_pnr","num_ordre_versement","banque_nom","date_financement","est_nouveau","id"]
         config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn(default=False),
             "id": None,
-            "est_nouveau": st.column_config.TextColumn("Nouveau", disabled=True),
+            "est_nouveau": st.column_config.TextColumn("Nouveau", disabled=not is_admin),
             "statut_dossier": st.column_config.SelectboxColumn("Étape", options=LISTE_STATUTS, width="medium"),
             "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=(role=='agent')),
             "montant_pnr": st.column_config.NumberColumn("PNR (DA)", format="%d DA"),
+            "identifiant": st.column_config.TextColumn(disabled=not is_admin),
+            "nom": st.column_config.TextColumn(disabled=not is_admin),
+            "prenom": st.column_config.TextColumn(disabled=not is_admin),
         }
     else:
-        cols = ["Ouvrir 📂","identifiant","nom","prenom","telephone","montant_pnr","montant_rembourse","reste_rembourser","etat_dette","gestionnaire","id"]
+        if is_admin:
+            cols = ["Ouvrir 📂","identifiant","nom","prenom","telephone","adresse","commune","daira","activite","montant_pnr","montant_rembourse","reste_rembourser","total_echue","etat_dette","nb_echeance_tombee","prochaine_ech","gestionnaire","id"]
+        else:
+            cols = ["Ouvrir 📂","identifiant","nom","prenom","telephone","montant_pnr","montant_rembourse","reste_rembourser","etat_dette","gestionnaire","id"]
         config = {
             "Ouvrir 📂": st.column_config.CheckboxColumn(default=False),
             "id": None,
-            "montant_pnr": st.column_config.NumberColumn("Crédit", format="%d DA", disabled=True),
-            "montant_rembourse": st.column_config.NumberColumn("Remboursé", format="%d DA", disabled=True),
-            "reste_rembourser": st.column_config.NumberColumn("Reste", format="%d DA", disabled=True),
-            "gestionnaire": st.column_config.TextColumn("Agent", disabled=True),
+            "montant_pnr": st.column_config.NumberColumn("Crédit", format="%d DA", disabled=not is_admin),
+            "montant_rembourse": st.column_config.NumberColumn("Remboursé", format="%d DA", disabled=not is_admin),
+            "reste_rembourser": st.column_config.NumberColumn("Reste", format="%d DA", disabled=not is_admin),
+            "total_echue": st.column_config.NumberColumn("Échue", format="%d DA", disabled=not is_admin),
+            "gestionnaire": st.column_config.SelectboxColumn("Agent", options=liste_agents, disabled=not is_admin) if is_admin else st.column_config.TextColumn("Agent", disabled=True),
         }
 
     cols = [c for c in cols if c in df.columns or c == "Ouvrir 📂"]
     st.markdown("<div class='modern-card' style='padding:10px;'>", unsafe_allow_html=True)
     edited = st.data_editor(df[cols], use_container_width=True, hide_index=True, column_config=config, height=500)
 
-    if mode == "financement" and st.button("💾 Sauvegarder", type="primary"):
+    if st.button("💾 Sauvegarder", type="primary"):
         with get_session() as session:
             for _, r in edited.iterrows():
                 dos = session.get(Dossier, int(r['id']))
                 if dos:
-                    dos.statut_dossier = r['statut_dossier']
-                    if role != 'agent':
-                        dos.gestionnaire = str(r['gestionnaire']).strip().upper()
+                    if is_admin:
+                        # Admin : sauve TOUTES les colonnes affichées
+                        for col_name in edited.columns:
+                            if col_name in ('Ouvrir 📂', 'id'):
+                                continue
+                            val = r[col_name]
+                            if hasattr(dos, col_name):
+                                if col_name in COLONNES_ARGENT:
+                                    try:
+                                        setattr(dos, col_name, float(val) if val not in (None, '') else 0.0)
+                                    except Exception:
+                                        pass
+                                else:
+                                    setattr(dos, col_name, str(val).strip().upper() if val else "")
+                    else:
+                        if mode == "financement":
+                            dos.statut_dossier = r.get('statut_dossier', dos.statut_dossier)
+                            if role != 'agent':
+                                dos.gestionnaire = str(r.get('gestionnaire','')).strip().upper()
         st.toast("✅ Modifications enregistrées !")
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
@@ -1730,10 +1758,29 @@ def _outil_gestion_agents():
                 agent_dest  = st.selectbox("👤 Agent qui REPREND (destination)", agents_dest, key="pass_dest")
 
             env_pass = st.session_state.user['env']
-            filtre_daira = st.checkbox("Filtrer par daïra spécifique", key="pass_filtre")
-            daira_choisie = ""
-            if filtre_daira:
-                daira_choisie = st.selectbox("Daïra", LISTE_DAIRAS, key="pass_daira")
+
+            # Récupérer toutes les communes existantes
+            try:
+                with engine.connect() as conn:
+                    df_temp = pd.read_sql_query(
+                        text("SELECT DISTINCT commune FROM dossiers WHERE type_dispositif=:env AND commune != ''"),
+                        conn, params={"env": env_pass}
+                    )
+                liste_communes = [""] + sorted(df_temp['commune'].dropna().tolist())
+            except Exception:
+                liste_communes = [""]
+
+            col_filtre1, col_filtre2 = st.columns(2)
+            with col_filtre1:
+                filtre_daira = st.checkbox("🏛️ Filtrer par Daïra", key="pass_filtre_d")
+                daira_choisie = ""
+                if filtre_daira:
+                    daira_choisie = st.selectbox("Daïra", LISTE_DAIRAS, key="pass_daira")
+            with col_filtre2:
+                filtre_commune = st.checkbox("🏘️ Filtrer par Commune", key="pass_filtre_c")
+                commune_choisie = ""
+                if filtre_commune:
+                    commune_choisie = st.selectbox("Commune", liste_communes, key="pass_commune")
 
             motif = st.text_input("Motif de la passation (optionnel)", placeholder="Ex: Mutation vers Chéraga")
 
@@ -1747,6 +1794,8 @@ def _outil_gestion_agents():
                 mask = df_pass['gestionnaire'].apply(lambda x: similarite(x, agent_source) >= 0.80)
                 if daira_choisie:
                     mask = mask & df_pass['daira'].str.contains(daira_choisie, case=False, na=False)
+                if commune_choisie:
+                    mask = mask & df_pass['commune'].str.contains(commune_choisie, case=False, na=False)
                 df_concernes = df_pass[mask]
                 st.metric("Dossiers concernés", len(df_concernes))
                 if not df_concernes.empty:
