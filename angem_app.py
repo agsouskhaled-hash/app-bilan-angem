@@ -39,6 +39,32 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # CONSTANTES
 # ==========================================
 LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
+
+# ✅ Mapping Daïra → Communes (Wilaya d'Alger)
+DAIRA_COMMUNES = {
+    "Zéralda":         ["Zéralda", "Mahelma", "Rahmania", "Souidania", "Staoueli"],
+    "Chéraga":         ["Chéraga", "Aïn Benian", "Hammamet", "Ouled Fayet", "Dely Brahim"],
+    "Draria":          ["Draria", "Baba Hassen", "Douera", "El Achour", "Khraïcia"],
+    "Bir Mourad Rais": ["Bir Mourad Rais", "Birkhadem", "Djasr Kasentina", "Hydra", "Saoula"],
+    "Bouzareah":       ["Bouzareah", "Beni Messous", "Ben Aknoun", "El Biar"],
+    "Birtouta":        ["Birtouta", "Ouled Chebel", "Tessala El Merdja"],
+}
+
+def deduire_daira_de_commune(commune: str) -> str:
+    """Retourne la daïra correspondante à une commune, sinon ''."""
+    if not commune:
+        return ""
+    c_norm = unicodedata.normalize('NFKD', str(commune).strip().upper()).encode('ascii','ignore').decode('ascii')
+    for daira, communes in DAIRA_COMMUNES.items():
+        for com in communes:
+            com_norm = unicodedata.normalize('NFKD', com.upper()).encode('ascii','ignore').decode('ascii')
+            if com_norm == c_norm or com_norm in c_norm or c_norm in com_norm:
+                return daira
+    return ""
+
+def communes_de_daira(daira: str) -> list:
+    """Retourne la liste des communes d'une daïra."""
+    return DAIRA_COMMUNES.get(daira, [])
 LISTE_STATUTS = [
     "Phase dépôt du dossier",
     "En attente de la commission",
@@ -644,6 +670,12 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
             if not ident:
                 stats['ignores'] += 1
                 continue
+
+            # ✅ Auto-déduction daïra depuis commune si daïra vide
+            if not data.get('daira') and data.get('commune'):
+                d_deduite = deduire_daira_de_commune(data['commune'])
+                if d_deduite:
+                    data['daira'] = d_deduite
 
             champs_dyn = extraire_champs_dynamiques(row, colonnes_mappees, list(df.columns))
 
@@ -1590,6 +1622,23 @@ def page_integration_admin():
     if t4:
         with t4:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            # ✅ Bouton réparation daïras
+            if st.button("🔧 Réparer daïras manquantes", type="primary", key="btn_repair_daira"):
+                env_r = st.session_state.user['env']
+                with get_session() as session:
+                    dossiers = session.query(Dossier).filter(Dossier.type_dispositif == env_r).all()
+                    c_repare = 0
+                    for d in dossiers:
+                        if (not d.daira or d.daira.strip() == "") and d.commune:
+                            d_deduite = deduire_daira_de_commune(d.commune)
+                            if d_deduite:
+                                d.daira = d_deduite
+                                c_repare += 1
+                if c_repare > 0:
+                    st.success(f"✅ {c_repare} daïra(s) reconstituée(s) à partir des communes.")
+                else:
+                    st.info("Aucune daïra à réparer.")
+            st.markdown("---")
             if st.button("🧹 Nettoyer Doublons", type="primary"):
                 with get_session() as session:
                     dossiers = session.query(Dossier).all()
@@ -1793,7 +1842,19 @@ def _outil_gestion_agents():
                     ).fillna('')
                 mask = df_pass['gestionnaire'].apply(lambda x: similarite(x, agent_source) >= 0.80)
                 if daira_choisie:
-                    mask = mask & df_pass['daira'].str.contains(daira_choisie, case=False, na=False)
+                    # ✅ Filtre intelligent : daïra OU communes de la daïra
+                    communes_daira = communes_de_daira(daira_choisie)
+                    def match_zone(row):
+                        d = str(row.get('daira','')).strip().upper()
+                        c = str(row.get('commune','')).strip().upper()
+                        if daira_choisie.upper() in d:
+                            return True
+                        for com in communes_daira:
+                            com_n = unicodedata.normalize('NFKD', com.upper()).encode('ascii','ignore').decode('ascii')
+                            if com_n in unicodedata.normalize('NFKD', c).encode('ascii','ignore').decode('ascii'):
+                                return True
+                        return False
+                    mask = mask & df_pass.apply(match_zone, axis=1)
                 if commune_choisie:
                     mask = mask & df_pass['commune'].str.contains(commune_choisie, case=False, na=False)
                 df_concernes = df_pass[mask]
