@@ -679,6 +679,7 @@ def generer_rapport_global_pdf(df) -> bytes:
 
 def login_page():
     st.markdown("<br><h2 style='text-align:center; color:#1e293b; font-weight:800;'>Portail de Connexion ANGEM</h2>", unsafe_allow_html=True)
+
     if st.session_state.portal_selection is None:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -690,6 +691,72 @@ def login_page():
         with c3:
             if st.button("👑\n\nDirection & Admin", use_container_width=True):
                 st.session_state.portal_selection = "admin"
+
+    elif st.session_state.portal_selection == "agent":
+        if st.button("⬅️ Retour"):
+            st.session_state.portal_selection = None
+            st.session_state['agent_choisi'] = None
+            st.rerun()
+
+        with get_session() as session:
+            agents = session.query(UtilisateurAuth).filter_by(role='agent').order_by(UtilisateurAuth.nom).all()
+            agents_data = [(a.nom, a.mot_de_passe, a.daira) for a in agents]
+
+        if 'agent_choisi' not in st.session_state:
+            st.session_state['agent_choisi'] = None
+
+        if st.session_state['agent_choisi'] is None:
+            st.markdown("<h3 style='text-align:center; color:#64748b; margin-bottom:20px;'>Choisissez votre profil</h3>", unsafe_allow_html=True)
+            cols = st.columns(3)
+            for i, (nom, pwd, daira) in enumerate(agents_data):
+                initiales = ''.join([p[0] for p in nom.strip().split()[:2]]).upper()
+                couleurs = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899']
+                couleur = couleurs[i % len(couleurs)]
+                with cols[i % 3]:
+                    st.markdown(f"""
+                    <div style='background:#fff; border-radius:16px; padding:20px; text-align:center;
+                         border:2px solid #edf2f7; margin-bottom:15px; box-shadow:0 4px 12px rgba(0,0,0,0.05);'>
+                        <div style='width:64px; height:64px; border-radius:50%; background:{couleur};
+                             color:white; font-size:22px; font-weight:800; display:flex;
+                             align-items:center; justify-content:center; margin:0 auto 12px;'>{initiales}</div>
+                        <div style='font-weight:700; font-size:15px; color:#1e293b;'>{nom}</div>
+                        <div style='font-size:12px; color:#64748b; margin-top:4px;'>{daira or "—"}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("Sélectionner", key=f"sel_{i}", use_container_width=True):
+                        st.session_state['agent_choisi'] = (nom, pwd, daira)
+                        st.rerun()
+        else:
+            nom, pwd_db, daira = st.session_state['agent_choisi']
+            initiales = ''.join([p[0] for p in nom.strip().split()[:2]]).upper()
+            st.markdown(f"""
+            <div style='max-width:400px; margin:0 auto; background:#fff; border-radius:16px;
+                 padding:30px; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.08);'>
+                <div style='width:80px; height:80px; border-radius:50%; background:{theme_color};
+                     color:white; font-size:28px; font-weight:800; display:flex;
+                     align-items:center; justify-content:center; margin:0 auto 15px;'>{initiales}</div>
+                <h3 style='margin:0 0 5px;'>{nom}</h3>
+                <p style='color:#64748b; margin:0 0 20px;'>{daira or ""}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<div style='max-width:400px; margin:15px auto 0;'>", unsafe_allow_html=True)
+            env = st.selectbox("🏢 Dispositif", ["PNR PROJET", "PNR AMP"])
+            pwd = st.text_input("🔑 Mot de passe", type="password")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("⬅️ Changer", use_container_width=True):
+                    st.session_state['agent_choisi'] = None
+                    st.rerun()
+            with c2:
+                if st.button("🚀 Connexion", type="primary", use_container_width=True):
+                    if pwd == pwd_db:
+                        st.session_state.user = {"nom": nom, "role": "agent", "daira": daira, "env": env}
+                        st.session_state['agent_choisi'] = None
+                        st.rerun()
+                    else:
+                        st.error("Mot de passe incorrect.")
+            st.markdown("</div>", unsafe_allow_html=True)
+
     else:
         if st.button("⬅️ Retour"):
             st.session_state.portal_selection = None
@@ -697,7 +764,6 @@ def login_page():
         with get_session() as session:
             users = session.query(UtilisateurAuth).filter_by(role=st.session_state.portal_selection).all()
             users_data = [(u.nom, u.mot_de_passe, u.role, u.daira) for u in users]
-
         if users_data:
             st.markdown("<div class='modern-card' style='max-width:500px; margin:0 auto;'>", unsafe_allow_html=True)
             noms = [u[0] for u in users_data]
@@ -707,15 +773,11 @@ def login_page():
             if st.button("🚀 Connexion", type="primary", use_container_width=True):
                 user_data = next(u for u in users_data if u[0] == nom_sel)
                 if user_data[1] == pwd:
-                    st.session_state.user = {
-                        "nom": user_data[0], "role": user_data[2],
-                        "daira": user_data[3], "env": env
-                    }
+                    st.session_state.user = {"nom": user_data[0], "role": user_data[2], "daira": user_data[3], "env": env}
                     st.rerun()
                 else:
                     st.error("Mot de passe incorrect.")
             st.markdown("</div>", unsafe_allow_html=True)
-
 # ==========================================
 # 11. SIDEBAR
 # ==========================================
