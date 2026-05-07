@@ -2072,4 +2072,110 @@ def page_corbeille():
         df = pd.DataFrame()
 
     if df.empty:
-        st.
+        st.info("La base est vide.")
+        return
+
+    def est_non_assigne(val):
+        return str(val).strip().upper() in ('', 'NAN', 'NONE', 'NON', '-', 'N/A')
+
+    df_non_assignes = df[df['gestionnaire'].apply(est_non_assigne)].copy()
+    if df_non_assignes.empty:
+        st.success("✅ Tous les dossiers sont assignés.")
+        return
+
+    if daira:
+        # ✅ Détection intelligente : daïra → communes → adresse
+        ma_daira = daira.strip()
+        ma_daira_norm = unicodedata.normalize('NFKD', ma_daira.upper()).encode('ascii','ignore').decode('ascii')
+        communes_ma_daira = communes_de_daira(ma_daira)
+        communes_norm = [unicodedata.normalize('NFKD', c.upper()).encode('ascii','ignore').decode('ascii') for c in communes_ma_daira]
+        def ma_zone(row):
+            d = str(row.get('daira','')).strip().upper()
+            c = str(row.get('commune','')).strip().upper()
+            a = str(row.get('adresse','')).strip().upper()
+            d_n = unicodedata.normalize('NFKD', d).encode('ascii','ignore').decode('ascii')
+            c_n = unicodedata.normalize('NFKD', c).encode('ascii','ignore').decode('ascii')
+            a_n = unicodedata.normalize('NFKD', a).encode('ascii','ignore').decode('ascii')
+            # 1. Daïra match
+            if ma_daira_norm in d_n:
+                return True
+            # 2. Commune match
+            for com_n in communes_norm:
+                if com_n and com_n in c_n:
+                    return True
+            # 3. Adresse match
+            for com_n in communes_norm:
+                if com_n and com_n in a_n:
+                    return True
+            if ma_daira_norm in a_n:
+                return True
+            # 4. Aucune zone définie → visible pour tous
+            if not d_n and not c_n and not a_n:
+                return True
+            return False
+        orphans = df_non_assignes[df_non_assignes.apply(ma_zone, axis=1)].copy()
+    else:
+        st.warning("⚠️ Pas de Daïra assignée — vous voyez tous les dossiers non assignés.")
+        orphans = df_non_assignes.copy()
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total non assignés", len(df_non_assignes))
+    c2.metric(f"Dans votre zone ({daira or 'toutes'})", len(orphans))
+    nb_sans_zone = len(df_non_assignes[df_non_assignes.apply(
+        lambda r: not str(r.get('daira','')).strip() and not str(r.get('commune','')).strip(), axis=1)])
+    c3.metric("Sans zone définie", nb_sans_zone)
+
+    if orphans.empty:
+        st.success(f"✅ Aucun dossier orphelin dans votre secteur.")
+        return
+
+    rech = st.text_input("🔍 Filtrer...", placeholder="Nom, ID, commune...")
+    if rech:
+        orphans = orphans[orphans.apply(lambda x: x.astype(str).str.contains(rech, case=False).any(), axis=1)]
+
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    orphans_aff = orphans.copy()
+    orphans_aff["✅ C'est le mien !"] = False
+    cols_aff = [c for c in ["✅ C'est le mien !","identifiant","nom","prenom","activite","commune","daira","montant_pnr","id"]
+                if c in orphans_aff.columns or c == "✅ C'est le mien !"]
+    ed = st.data_editor(orphans_aff[cols_aff], hide_index=True, use_container_width=True, height=500,
+        column_config={
+            "id": None,
+            "✅ C'est le mien !": st.column_config.CheckboxColumn("Prendre", default=False),
+            "montant_pnr": st.column_config.NumberColumn("PNR (DA)", format="%d DA"),
+        })
+    ids_sel = ed[ed["✅ C'est le mien !"] == True]['id'].tolist()
+    col_b1, col_b2 = st.columns([2, 1])
+    with col_b1:
+        if ids_sel:
+            st.info(f"**{len(ids_sel)} dossier(s) sélectionné(s)**")
+        else:
+            st.caption("Cochez les dossiers à prendre en charge.")
+    with col_b2:
+        if st.button(f"📥 M'attribuer {len(ids_sel)} dossier(s)", type="primary",
+                     use_container_width=True, disabled=(len(ids_sel) == 0)):
+            with get_session() as session:
+                session.query(Dossier).filter(Dossier.id.in_(ids_sel)).update(
+                    {"gestionnaire": agent.strip().upper(), "est_nouveau": "NON"},
+                    synchronize_session=False)
+            st.success(f"✅ {len(ids_sel)} dossier(s) attribués à {agent}.")
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ==========================================
+# ROUTEUR PRINCIPAL
+# ==========================================
+if st.session_state.user is None:
+    login_page()
+else:
+    page = sidebar_menu()
+    if "Administration" in page or "Import" in page:
+        page_integration_admin()
+    elif "Bilans" in page:
+        page_bilans()
+    elif "Corbeille" in page:
+        page_corbeille()
+    elif "Financement" in page:
+        page_gestion(mode="financement", vue_admin=("admin" == st.session_state.user['role']))
+    else:
+        page_gestion(mode="recouvrement", vue_admin=("admin" == st.session_state.user['role']))
