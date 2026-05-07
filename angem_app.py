@@ -644,6 +644,15 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
     total = len(df)
     progress_bar = st.progress(0)
 
+    # ✅ CACHE des dossiers Finance (une seule fois, pas à chaque ligne)
+    _cache_finance_dossiers = []
+    if badge == 'in_recouvrement':
+        rows = session.query(Dossier.id, Dossier.nom, Dossier.prenom).filter(
+            Dossier.type_dispositif == env,
+            Dossier.in_finance == 'OUI'
+        ).all()
+        _cache_finance_dossiers = [(r[0], r[1] or '', r[2] or '') for r in rows]
+
     for idx, row in df.iterrows():
         try:
             progress_bar.progress(min(1.0, (idx + 1) / max(total, 1)))
@@ -686,24 +695,19 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                 else:
                     stats['non_assignes'] += 1
 
-            # ✅ Matching intelligent pour mode recouvrement : identifiant OU nom+prenom
+            # ✅ Matching optimisé : identifiant OU nom+prenom (cache une seule fois)
             exist = verifier_doublon(session, ident, env, badge)
             if not exist and badge == 'in_recouvrement':
-                # Tenter matching par nom+prenom dans Finance
                 nom_imp = data.get('nom','')
                 prenom_imp = data.get('prenom','')
                 if nom_imp:
-                    candidates = session.query(Dossier).filter(
-                        Dossier.type_dispositif == env,
-                        Dossier.in_finance == 'OUI'
-                    ).all()
-                    for cand in candidates:
-                        nom_full_imp = f"{nom_imp} {prenom_imp}".strip()
-                        nom_full_db  = f"{cand.nom} {cand.prenom}".strip()
+                    nom_full_imp = f"{nom_imp} {prenom_imp}".strip()
+                    for cand_id, cand_nom, cand_prenom in _cache_finance_dossiers:
+                        nom_full_db = f"{cand_nom} {cand_prenom}".strip()
                         if similarite(nom_full_imp, nom_full_db) >= 0.80:
-                            exist = cand
-                            # Marquer le dossier finance comme ayant aussi des données recouvrement
-                            exist.in_recouvrement = 'OUI'
+                            exist = session.get(Dossier, cand_id)
+                            if exist:
+                                exist.in_recouvrement = 'OUI'
                             break
 
             if exist:
@@ -1094,11 +1098,11 @@ def afficher_profil_complet(dos_id):
                 <div style='font-size:13px; line-height:1.9;'>
                     <b>💰 Montant PNR :</b> {dos.montant_pnr:,.0f} DA<br>
                     <b>✅ Total remboursé :</b> {dos.montant_rembourse:,.0f} DA<br>
-                    <b>⏳ Reste à rembourser :</b> {dos.reste_rembourser:,.0f} DA<br>
+                   <b>⏳ Reste à rembourser :</b> {dos.reste_rembourser:,.0f} DA<br>
                     <b>💸 Total échue :</b> {dos.total_echue:,.0f} DA<br>
                     <b>📅 Échéances tombées :</b> {dos.nb_echeance_tombee or '—'}<br>
                     <b>📆 Date dernière échéance :</b> {dos.date_ech_tomb or '—'}
-                    </div>
+                </div>
                 """, unsafe_allow_html=True)
             with rc2:
                 st.markdown(f"""
@@ -2261,4 +2265,4 @@ else:
     elif "Corbeille" in page:
         page_corbeille()
     elif "Mes Dossiers" in page:
-        page_gestion(mode="unifie", vue_admin=("admin" == st.session_state.user['role']))
+        page_gestion(mode="unifie", vue_admin=("admin" == st.session_state.user['role'])) 
