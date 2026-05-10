@@ -1824,7 +1824,14 @@ def page_integration_admin():
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             f_rec = st.file_uploader("Fichier Recouvrement", type=['xlsx','xls','csv'], key="fr")
             if f_rec:
-                _onglet_import_generique(f_rec, env, 'in_recouvrement', "form_rec", "Recouvrement")
+                # ✅ Mapping limité aux 12 champs du fichier recouvrement
+                champs_recouvrement = [
+                    'identifiant', 'nom', 'prenom', 'date_naissance',
+                    'telephone', 'commune', 'daira', 'type_dispositif',
+                    'date_financement', 'total_echue', 'montant_rembourse', 'reste_rembourser'
+                ]
+                _onglet_import_generique(f_rec, env, 'in_recouvrement', "form_rec", "Recouvrement",
+                                         targets_filtre=champs_recouvrement)
             st.markdown("</div>", unsafe_allow_html=True)
 
     if t3:
@@ -2145,7 +2152,7 @@ def _outil_gestion_agents():
                     st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-def _onglet_import_generique(file_obj, env, badge, form_key, label):
+def _onglet_import_generique(file_obj, env, badge, form_key, label, targets_filtre=None):
     try:
         df_raw = safe_read_dataframe(file_obj)
     except Exception as e:
@@ -2162,7 +2169,12 @@ def _onglet_import_generique(file_obj, env, badge, form_key, label):
     st.dataframe(df.head(3), use_container_width=True)
     with st.form(form_key):
         st.write(f"### 🎛️ Mapping — {label}")
-        targets = list(MAPPING_CONFIG_KEYWORDS.keys())
+        # ✅ Si targets_filtre fourni, on ne montre QUE ces champs
+        if targets_filtre:
+            targets = targets_filtre
+            st.info(f"📋 Mapping limité aux {len(targets)} champs nécessaires pour {label}.")
+        else:
+            targets = list(MAPPING_CONFIG_KEYWORDS.keys())
         c1, c2, c3 = st.columns(3)
         mapping_final = {}
         for idx, db_f in enumerate(targets):
