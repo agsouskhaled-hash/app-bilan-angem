@@ -644,14 +644,31 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
     total = len(df)
     progress_bar = st.progress(0)
 
-    # ✅ CACHE des dossiers Finance (une seule fois, pas à chaque ligne)
-    _cache_finance_dossiers = []
+    # ✅ CACHE TRIPLE : identifiant + nom + date_naissance
+    _cache_by_ident = {}     # {identifiant: dossier_id}
+    _cache_by_nom   = []     # [(id, nom_norm, prefixe, date_naiss)]
+    _cache_by_date  = {}     # {date_naiss: [(id, nom_norm)]}
     if badge == 'in_recouvrement':
-        rows = session.query(Dossier.id, Dossier.nom, Dossier.prenom).filter(
+        rows = session.query(
+            Dossier.id, Dossier.identifiant, Dossier.nom, Dossier.prenom, Dossier.date_naissance
+        ).filter(
             Dossier.type_dispositif == env,
             Dossier.in_finance == 'OUI'
         ).all()
-        _cache_finance_dossiers = [(r[0], r[1] or '', r[2] or '') for r in rows]
+        for r in rows:
+            d_id     = r[0]
+            ident_db = (r[1] or '').strip().upper()
+            nom_db   = r[2] or ''
+            prenom_db= r[3] or ''
+            date_db  = (r[4] or '').strip()
+            if ident_db:
+                _cache_by_ident[ident_db] = d_id
+            nom_norm = normaliser_nom(f"{nom_db} {prenom_db}")
+            prefixe = nom_norm[:2] if len(nom_norm) >= 2 else nom_norm
+            if nom_norm:
+                _cache_by_nom.append((d_id, nom_norm, prefixe, date_db))
+            if date_db:
+                _cache_by_date.setdefault(date_db, []).append((d_id, nom_norm))
 
     for idx, row in df.iterrows():
         try:
@@ -695,20 +712,61 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                 else:
                     stats['non_assignes'] += 1
 
-            # ✅ Matching optimisé : identifiant OU nom+prenom (cache une seule fois)
+            # ✅ MATCHING 3 NIVEAUX (recouvrement uniquement) : identifiant → nom → date_naissance+nom
             exist = verifier_doublon(session, ident, env, badge)
             if not exist and badge == 'in_recouvrement':
-                nom_imp = data.get('nom','')
-                prenom_imp = data.get('prenom','')
-                if nom_imp:
-                    nom_full_imp = f"{nom_imp} {prenom_imp}".strip()
-                    for cand_id, cand_nom, cand_prenom in _cache_finance_dossiers:
-                        nom_full_db = f"{cand_nom} {cand_prenom}".strip()
-                        if similarite(nom_full_imp, nom_full_db) >= 0.80:
-                            exist = session.get(Dossier, cand_id)
-                            if exist:
-                                exist.in_recouvrement = 'OUI'
-                            break
+                ident_norm = ident.strip().upper() if ident else ''
+                # Niveau 1 : par identifiant (instantané)
+                if ident_norm and ident_norm in _cache_by_ident:
+                    exist = session.get(Dossier, _cache_by_ident[ident_norm])
+                # Niveau 2 : par nom + prénom (similarité 80%)
+                if not exist:
+                    nom_imp = data.get('nom','')
+                    prenom_imp = data.get('prenom','')
+                    if nom_imp:
+                        nom_full_imp = normaliser_nom(f"{nom_imp} {prenom_imp}")
+                        prefixe_imp = nom_full_imp[:2] if len(nom_full_imp) >= 2 else nom_full_imp
+                        for cand_id, cand_nom_norm, cand_prefixe, cand_date in _cache_by_nom:
+                            if prefixe_imp and cand_prefixe and prefixe_imp != cand_prefixe:
+                                continue
+                            score = difflib.SequenceMatcher(None, nom_full_imp, cand_nom_norm).ratio()
+                            if score >= 0.80:
+                                exist = session.get(Dossier, cand_id)
+                                break
+                # Niveau 3 : par date de naissance + nom partiel
+                if not exist:
+                    date_imp = data.get('date_naissance','').strip()
+                    nom_imp_norm = normaliser_nom(data.get('nom',''))
+                    if date_imp and date_imp in _cache_by_date and nom_imp_norm:
+                        for cand_id, cand_nom_norm in _cache_by_date[date_imp]:
+                            if nom_imp_norm in cand_nom_norm or cand_nom_norm in nom_imp_norm:
+                                exist = session.get(Dossier, cand_id)
+                                break
+
+                # ✅ Si trouvé : MISE À JOUR CIBLÉE (3 champs + remplir vides)
+                if exist:
+                    exist.in_recouvrement = 'OUI'
+                    # Champs recouvrement à mettre à jour
+                    for champ in ['nb_echeance_tombee', 'montant_rembourse', 'reste_rembourser', 'total_echue', 'date_ech_tomb', 'prochaine_ech', 'etat_dette', 'anticip', 'ech_anticip', 'observations']:
+                        if champ in data and data[champ] not in (None, '', 0, 0.0):
+                            setattr(exist, champ, data[champ])
+                    # Remplir commune/daira UNIQUEMENT si vides
+                    if (not exist.commune or exist.commune.strip() == '') and data.get('commune'):
+                        exist.commune = data['commune']
+                    if (not exist.daira or exist.daira.strip() == '') and data.get('daira'):
+                        exist.daira = data['daira']
+                    # Remplir adresse si vide
+                    if (not exist.adresse or exist.adresse.strip() == '') and data.get('adresse'):
+                        exist.adresse = data['adresse']
+                    # Champs dynamiques
+                    try:
+                        cd_e = json.loads(exist.champs_dynamiques or '{}')
+                    except Exception:
+                        cd_e = {}
+                    cd_e.update(champs_dyn)
+                    exist.champs_dynamiques = json.dumps(cd_e, ensure_ascii=False)
+                    stats['mis_a_jour'] += 1
+                    continue  # ⏭️ on saute le bloc de création standard
 
             if exist:
                 for k, v in data.items():
@@ -738,6 +796,13 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
 
         except Exception as e:
             stats['erreurs'].append(f"Ligne {idx}: {str(e)}")
+
+        # ✅ Commit périodique toutes les 100 lignes pour libérer la mémoire
+        if (idx + 1) % 100 == 0:
+            try:
+                session.commit()
+            except Exception:
+                session.rollback()
 
     return stats
 
@@ -1033,7 +1098,7 @@ def afficher_profil_complet(dos_id):
                     <b>🏘️ Commune :</b> {dos.commune or '—'}<br>
                     <b>🏛️ Daïra :</b> {dos.daira or '—'}<br>
                     <b>🌍 Wilaya :</b> {dos.wilaya or '—'}
-                </div>
+                    </div>
                 """, unsafe_allow_html=True)
 
         # ✅ SECTION PROJET
@@ -1098,7 +1163,7 @@ def afficher_profil_complet(dos_id):
                 <div style='font-size:13px; line-height:1.9;'>
                     <b>💰 Montant PNR :</b> {dos.montant_pnr:,.0f} DA<br>
                     <b>✅ Total remboursé :</b> {dos.montant_rembourse:,.0f} DA<br>
-                   <b>⏳ Reste à rembourser :</b> {dos.reste_rembourser:,.0f} DA<br>
+                    <b>⏳ Reste à rembourser :</b> {dos.reste_rembourser:,.0f} DA<br>
                     <b>💸 Total échue :</b> {dos.total_echue:,.0f} DA<br>
                     <b>📅 Échéances tombées :</b> {dos.nb_echeance_tombee or '—'}<br>
                     <b>📆 Date dernière échéance :</b> {dos.date_ech_tomb or '—'}
@@ -2265,4 +2330,4 @@ else:
     elif "Corbeille" in page:
         page_corbeille()
     elif "Mes Dossiers" in page:
-        page_gestion(mode="unifie", vue_admin=("admin" == st.session_state.user['role'])) 
+        page_gestion(mode="unifie", vue_admin=("admin" == st.session_state.user['role']))
