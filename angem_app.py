@@ -2163,6 +2163,17 @@ def _onglet_import_generique(file_obj, env, badge, form_key, label, targets_filt
     df = df_raw.iloc[header_idx:].copy()
     df.columns = df.iloc[0].astype(str).tolist()
     df = df.iloc[1:].reset_index(drop=True)
+    # ✅ Fix colonnes en double
+    cols_vus = {}
+    nouvelles_cols = []
+    for col in df.columns:
+        if col in cols_vus:
+            cols_vus[col] += 1
+            nouvelles_cols.append(f"{col}_{cols_vus[col]}")
+        else:
+            cols_vus[col] = 0
+            nouvelles_cols.append(col)
+    df.columns = nouvelles_cols
     mapping_auto = auto_mapper(list(df.columns))
     excel_cols = ["-- Ignorer --"] + list(df.columns)
     st.success(f"✅ {len(mapping_auto)} colonnes détectées sur {len(df.columns)}")
