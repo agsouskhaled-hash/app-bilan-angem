@@ -216,7 +216,11 @@ except Exception:
 
 def init_db_users():
     with get_session() as session:
-        for ident, nom, role in [("admin","Administrateur","admin"), ("finance","Service Finance","finance")]:
+        for ident, nom, role in [
+            ("admin","Administrateur","admin"),
+            ("finance","Service Finance","finance"),
+            ("communication","Service Communication","communication")
+        ]:
             u = session.query(UtilisateurAuth).filter_by(identifiant=ident).first()
             if not u:
                 session.add(UtilisateurAuth(identifiant=ident, nom=nom, mot_de_passe="angem", role=role))
@@ -578,6 +582,20 @@ def safe_read_dataframe(file_obj):
                 pass
     raise ValueError("Impossible de lire le fichier.")
 
+def fix_colonnes_doublons(df):
+    """✅ Renomme les colonnes en double pour éviter les erreurs Streamlit/PyArrow."""
+    cols_vus = {}
+    nouvelles_cols = []
+    for col in df.columns:
+        if col in cols_vus:
+            cols_vus[col] += 1
+            nouvelles_cols.append(f"{col}_{cols_vus[col]}")
+        else:
+            cols_vus[col] = 0
+            nouvelles_cols.append(col)
+    df.columns = nouvelles_cols
+    return df
+
 def auto_mapper(df_cols):
     mapping = {}
     cols_clean = {clean_header(c): c for c in df_cols}
@@ -903,6 +921,11 @@ def login_page():
         with c3:
             if st.button("👑\n\nDirection & Admin", use_container_width=True):
                 st.session_state.portal_selection = "admin"
+        # ✅ Bouton Communication
+        _, c_com, _ = st.columns([1, 1, 1])
+        with c_com:
+            if st.button("📢\n\nService Communication", use_container_width=True):
+                st.session_state.portal_selection = "communication"
 
     elif st.session_state.portal_selection == "agent":
         if st.button("⬅️ Retour"):
@@ -1022,6 +1045,8 @@ def sidebar_menu():
         opts = ["📂 Mes Dossiers", "📥 Import Financement"]
     elif role == "admin":
         opts = ["📂 Mes Dossiers", "📊 Bilans & Reporting", "⚙️ Administration"]
+    elif role == "communication":
+        opts = ["🔍 Recherche Promoteurs"]
     else:
         opts = ["📂 Mes Dossiers", "🗑️ Corbeille"]
 
@@ -1098,7 +1123,7 @@ def afficher_profil_complet(dos_id):
                     <b>🏘️ Commune :</b> {dos.commune or '—'}<br>
                     <b>🏛️ Daïra :</b> {dos.daira or '—'}<br>
                     <b>🌍 Wilaya :</b> {dos.wilaya or '—'}
-                    </div>
+                </div>
                 """, unsafe_allow_html=True)
 
         # ✅ SECTION PROJET
@@ -1322,22 +1347,7 @@ def page_gestion(mode="financement", vue_admin=False):
         st.progress(min(taux_perso/100, 1.0))
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # ✅ STATISTIQUES AGENT
-        df_agent    = df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80)]
-        total_dos   = len(df_agent)
-        total_pnr   = df_agent['montant_pnr'].astype(float).sum()
-        total_remb  = df_agent['montant_rembourse'].astype(float).sum()
-        total_reste = df_agent['reste_rembourser'].astype(float).sum()
-        taux        = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("📂 Mes Dossiers", total_dos)
-        c2.metric("💰 PNR Total", f"{total_pnr:,.0f} DA")
-        c3.metric("✅ Recouvré", f"{total_remb:,.0f} DA")
-        c4.metric("⏳ Reste", f"{total_reste:,.0f} DA")
-        c5.metric("📈 Taux", f"{taux:.1f}%")
-        st.progress(min(taux / 100, 1.0))
-        st.markdown("</div>", unsafe_allow_html=True)
+
 
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([4, 1, 1])
@@ -1354,9 +1364,32 @@ def page_gestion(mode="financement", vue_admin=False):
         q = st.session_state.search_query
         df = df[df.apply(lambda x: x.astype(str).str.contains(q, case=False).any(), axis=1)]
 
-    # ✅ FILTRE AGENT — similarité 80%
+    # ✅ FILTRE AGENT — matching renforcé (similarité + tokens)
     if not vue_admin and role == "agent":
-        df_filtre = df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80)]
+        def match_agent_robuste(nom_db):
+            """Matching combiné : similarité 75% OU 2 tokens communs OU inclusion complète."""
+            if not str(nom_db).strip() or str(nom_db).strip().upper() in ('NAN','NONE',''):
+                return False
+            nom_db_norm    = normaliser_nom(str(nom_db))
+            nom_agent_norm = normaliser_nom(nom_agent)
+            if not nom_db_norm or not nom_agent_norm:
+                return False
+            # Critère 1 : similarité globale >= 75%
+            if similarite(nom_db_norm, nom_agent_norm) >= 0.75:
+                return True
+            # Critère 2 : tous les tokens de l'agent présents dans le gestionnaire
+            tokens_agent = set(re.split(r'[\s\-_\.]+', nom_agent_norm)) - {'', 'MME', 'MR', 'MLLE'}
+            tokens_db    = set(re.split(r'[\s\-_\.]+', nom_db_norm))    - {'', 'MME', 'MR', 'MLLE'}
+            tokens_agent = {t for t in tokens_agent if len(t) > 1}
+            if tokens_agent and tokens_agent.issubset(tokens_db):
+                return True
+            # Critère 3 : au moins 2 tokens communs (nom + prénom)
+            communs = tokens_agent & tokens_db
+            if len(communs) >= min(2, len(tokens_agent)):
+                return True
+            return False
+
+        df_filtre = df[df['gestionnaire'].apply(match_agent_robuste)]
         if df_filtre.empty and not df.empty:
             with st.expander("⚠️ Aucun dossier trouvé — Diagnostic", expanded=True):
                 st.warning(f"Votre nom : **{nom_agent}**")
@@ -1496,6 +1529,7 @@ def _widget_import_rapide(env):
     df = df_raw.iloc[header_idx:].copy()
     df.columns = df.iloc[0].astype(str).tolist()
     df = df.iloc[1:].reset_index(drop=True)
+    df = fix_colonnes_doublons(df)
     mapping_auto = auto_mapper(list(df.columns))
     excel_cols = ["-- Ignorer --"] + list(df.columns)
     st.success(f"✅ {len(mapping_auto)} colonnes détectées sur {len(df.columns)}")
@@ -2163,17 +2197,7 @@ def _onglet_import_generique(file_obj, env, badge, form_key, label, targets_filt
     df = df_raw.iloc[header_idx:].copy()
     df.columns = df.iloc[0].astype(str).tolist()
     df = df.iloc[1:].reset_index(drop=True)
-    # ✅ Fix colonnes en double
-    cols_vus = {}
-    nouvelles_cols = []
-    for col in df.columns:
-        if col in cols_vus:
-            cols_vus[col] += 1
-            nouvelles_cols.append(f"{col}_{cols_vus[col]}")
-        else:
-            cols_vus[col] = 0
-            nouvelles_cols.append(col)
-    df.columns = nouvelles_cols
+    df = fix_colonnes_doublons(df)
     mapping_auto = auto_mapper(list(df.columns))
     excel_cols = ["-- Ignorer --"] + list(df.columns)
     st.success(f"✅ {len(mapping_auto)} colonnes détectées sur {len(df.columns)}")
@@ -2340,6 +2364,150 @@ def page_corbeille():
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
+# PAGE COMMUNICATION
+# ==========================================
+
+def page_communication():
+    """Page réservée au Service Communication — recherche + fiche synthèse uniquement."""
+    st.title("📢 Service Communication — Recherche Promoteurs")
+    env = st.session_state.user['env']
+
+    # Barre de recherche
+    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+    st.markdown("**🔍 Rechercher un promoteur**")
+    rech = st.text_input("Tapez un nom, prénom, identifiant, activité ou commune...",
+                          placeholder="Ex: BENALI, 12345678, Hydra, commerce...")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if not rech or len(rech.strip()) < 2:
+        st.info("Tapez au moins 2 caractères pour lancer la recherche.")
+        return
+
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql_query(
+                text("SELECT * FROM dossiers WHERE type_dispositif=:env ORDER BY nom"),
+                conn, params={"env": env}
+            ).fillna('')
+    except Exception:
+        df = pd.DataFrame()
+
+    if df.empty:
+        st.warning("La base est vide.")
+        return
+
+    # Filtrage
+    df_res = df[df.apply(
+        lambda x: x.astype(str).str.contains(rech.strip(), case=False, na=False).any(), axis=1
+    )]
+
+    st.caption(f"**{len(df_res)}** résultat(s) trouvé(s) pour **{rech}**")
+
+    if df_res.empty:
+        st.info("Aucun promoteur trouvé.")
+        return
+
+    # Affichage résultats (colonnes non sensibles uniquement)
+    cols_com = [c for c in [
+        "identifiant","nom","prenom","telephone","activite",
+        "secteur","commune","daira","gestionnaire","statut_dossier","id"
+    ] if c in df_res.columns]
+
+    df_res.insert(0, "Fiche 📄", False)
+    cols_com = ["Fiche 📄"] + cols_com
+
+    st.markdown("<div class='modern-card' style='padding:10px;'>", unsafe_allow_html=True)
+    edited = st.data_editor(
+        df_res[cols_com],
+        hide_index=True,
+        use_container_width=True,
+        height=400,
+        column_config={
+            "Fiche 📄": st.column_config.CheckboxColumn("Fiche", default=False),
+            "id": None,
+        }
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Générer fiche de synthèse pour le promoteur sélectionné
+    sel = edited[edited["Fiche 📄"] == True]
+    if not sel.empty:
+        dos_id = int(sel.iloc[0]['id'])
+        with get_session() as session:
+            dos = session.get(Dossier, dos_id)
+            if dos:
+                pdf_data = _generer_fiche_synthese(dos)
+                st.success(f"Fiche de synthèse prête pour **{dos.nom} {dos.prenom}**")
+                st.download_button(
+                    label="📄 Télécharger la Fiche de Synthèse",
+                    data=pdf_data,
+                    file_name=f"Synthese_{dos.identifiant}.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                    use_container_width=True
+                )
+
+def _generer_fiche_synthese(dos) -> bytes:
+    """Génère une fiche de synthèse sobre pour le service communication."""
+    pdf = FPDF()
+    pdf.add_page()
+    # En-tête
+    pdf.set_fill_color(29, 78, 216)
+    pdf.rect(0, 0, 210, 35, 'F')
+    pdf.set_font("Arial", 'B', 18)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 15, "ANGEM ALGER OUEST", ln=True, align='C')
+    pdf.set_font("Arial", '', 12)
+    pdf.cell(0, 8, "FICHE DE SYNTHESE PROMOTEUR", ln=True, align='C')
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(8)
+    # Identité
+    pdf.set_font("Arial", 'B', 11)
+    pdf.set_fill_color(219, 234, 254)
+    pdf.cell(0, 8, "IDENTIFICATION", border=1, ln=True, fill=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(95, 7, f"Identifiant : {clean_pdf_text(dos.identifiant)}", border='LB')
+    pdf.cell(95, 7, f"Genre : {clean_pdf_text(dos.genre)}", border='RB', ln=True)
+    pdf.cell(95, 7, f"Nom : {clean_pdf_text(dos.nom)}", border='LB')
+    pdf.cell(95, 7, f"Prenom : {clean_pdf_text(dos.prenom)}", border='RB', ln=True)
+    pdf.cell(95, 7, f"Telephone : {clean_pdf_text(dos.telephone)}", border='LB')
+    pdf.cell(95, 7, f"Niveau : {clean_pdf_text(dos.niveau_instruction)}", border='RB', ln=True)
+    pdf.cell(0, 7, f"Adresse : {clean_pdf_text(dos.adresse)} — {clean_pdf_text(dos.commune)} ({clean_pdf_text(dos.daira)})", border='LRB', ln=True)
+    pdf.ln(4)
+    # Projet
+    pdf.set_font("Arial", 'B', 11)
+    pdf.set_fill_color(209, 250, 229)
+    pdf.cell(0, 8, "PROJET", border=1, ln=True, fill=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(95, 7, f"Activite : {clean_pdf_text(dos.activite)}", border='LB')
+    pdf.cell(95, 7, f"Secteur : {clean_pdf_text(dos.secteur)}", border='RB', ln=True)
+    pdf.cell(95, 7, f"Dispositif : {clean_pdf_text(dos.type_dispositif)}", border='LB')
+    pdf.cell(95, 7, f"Statut : {clean_pdf_text(dos.statut_dossier)}", border='RB', ln=True)
+    pdf.cell(0, 7, f"Agent charge : {clean_pdf_text(dos.gestionnaire)}", border='LRB', ln=True)
+    pdf.ln(4)
+    # Financement (résumé non sensible)
+    pdf.set_font("Arial", 'B', 11)
+    pdf.set_fill_color(254, 243, 199)
+    pdf.cell(0, 8, "FINANCEMENT", border=1, ln=True, fill=True)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(95, 7, f"Date financement : {clean_pdf_text(dos.date_financement)}", border='LB')
+    pdf.cell(95, 7, f"Banque : {clean_pdf_text(dos.banque_nom)}", border='RB', ln=True)
+    pdf.cell(0, 7, f"Debut exploitation : {clean_pdf_text(dos.debut_consommation)}", border='LRB', ln=True)
+    pdf.ln(6)
+    # Pied de page
+    pdf.set_font("Arial", 'I', 8)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 5, f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')} — Confidentiel", align='C')
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f:
+            data = f.read()
+    os.unlink(tmp.name)
+    return data
+
+
+# ==========================================
 # ROUTEUR PRINCIPAL
 # ==========================================
 if st.session_state.user is None:
@@ -2352,5 +2520,7 @@ else:
         page_bilans()
     elif "Corbeille" in page:
         page_corbeille()
+    elif "Recherche Promoteurs" in page:
+        page_communication()
     elif "Mes Dossiers" in page:
         page_gestion(mode="unifie", vue_admin=("admin" == st.session_state.user['role']))
