@@ -2678,75 +2678,208 @@ def page_communication():
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Générer fiche de synthèse pour le promoteur sélectionné
+    # ✅ 2 boutons : Fiche Arabe + Fiche Française
     sel = edited[edited["Fiche 📄"] == True]
     if not sel.empty:
         dos_id = int(sel.iloc[0]['id'])
         with get_session() as session:
             dos = session.get(Dossier, dos_id)
             if dos:
-                pdf_data = _generer_fiche_synthese(dos)
-                st.success(f"Fiche de synthèse prête pour **{dos.nom} {dos.prenom}**")
-                st.download_button(
-                    label="📄 Télécharger la Fiche de Synthèse",
-                    data=pdf_data,
-                    file_name=f"Synthese_{dos.identifiant}.pdf",
-                    mime="application/pdf",
-                    type="primary",
-                    use_container_width=True
-                )
+                st.success(f"Promoteur sélectionné : **{dos.nom} {dos.prenom}**")
+                bc1, bc2 = st.columns(2)
+                with bc1:
+                    try:
+                        pdf_ar = _generer_bطاقة_ar(dos)
+                        st.download_button(
+                            label="📄 بطاقة تقنية (عربي)",
+                            data=pdf_ar,
+                            file_name=f"Bطاقة_{dos.identifiant}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"Erreur PDF Arabe: {e}")
+                with bc2:
+                    try:
+                        pdf_fr = _generer_fiche_fr(dos)
+                        st.download_button(
+                            label="📄 Fiche Technique (Français)",
+                            data=pdf_fr,
+                            file_name=f"Fiche_{dos.identifiant}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"Erreur PDF Français: {e}")
 
-def _generer_fiche_synthese(dos) -> bytes:
-    """Génère une fiche de synthèse sobre pour le service communication."""
+def _ar_text(text):
+    """Prépare texte arabe pour reportlab."""
+    try:
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        if not text or str(text).strip() in ('','nan','None'):
+            return '---'
+        return get_display(arabic_reshaper.reshape(str(text)))
+    except Exception:
+        return str(text)
+
+def _generer_bطاقة_ar(dos) -> bytes:
+    """✅ Fiche technique en ARABE — reportlab + arabic_reshaper."""
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.colors import HexColor
+    import io as _io
+
+    FONT   = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    try:
+        pdfmetrics.registerFont(TTFont('Ar2', FONT))
+        pdfmetrics.registerFont(TTFont('ArB2', FONT_B))
+    except Exception:
+        pass
+
+    buf = _io.BytesIO()
+    W, H = A4
+    ML, MR = 2*cm, 2*cm
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+    NAVY = HexColor('#0f172a')
+    GBG  = HexColor('#f1f5f9')
+    BDR  = HexColor('#cbd5e1')
+    BLUE = HexColor('#1d4ed8')
+
+    def draw_section_ar(y, title):
+        c.setFillColor(GBG)
+        c.setStrokeColor(BDR)
+        c.rect(ML, y-0.55*cm, W-ML-MR, 0.65*cm, fill=1, stroke=1)
+        c.setFont('ArB2', 12)
+        c.setFillColor(NAVY)
+        c.drawCentredString(W/2, y-0.42*cm, _ar_text(title))
+        return y - 0.72*cm
+
+    def draw_field_ar(y, label, value):
+        val = str(value) if value and str(value) not in ('nan','None','0','0.0','') else '...'
+        c.setFont('ArB2', 10)
+        c.setFillColor(NAVY)
+        c.drawRightString(W-MR, y, _ar_text(f"{label} : {val}"))
+        c.setStrokeColor(BDR)
+        c.setLineWidth(0.3)
+        c.line(ML, y-0.12*cm, W-MR, y-0.12*cm)
+        return y - 0.62*cm
+
+    y = H - 2*cm
+    c.setFont('ArB2', 16); c.setFillColor(NAVY)
+    c.drawCentredString(W/2, y, _ar_text("الوكالة الوطنية لتسيير القرض المصغر"))
+    y -= 0.7*cm
+    c.setFont('ArB2', 10); c.setFillColor(BLUE)
+    c.drawCentredString(W/2, y, "AGENCE NATIONALE DE GESTION DU MICRO CREDIT")
+    y -= 0.5*cm
+    c.setStrokeColor(NAVY); c.setLineWidth(1)
+    c.line(ML, y, W-MR, y)
+    y -= 0.7*cm
+    c.setFont('ArB2', 14); c.setFillColor(NAVY)
+    c.drawCentredString(W/2, y, _ar_text("بطاقة تقنية"))
+    y -= 0.6*cm
+    c.setStrokeColor(BDR); c.setLineWidth(0.5)
+    c.line(ML, y, W-MR, y)
+    y -= 0.5*cm
+
+    y = draw_section_ar(y, "هوية المقاول")
+    c.setStrokeColor(NAVY); c.setLineWidth(0.8)
+    c.rect(ML, y-3.5*cm, 2.5*cm, 3.5*cm, fill=0)
+    c.setFont('Ar2', 7); c.setFillColor(HexColor('#94a3b8'))
+    c.drawCentredString(ML+1.25*cm, y-1.9*cm, _ar_text("الصورة"))
+    y = draw_field_ar(y, "الاسم", dos.nom)
+    y = draw_field_ar(y, "اللقب", dos.prenom)
+    y = draw_field_ar(y, "العمر", dos.age)
+    y = draw_field_ar(y, "المستوى الدراسي", dos.niveau_instruction)
+    y = draw_field_ar(y, "العنوان", f"{dos.adresse} — {dos.commune}")
+    y = draw_field_ar(y, "الهاتف", dos.telephone)
+    y -= 0.3*cm
+
+    y = draw_section_ar(y, "تقديم المشروع")
+    y = draw_field_ar(y, "طبيعة النشاط", dos.activite)
+    y = draw_field_ar(y, "نوع النشاط", dos.secteur)
+    y = draw_field_ar(y, "نوع التمويل", dos.type_dispositif)
+    try: pnr_s = f"{float(dos.montant_pnr):,.0f} DA"
+    except: pnr_s = str(dos.montant_pnr)
+    y = draw_field_ar(y, "قيمة المشروع", pnr_s)
+    y = draw_field_ar(y, "تاريخ بداية النشاط", dos.debut_consommation)
+    y = draw_field_ar(y, "مكان النشاط", f"{dos.commune} — {dos.daira}")
+    y -= 0.3*cm
+
+    y = draw_section_ar(y, "المرافقة")
+    y = draw_field_ar(y, "المرافق", dos.gestionnaire)
+    y = draw_field_ar(y, "البنك", dos.banque_nom)
+    y = draw_field_ar(y, "تاريخ التمويل", dos.date_financement)
+
+    c.setFont('Ar2', 8); c.setFillColor(HexColor('#94a3b8'))
+    c.drawCentredString(W/2, 1.2*cm, _ar_text(f"تم الإنشاء بتاريخ {datetime.now().strftime('%d/%m/%Y')}"))
+    c.showPage(); c.save()
+    return buf.getvalue()
+
+def _generer_fiche_fr(dos) -> bytes:
+    """✅ Fiche technique en FRANÇAIS — FPDF avec clean_pdf_text sur tout."""
     pdf = FPDF()
     pdf.add_page()
-    # En-tête
     pdf.set_fill_color(29, 78, 216)
-    pdf.rect(0, 0, 210, 35, 'F')
-    pdf.set_font("Arial", 'B', 18)
+    pdf.rect(0, 0, 210, 38, 'F')
+    pdf.set_font("Arial", 'B', 14)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 15, "ANGEM ALGER OUEST", ln=True, align='C')
-    pdf.set_font("Arial", '', 12)
-    pdf.cell(0, 8, "FICHE DE SYNTHESE PROMOTEUR", ln=True, align='C')
+    pdf.cell(0, 10, "AGENCE NATIONALE DE GESTION DU MICRO CREDIT", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 8, "ANGEM ALGER OUEST", ln=True, align='C')
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(8)
-    # Identité
-    pdf.set_font("Arial", 'B', 11)
-    pdf.set_fill_color(219, 234, 254)
-    pdf.cell(0, 8, "IDENTIFICATION", border=1, ln=True, fill=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(95, 7, f"Identifiant : {clean_pdf_text(dos.identifiant)}", border='LB')
-    pdf.cell(95, 7, f"Genre : {clean_pdf_text(dos.genre)}", border='RB', ln=True)
-    pdf.cell(95, 7, f"Nom : {clean_pdf_text(dos.nom)}", border='LB')
-    pdf.cell(95, 7, f"Prenom : {clean_pdf_text(dos.prenom)}", border='RB', ln=True)
-    pdf.cell(95, 7, f"Telephone : {clean_pdf_text(dos.telephone)}", border='LB')
-    pdf.cell(95, 7, f"Niveau : {clean_pdf_text(dos.niveau_instruction)}", border='RB', ln=True)
-    pdf.cell(0, 7, f"Adresse : {clean_pdf_text(dos.adresse)} — {clean_pdf_text(dos.commune)} ({clean_pdf_text(dos.daira)})", border='LRB', ln=True)
     pdf.ln(4)
-    # Projet
-    pdf.set_font("Arial", 'B', 11)
-    pdf.set_fill_color(209, 250, 229)
-    pdf.cell(0, 8, "PROJET", border=1, ln=True, fill=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(95, 7, f"Activite : {clean_pdf_text(dos.activite)}", border='LB')
-    pdf.cell(95, 7, f"Secteur : {clean_pdf_text(dos.secteur)}", border='RB', ln=True)
-    pdf.cell(95, 7, f"Dispositif : {clean_pdf_text(dos.type_dispositif)}", border='LB')
-    pdf.cell(95, 7, f"Statut : {clean_pdf_text(dos.statut_dossier)}", border='RB', ln=True)
-    pdf.cell(0, 7, f"Agent charge : {clean_pdf_text(dos.gestionnaire)}", border='LRB', ln=True)
-    pdf.ln(4)
-    # Financement (résumé non sensible)
-    pdf.set_font("Arial", 'B', 11)
-    pdf.set_fill_color(254, 243, 199)
-    pdf.cell(0, 8, "FINANCEMENT", border=1, ln=True, fill=True)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(95, 7, f"Date financement : {clean_pdf_text(dos.date_financement)}", border='LB')
-    pdf.cell(95, 7, f"Banque : {clean_pdf_text(dos.banque_nom)}", border='RB', ln=True)
-    pdf.cell(0, 7, f"Debut exploitation : {clean_pdf_text(dos.debut_consommation)}", border='LRB', ln=True)
-    pdf.ln(6)
-    # Pied de page
-    pdf.set_font("Arial", 'I', 8)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 9, "FICHE TECHNIQUE", ln=True, align='C')
+    pdf.set_draw_color(203, 213, 225)
+    pdf.set_line_width(0.3)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.ln(3)
+
+    def sec(title, color):
+        pdf.set_fill_color(*color)
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(0, 7, clean_pdf_text(title), border=1, ln=True, fill=True)
+        pdf.set_font("Arial", '', 9)
+
+    def fld(label, value, w1=80, w2=110):
+        val = clean_pdf_text(str(value)) if value and str(value) not in ('nan','None','0','0.0','') else '...'
+        pdf.cell(w1, 6, f"  {clean_pdf_text(label)} :", border='LB')
+        pdf.cell(w2, 6, f"  {val}", border='RB', ln=True)
+
+    sec("IDENTITE DU PROMOTEUR", (219, 234, 254))
+    fld("Nom", dos.nom); fld("Prenom", dos.prenom)
+    fld("Age", dos.age); fld("Niveau d instruction", dos.niveau_instruction)
+    fld("Adresse", f"{dos.adresse} — {dos.commune} ({dos.daira})", 55, 135)
+    fld("Telephone", dos.telephone, 55, 135)
+    pdf.ln(2)
+
+    sec("PRESENTATION DU PROJET", (209, 250, 229))
+    fld("Nature de l activite", dos.activite)
+    fld("Type d activite", dos.secteur)
+    fld("Type de financement", dos.type_dispositif)
+    try: pnr_s = f"{float(dos.montant_pnr):,.0f} DA"
+    except: pnr_s = str(dos.montant_pnr)
+    fld("Valeur du projet", pnr_s)
+    fld("Date debut d activite", dos.debut_consommation)
+    fld("Lieu d activite", f"{dos.commune} — {dos.daira}", 55, 135)
+    pdf.ln(2)
+
+    sec("INFORMATIONS DE FINANCEMENT", (254, 243, 199))
+    fld("Banque", dos.banque_nom)
+    fld("N Ordre de Virement", dos.num_ordre_versement)
+    fld("Date de Financement", dos.date_financement)
+    fld("Agent accompagnateur", dos.gestionnaire, 65, 125)
+    pdf.ln(5)
+
+    pdf.set_font("Arial", 'I', 7)
     pdf.set_text_color(100, 116, 139)
-    pdf.cell(0, 5, f"Document genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')} — Confidentiel", align='C')
+    pdf.cell(0, 4,
+        clean_pdf_text(f"Document confidentiel — Genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"),
+        align='C')
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         pdf.output(tmp.name)
