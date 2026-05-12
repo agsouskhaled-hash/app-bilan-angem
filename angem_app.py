@@ -2718,23 +2718,14 @@ def _ar_text(text):
         import arabic_reshaper
         from bidi.algorithm import get_display
         if not text or str(text).strip() in ('','nan','None'):
-            return '---'
+            return ''
         return get_display(arabic_reshaper.reshape(str(text)))
     except Exception:
         return str(text)
 
-def _generer_bطاقة_ar(dos) -> bytes:
-    """✅ Fiche technique en ARABE — reportlab + arabic_reshaper."""
-    from reportlab.pdfgen import canvas as rl_canvas
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.colors import HexColor
-    from reportlab.lib.units import cm
-    import io as _io
-    import os as _os
-
-    # ✅ Recherche robuste de la police sur plusieurs chemins
+def _get_arabic_fonts():
+    """Retourne les chemins des polices arabes disponibles."""
+    import os
     FONT_CANDIDATES = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
@@ -2745,98 +2736,200 @@ def _generer_bطاقة_ar(dos) -> bytes:
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     ]
-    FONT   = next((p for p in FONT_CANDIDATES if _os.path.exists(p)), None)
-    FONT_B = next((p for p in FONT_B_CANDIDATES if _os.path.exists(p)), None)
-    if not FONT or not FONT_B:
-        raise ValueError("Aucune police compatible trouvée sur ce serveur.")
+    f  = next((p for p in FONT_CANDIDATES   if os.path.exists(p)), None)
+    fb = next((p for p in FONT_B_CANDIDATES if os.path.exists(p)), None)
+    return f, fb
 
-    # Enregistrement robuste (ignore si déjà enregistrée)
-    for name, path in [('ArPDF', FONT), ('ArBPDF', FONT_B)]:
+def _register_arabic_fonts():
+    """Enregistre les polices arabes (idempotent)."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    f, fb = _get_arabic_fonts()
+    if not f or not fb:
+        raise ValueError("Aucune police compatible trouvée sur ce serveur. Ajoutez 'fonts-dejavu-core' dans packages.txt")
+    for name, path in [('BtR', f), ('BtB', fb)]:
         try:
             pdfmetrics.registerFont(TTFont(name, path))
         except Exception as ex:
             if 'already' not in str(ex).lower():
                 raise
 
+def _generer_bطاقة_ar(dos) -> bytes:
+    """✅ البطاقة التقنية الرسمية — reportlab + arabic_reshaper."""
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.colors import HexColor, white
+    from reportlab.lib.units import cm
+    import io as _io
+
+    _register_arabic_fonts()
+
+    ORANGE = HexColor('#f97316')
+    NAVY   = HexColor('#1e3a5f')
+    BORDER = HexColor('#cbd5e1')
+    WHITE  = white
+
     buf = _io.BytesIO()
     W, H = A4
-    ML, MR = 2*cm, 2*cm
-    c = rl_canvas.Canvas(buf, pagesize=A4)
-    NAVY = HexColor('#0f172a')
-    GBG  = HexColor('#f1f5f9')
-    BDR  = HexColor('#cbd5e1')
-    BLUE = HexColor('#1d4ed8')
+    ML, MR = 1.5*cm, 1.5*cm
+    TW = W - ML - MR
 
-    def draw_section_ar(y, title):
-        c.setFillColor(GBG)
-        c.setStrokeColor(BDR)
-        c.rect(ML, y-0.55*cm, W-ML-MR, 0.65*cm, fill=1, stroke=1)
-        c.setFont('ArBPDF', 12)
-        c.setFillColor(NAVY)
-        c.drawCentredString(W/2, y-0.42*cm, _ar_text(title))
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+
+    def draw_rect_fill(x, y, w, h, fill, stroke=None):
+        c.setFillColor(fill)
+        if stroke:
+            c.setStrokeColor(stroke)
+            c.rect(x, y, w, h, fill=1, stroke=1)
+        else:
+            c.rect(x, y, w, h, fill=1, stroke=0)
+
+    def txt_ar(text, x, y, font='BtR', size=9, color=HexColor('#0f172a'), align='right'):
+        c.setFont(font, size)
+        c.setFillColor(color)
+        t = _ar_text(text)
+        if align == 'right':   c.drawRightString(x, y, t)
+        elif align == 'center': c.drawCentredString(x, y, t)
+        else:                   c.drawString(x, y, t)
+
+    def section_header(y, title):
+        draw_rect_fill(ML, y-0.65*cm, TW, 0.65*cm, ORANGE)
+        txt_ar(title, ML+TW/2, y-0.48*cm, 'BtB', 12, WHITE, 'center')
         return y - 0.72*cm
 
-    def draw_field_ar(y, label, value):
-        val = str(value) if value and str(value) not in ('nan','None','0','0.0','') else '...'
-        c.setFont('ArBPDF', 10)
-        c.setFillColor(NAVY)
-        c.drawRightString(W-MR, y, _ar_text(f"{label} : {val}"))
-        c.setStrokeColor(BDR)
-        c.setLineWidth(0.3)
-        c.line(ML, y-0.12*cm, W-MR, y-0.12*cm)
-        return y - 0.62*cm
+    def draw_row(x, y, w, h, num, label, value, alt=False):
+        NUM_W   = 0.9*cm
+        LABEL_W = 3.8*cm
+        if alt:
+            draw_rect_fill(x, y-h, w, h, HexColor('#f8fafc'), BORDER)
+        else:
+            c.setStrokeColor(BORDER)
+            c.setLineWidth(0.3)
+            c.rect(x, y-h, w, h, fill=0, stroke=1)
+        txt_ar(num,   x+w-0.1*cm,              y-h+0.13*cm, 'BtB', 8, ORANGE)
+        txt_ar(label, x+w-NUM_W-0.1*cm,        y-h+0.13*cm, 'BtB', 8, NAVY)
+        txt_ar(str(value)[:70], x+w-NUM_W-LABEL_W-0.1*cm, y-h+0.13*cm, 'BtR', 8, HexColor('#1e293b'))
 
-    y = H - 2*cm
-    c.setFont('ArBPDF', 16); c.setFillColor(NAVY)
-    c.drawCentredString(W/2, y, _ar_text("الوكالة الوطنية لتسيير القرض المصغر"))
-    y -= 0.7*cm
-    c.setFont('ArBPDF', 10); c.setFillColor(BLUE)
-    c.drawCentredString(W/2, y, "AGENCE NATIONALE DE GESTION DU MICRO CREDIT")
-    y -= 0.5*cm
-    c.setStrokeColor(NAVY); c.setLineWidth(1)
-    c.line(ML, y, W-MR, y)
-    y -= 0.7*cm
-    c.setFont('ArBPDF', 14); c.setFillColor(NAVY)
-    c.drawCentredString(W/2, y, _ar_text("بطاقة تقنية"))
-    y -= 0.6*cm
-    c.setStrokeColor(BDR); c.setLineWidth(0.5)
-    c.line(ML, y, W-MR, y)
-    y -= 0.5*cm
+    # ======================
+    # EN-TÊTE
+    # ======================
+    y = H - 0.8*cm
+    draw_rect_fill(ML, y-3.0*cm, TW, 3.0*cm, HexColor('#f0f4f8'), BORDER)
+    txt_ar("الجمهورية الجزائرية الديمقراطية الشعبية",
+           ML+TW/2, y-0.55*cm, 'BtB', 10, NAVY, 'center')
+    txt_ar("وزارة اقتصاد المعرفة والمؤسسات الناشئة والمؤسسات المصغرة",
+           ML+TW/2, y-1.1*cm, 'BtB', 9, NAVY, 'center')
+    txt_ar("الوكالة الوطنية لتسيير القرض المصغر",
+           ML+TW/2, y-1.65*cm, 'BtB', 11, ORANGE, 'center')
+    wilaya = getattr(dos, 'wilaya', '') or ''
+    daira  = getattr(dos, 'daira',  '') or ''
+    txt_ar(f"الفرع الجهوي: {wilaya}",        ML+TW-0.2*cm, y-2.1*cm,  'BtB', 9, NAVY)
+    txt_ar("الوكالة الولائية: الجزائر غرب", ML+TW-0.2*cm, y-2.5*cm,  'BtB', 9, NAVY)
+    txt_ar(f"خلية المرافقة: {daira}",        ML+TW-0.2*cm, y-2.9*cm,  'BtB', 9, NAVY)
+    y -= 3.2*cm
 
-    y = draw_section_ar(y, "هوية المقاول")
-    c.setStrokeColor(NAVY); c.setLineWidth(0.8)
-    c.rect(ML, y-3.5*cm, 2.5*cm, 3.5*cm, fill=0)
-    c.setFont('ArPDF', 7); c.setFillColor(HexColor('#94a3b8'))
-    c.setFont('ArPDF', 7)
+    # Titre principal
+    draw_rect_fill(ML, y-0.75*cm, TW, 0.75*cm, ORANGE)
+    txt_ar("البطاقة التقنية للمقاول", ML+TW/2, y-0.53*cm, 'BtB', 14, WHITE, 'center')
+    y -= 0.9*cm
+
+    # ======================
+    # SECTION 1
+    # ======================
+    y = section_header(y, "التعريف بالمقاول")
+
+    ROW_H   = 0.55*cm
+    PHOTO_W = 2.8*cm
+    PHOTO_H = 3.5*cm
+
+    # Case photo
+    c.setStrokeColor(NAVY)
+    c.setLineWidth(0.8)
+    c.rect(ML+0.2*cm, y-PHOTO_H-0.1*cm, PHOTO_W, PHOTO_H, fill=0)
+    txt_ar("الصورة", ML+0.2*cm+PHOTO_W/2, y-PHOTO_H/2-0.1*cm, 'BtR', 8, HexColor('#94a3b8'), 'center')
+
+    x_tbl = ML + PHOTO_W + 0.5*cm
+    w_tbl = TW - PHOTO_W - 0.5*cm
+
+    s1_fields = [
+        ("01", "اللقب",               getattr(dos,'nom','')),
+        ("02", "اللقب الأصلي",        getattr(dos,'nom','')),
+        ("03", "الاسم",               getattr(dos,'prenom','')),
+        ("04", "تاريخ و مكان الميلاد",getattr(dos,'date_naissance','')),
+        ("05", "الحالة العائلية",     getattr(dos,'genre','')),
+        ("06", "العنوان",             getattr(dos,'adresse','')),
+        ("07", "المستوى الدراسي",    getattr(dos,'niveau_instruction','')),
+        ("08", "الشهادات و المؤهلات",getattr(dos,'observations','')),
+        ("09", "رقم الهاتف",         getattr(dos,'telephone','')),
+        ("10", "البريد الإلكتروني",  ''),
+        ("11", "نوع الإعاقة",        "بصرية .....%   حركية .....%   سمعية .....%   صم بكم .....%"),
+    ]
+
+    y_r = y
+    for i, (num, label, val) in enumerate(s1_fields):
+        draw_row(x_tbl, y_r, w_tbl, ROW_H, num, label, val, i%2==0)
+        y_r -= ROW_H
+
+    y = min(y_r, y - PHOTO_H - 0.2*cm) - 0.4*cm
+
+    # ======================
+    # SECTION 2
+    # ======================
+    y = section_header(y, "التعريف بالمشروع")
+
+    try: pnr_s = f"{float(getattr(dos,'montant_pnr',0)):,.0f} دج"
+    except: pnr_s = str(getattr(dos,'montant_pnr',''))
+
+    commune = getattr(dos,'commune','') or ''
+    adresse = getattr(dos,'adresse','') or ''
+
+    s2_fields = [
+        ("01", "تسمية المشروع",           getattr(dos,'activite','')),
+        ("02", "نوع النشاط",              getattr(dos,'activite','')),
+        ("03", "قطاع النشاط",            getattr(dos,'secteur','')),
+        ("04", "نوع التمويل",             getattr(dos,'type_dispositif','')),
+        ("05", "المبلغ الإجمالي للمشروع", pnr_s),
+        ("06", "تاريخ بداية النشاط",     getattr(dos,'debut_consommation','')),
+        ("07", "مكان ممارسة النشاط",    f"{adresse} {commune}"),
+        ("08", "عدد مناصب الشغل المستحدثة", ""),
+    ]
+
+    for i, (num, label, val) in enumerate(s2_fields):
+        h = ROW_H * 1.8 if num in ("07","08") else ROW_H
+        draw_row(ML, y, TW, h, num, label, val, i%2==0)
+        if num == "08":
+            txt_ar("إناث : 01    منها", ML+TW/2, y-h+0.15*cm, 'BtR', 8, NAVY, 'center')
+        y -= h
+
+    y -= 0.4*cm
+
+    # ======================
+    # SECTION 3
+    # ======================
+    y = section_header(y, "تسديد مبلغ القرض")
+
+    try: remb_s = f"{float(getattr(dos,'montant_rembourse',0)):,.2f} دج"
+    except: remb_s = "00.00 دج"
+
+    s3_fields = [
+        ("01", "تاريخ تمويل المشروع", getattr(dos,'date_financement','')),
+        ("02", "تاريخ تسديد القرض",   getattr(dos,'date_ech_tomb','')),
+        ("03", "المبلغ الإجمالي المسدد", remb_s),
+    ]
+
+    for i, (num, label, val) in enumerate(s3_fields):
+        draw_row(ML, y, TW, ROW_H*1.5, num, label, val, i%2==0)
+        y -= ROW_H * 1.5
+
+    # Pied de page
+    y -= 0.3*cm
+    c.setFont('BtR', 7)
     c.setFillColor(HexColor('#94a3b8'))
-    c.drawCentredString(ML+1.25*cm, y-1.9*cm, _ar_text('Photo'))
-    y = draw_field_ar(y, "الاسم", dos.nom)
-    y = draw_field_ar(y, "اللقب", dos.prenom)
-    y = draw_field_ar(y, "العمر", dos.age)
-    y = draw_field_ar(y, "المستوى الدراسي", dos.niveau_instruction)
-    y = draw_field_ar(y, "العنوان", f"{dos.adresse} — {dos.commune}")
-    y = draw_field_ar(y, "الهاتف", dos.telephone)
-    y -= 0.3*cm
+    c.drawCentredString(W/2, 0.8*cm,
+        _ar_text(f"تم الإنشاء بتاريخ {datetime.now().strftime('%d/%m/%Y')}  —  الوكالة الوطنية لتسيير القرض المصغر"))
 
-    y = draw_section_ar(y, "تقديم المشروع")
-    y = draw_field_ar(y, "طبيعة النشاط", dos.activite)
-    y = draw_field_ar(y, "نوع النشاط", dos.secteur)
-    y = draw_field_ar(y, "نوع التمويل", dos.type_dispositif)
-    try: pnr_s = f"{float(dos.montant_pnr):,.0f} DA"
-    except: pnr_s = str(dos.montant_pnr)
-    y = draw_field_ar(y, "قيمة المشروع", pnr_s)
-    y = draw_field_ar(y, "تاريخ بداية النشاط", dos.debut_consommation)
-    y = draw_field_ar(y, "مكان النشاط", f"{dos.commune} — {dos.daira}")
-    y -= 0.3*cm
-
-    y = draw_section_ar(y, "المرافقة")
-    y = draw_field_ar(y, "المرافق", dos.gestionnaire)
-    y = draw_field_ar(y, "البنك", dos.banque_nom)
-    y = draw_field_ar(y, "تاريخ التمويل", dos.date_financement)
-
-    c.setFont('ArPDF', 8); c.setFillColor(HexColor('#94a3b8'))
-    c.drawCentredString(W/2, 1.2*cm, _ar_text(f"تم الإنشاء بتاريخ {datetime.now().strftime('%d/%m/%Y')}"))
-    c.showPage(); c.save()
+    c.showPage()
+    c.save()
     return buf.getvalue()
 
 def _generer_fiche_fr(dos) -> bytes:
