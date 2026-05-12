@@ -2730,6 +2730,7 @@ def _generer_bطاقة_ar(dos) -> bytes:
     from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.colors import HexColor
+    from reportlab.lib.units import cm
     import io as _io
 
     FONT   = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
