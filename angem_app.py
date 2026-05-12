@@ -564,6 +564,16 @@ def get_header_row(df_raw):
     return best_idx
 
 def safe_read_dataframe(file_obj):
+    # ✅ Patch openpyxl pour fichiers Excel avec attribut biltinId invalide
+    try:
+        import openpyxl.styles.named_styles as _ns
+        _orig_init = _ns._NamedCellStyle.__init__
+        def _patched_init(self, **kwargs):
+            kwargs.pop('biltinId', None)
+            _orig_init(self, **kwargs)
+        _ns._NamedCellStyle.__init__ = _patched_init
+    except Exception:
+        pass
     name = file_obj.name.lower()
     if name.endswith('.csv'):
         for sep, enc in [(';','utf-8'),(';','latin1'),(',','utf-8'),('\t','utf-8')]:
@@ -1088,7 +1098,7 @@ def afficher_profil_complet(dos_id):
                 </div>
             </div>
             <div style='text-align:right;'>
-                <div style='font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;'>Statut du dossier</div>
+        <div style='font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;'>Statut du dossier</div>
                 <div style='font-family:Outfit,sans-serif; font-weight:700; color:{theme_color}; font-size:18px; margin-top:4px;'>{dos.statut_dossier}</div>
                 <div style='margin-top:6px; font-size:12px; color:#64748b;'>👤 Agent : <b>{dos.gestionnaire or "Non assigné"}</b></div>
             </div>
@@ -1312,6 +1322,29 @@ def page_gestion(mode="financement", vue_admin=False):
     if df.empty:
         st.info("Base vide ou aucun dossier dans cette rubrique.")
         return
+
+    # ✅ MÉTRIQUES ADMIN — total dossiers + non assignés
+    if role == 'admin':
+        try:
+            with engine.connect() as conn:
+                df_stats = pd.read_sql_query(
+                    text("SELECT gestionnaire FROM dossiers WHERE type_dispositif=:env"),
+                    conn, params={"env": env}
+                ).fillna('')
+            total_dos = len(df_stats)
+            non_assignes = len(df_stats[df_stats['gestionnaire'].apply(
+                lambda x: str(x).strip().upper() in ('','NAN','NONE','NON','-','N/A'))])
+            assignes = total_dos - non_assignes
+            taux = (assignes / total_dos * 100) if total_dos > 0 else 0
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📂 Total Dossiers", total_dos)
+            c2.metric("✅ Assignés", assignes)
+            c3.metric("⚠️ Non Assignés", non_assignes,
+                      delta=f"-{non_assignes}" if non_assignes > 0 else None,
+                      delta_color="inverse")
+            c4.metric("📈 Taux affectation", f"{taux:.1f}%")
+        except Exception:
+            pass
 
     if role == 'agent':
         nvx = len(df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80) & (df['est_nouveau'] == 'OUI')])
