@@ -1842,9 +1842,14 @@ def page_integration_admin():
 
     if role == "finance":
         tabs = st.tabs(["💰 Import Finance"])
-        t1, t2, t3, t4, t5, t6 = tabs[0], None, None, None, None, None
+        t1, t2, t3, t4, t5, t6, t7, t8 = tabs[0], None, None, None, None, None, None, None
     else:
-        t1, t2, t3, t4, t5, t6 = st.tabs(["💰 Import Finance", "📈 Import Recouvrement", "👥 Gestionnaires", "🧹 Maintenance", "🔐 Équipes", "🔄 Gestion Agents"])
+        t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs([
+            "💰 Import Finance", "📈 Import Recouvrement",
+            "📊 MAJ Remboursement", "👤 MAJ Gestionnaire",
+            "🧹 Maintenance", "🔐 Équipes", "🔄 Gestion Agents",
+            "👥 Gestionnaires anciens"
+        ])
 
     with t1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -1968,7 +1973,102 @@ def page_integration_admin():
 
     if t6:
         with t6:
+            pass  # ancien onglet gestionnaires — déplacé
+
+    # ✅ ONGLET MAJ REMBOURSEMENT
+    if t3:
+        with t3:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.info("📊 Mettez à jour uniquement les données de remboursement. PNR, banque et gestionnaire ne sont pas touchés.")
+            f_remb = st.file_uploader("Fichier Excel Remboursement", type=['xlsx','xls','csv'], key="f_maj_remb")
+            if f_remb:
+                try:
+                    df_raw = safe_read_dataframe(f_remb)
+                except Exception as e:
+                    st.error(f"Erreur lecture : {e}")
+                    df_raw = None
+                if df_raw is not None:
+                    df_raw = df_raw.fillna('')
+                    header_idx = get_header_row(df_raw)
+                    df = df_raw.iloc[header_idx:].copy()
+                    df.columns = df.iloc[0].astype(str).tolist()
+                    df = df.iloc[1:].reset_index(drop=True)
+                    df = fix_colonnes_doublons(df)
+                    mapping_auto = auto_mapper(list(df.columns))
+                    excel_cols = ["-- Ignorer --"] + list(df.columns)
+                    st.success(f"✅ {len(df)} lignes détectées")
+                    st.dataframe(df.head(3), use_container_width=True)
+                    champs_remb = ['identifiant','nom','prenom','date_naissance',
+                                   'montant_rembourse','reste_rembourser','total_echue',
+                                   'nb_echeance_tombee','date_ech_tomb','prochaine_ech',
+                                   'etat_dette','anticip','ech_anticip','observations']
+                    with st.form("form_maj_remb"):
+                        st.write("### 🎛️ Mapping Remboursement")
+                        c1, c2, c3 = st.columns(3)
+                        mapping_final = {}
+                        for idx, db_f in enumerate(champs_remb):
+                            auto_val = mapping_auto.get(db_f, "-- Ignorer --")
+                            auto_idx = excel_cols.index(auto_val) if auto_val in excel_cols else 0
+                            col = c1 if idx % 3 == 0 else c2 if idx % 3 == 1 else c3
+                            with col:
+                                mapping_final[db_f] = st.selectbox(f"`{db_f}`", excel_cols, index=auto_idx, key=f"maj_remb_{db_f}")
+                        sub = st.form_submit_button("🚀 Mettre à jour les remboursements", type="primary")
+                    if sub:
+                        _maj_remboursement(df, mapping_final, env)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # ✅ ONGLET MAJ GESTIONNAIRE
+    if t4:
+        with t4:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.info("👤 Met à jour UNIQUEMENT le gestionnaire. Les noms sont normalisés pour correspondre exactement aux comptes agents.")
+            st.markdown("**Colonnes requises dans le fichier :** `identifiant`, `nom`, `prenom`, `gestionnaire`")
+            f_gest_maj = st.file_uploader("Fichier Excel Gestionnaires", type=['xlsx','xls','csv'], key="f_maj_gest")
+            if f_gest_maj:
+                try:
+                    df_raw = safe_read_dataframe(f_gest_maj)
+                except Exception as e:
+                    st.error(f"Erreur lecture : {e}")
+                    df_raw = None
+                if df_raw is not None:
+                    df_raw = df_raw.fillna('')
+                    header_idx = get_header_row(df_raw)
+                    df = df_raw.iloc[header_idx:].copy()
+                    df.columns = df.iloc[0].astype(str).tolist()
+                    df = df.iloc[1:].reset_index(drop=True)
+                    df = fix_colonnes_doublons(df)
+                    mapping_auto = auto_mapper(list(df.columns))
+                    excel_cols = ["-- Ignorer --"] + list(df.columns)
+                    st.success(f"✅ {len(df)} lignes détectées")
+                    st.dataframe(df.head(3), use_container_width=True)
+                    champs_gest = ['identifiant','nom','prenom','gestionnaire']
+                    with st.form("form_maj_gest"):
+                        st.write("### 🎛️ Mapping Gestionnaire")
+                        c1, c2 = st.columns(2)
+                        mapping_final = {}
+                        for idx, db_f in enumerate(champs_gest):
+                            auto_val = mapping_auto.get(db_f, "-- Ignorer --")
+                            auto_idx = excel_cols.index(auto_val) if auto_val in excel_cols else 0
+                            col = c1 if idx % 2 == 0 else c2
+                            with col:
+                                mapping_final[db_f] = st.selectbox(f"`{db_f}`", excel_cols, index=auto_idx, key=f"maj_gest_{db_f}")
+                        sub = st.form_submit_button("🚀 Mettre à jour les gestionnaires", type="primary")
+                    if sub:
+                        _maj_gestionnaire(df, mapping_final, env)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    if t7:
+        with t7:
             _outil_gestion_agents()
+
+    if t8:
+        with t8:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.warning("👥 Assigne le gestionnaire sur TOUTES les fiches portant le même ID.")
+            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest")
+            if f_gest:
+                _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest", "Gestionnaires")
+            st.markdown("</div>", unsafe_allow_html=True)
 
 def _outil_gestion_agents():
     """3 outils : fusion doublons, passation, réécriture noms."""
@@ -2233,6 +2333,128 @@ def _onglet_import_generique(file_obj, env, badge, form_key, label, targets_filt
                 with st.expander(f"🔴 {len(stats['erreurs'])} erreurs"):
                     for e in stats['erreurs'][:20]:
                         st.code(e)
+
+def _maj_remboursement(df, mapping, env):
+    """✅ MAJ ciblée : uniquement les champs de remboursement."""
+    champs_remb = ['montant_rembourse','reste_rembourser','total_echue',
+                   'nb_echeance_tombee','date_ech_tomb','prochaine_ech',
+                   'etat_dette','anticip','ech_anticip','observations']
+    with get_session() as session:
+        # Cache identifiants Finance
+        rows = session.query(Dossier.id, Dossier.identifiant, Dossier.nom, Dossier.prenom,
+                             Dossier.date_naissance).filter(
+            Dossier.type_dispositif == env).all()
+        cache_ident = {(r[1] or '').strip().upper(): r[0] for r in rows if r[1]}
+        cache_nom   = [(r[0], normaliser_nom(f"{r[2] or ''} {r[3] or ''}"),
+                        (r[4] or '').strip()) for r in rows]
+
+        c_maj = 0
+        progress_bar = st.progress(0)
+        total = len(df)
+        for idx, row in df.iterrows():
+            progress_bar.progress(min(1.0, (idx+1)/max(total,1)))
+            # Identifier le dossier
+            xl_id = mapping.get('identifiant','-- Ignorer --')
+            ident = clean_identifiant(row.get(xl_id,'')) if xl_id != '-- Ignorer --' else ''
+            dos_id = None
+            if ident and ident.upper() in cache_ident:
+                dos_id = cache_ident[ident.upper()]
+            else:
+                # Fallback nom+prenom
+                xl_nom = mapping.get('nom','-- Ignorer --')
+                xl_pre = mapping.get('prenom','-- Ignorer --')
+                nom_imp = row.get(xl_nom,'') if xl_nom != '-- Ignorer --' else ''
+                pre_imp = row.get(xl_pre,'') if xl_pre != '-- Ignorer --' else ''
+                if nom_imp:
+                    nom_norm = normaliser_nom(f"{nom_imp} {pre_imp}")
+                    prefixe = nom_norm[:2] if len(nom_norm) >= 2 else nom_norm
+                    for cand_id, cand_nom, cand_date in cache_nom:
+                        if prefixe and not cand_nom.startswith(prefixe):
+                            continue
+                        if difflib.SequenceMatcher(None, nom_norm, cand_nom).ratio() >= 0.80:
+                            dos_id = cand_id
+                            break
+            if not dos_id:
+                continue
+            dos = session.get(Dossier, dos_id)
+            if not dos:
+                continue
+            # MAJ uniquement les champs remboursement
+            for champ in champs_remb:
+                xl_col = mapping.get(champ,'-- Ignorer --')
+                if xl_col == '-- Ignorer --':
+                    continue
+                val = row.get(xl_col,'')
+                if pd.isna(val) or str(val).strip() in ('','NAN','None','nan'):
+                    continue
+                if champ in COLONNES_ARGENT:
+                    setattr(dos, champ, clean_money(val))
+                else:
+                    setattr(dos, champ, str(val).strip().upper())
+            dos.in_recouvrement = 'OUI'
+            c_maj += 1
+            if (idx+1) % 100 == 0:
+                session.commit()
+
+    st.success(f"✅ {c_maj} dossiers mis à jour avec les données de remboursement.")
+
+def _maj_gestionnaire(df, mapping, env):
+    """✅ MAJ ciblée : UNIQUEMENT le champ gestionnaire, normalisé sur le nom officiel."""
+    with get_session() as session:
+        # Charger les agents officiels
+        agents_officiels = [a.nom for a in session.query(UtilisateurAuth).filter_by(role='agent').all()]
+        # Cache identifiants
+        rows = session.query(Dossier.id, Dossier.identifiant, Dossier.nom,
+                             Dossier.prenom).filter(Dossier.type_dispositif == env).all()
+        cache_ident = {(r[1] or '').strip().upper(): r[0] for r in rows if r[1]}
+        cache_nom   = [(r[0], normaliser_nom(f"{r[2] or ''} {r[3] or ''}")) for r in rows]
+
+        c_maj = 0
+        progress_bar = st.progress(0)
+        total = len(df)
+        for idx, row in df.iterrows():
+            progress_bar.progress(min(1.0, (idx+1)/max(total,1)))
+            xl_id   = mapping.get('identifiant','-- Ignorer --')
+            xl_gest = mapping.get('gestionnaire','-- Ignorer --')
+            if xl_gest == '-- Ignorer --':
+                continue
+            gest_brut = row.get(xl_gest,'')
+            if pd.isna(gest_brut) or str(gest_brut).strip() in ('','NAN','None'):
+                continue
+            # ✅ Normaliser le nom du gestionnaire vers le nom officiel
+            gest_officiel = trouver_agent_intelligent(str(gest_brut), agents_officiels)
+
+            # Trouver le dossier
+            ident = clean_identifiant(row.get(xl_id,'')) if xl_id != '-- Ignorer --' else ''
+            dos_id = None
+            if ident and ident.upper() in cache_ident:
+                dos_id = cache_ident[ident.upper()]
+            else:
+                xl_nom = mapping.get('nom','-- Ignorer --')
+                xl_pre = mapping.get('prenom','-- Ignorer --')
+                nom_imp = row.get(xl_nom,'') if xl_nom != '-- Ignorer --' else ''
+                pre_imp = row.get(xl_pre,'') if xl_pre != '-- Ignorer --' else ''
+                if nom_imp:
+                    nom_norm = normaliser_nom(f"{nom_imp} {pre_imp}")
+                    prefixe = nom_norm[:2] if len(nom_norm) >= 2 else nom_norm
+                    for cand_id, cand_nom in cache_nom:
+                        if prefixe and not cand_nom.startswith(prefixe):
+                            continue
+                        if difflib.SequenceMatcher(None, nom_norm, cand_nom).ratio() >= 0.80:
+                            dos_id = cand_id
+                            break
+            if not dos_id:
+                continue
+            dos = session.get(Dossier, dos_id)
+            if not dos:
+                continue
+            # ✅ MAJ UNIQUEMENT le gestionnaire avec le nom officiel normalisé
+            dos.gestionnaire = gest_officiel.strip().upper()
+            c_maj += 1
+            if (idx+1) % 100 == 0:
+                session.commit()
+
+    st.success(f"✅ {c_maj} dossiers affectés à leur accompagnateur (noms normalisés). Les dossiers apparaissent maintenant dans le bon profil.")
 
 def _import_gestionnaires(df, mapping, env):
     with get_session() as session:
