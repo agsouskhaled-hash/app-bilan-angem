@@ -1876,9 +1876,9 @@ def page_integration_admin():
     if t3:
         with t3:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest")
+            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest_old")
             if f_gest:
-                _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest", "Gestionnaires")
+                _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest_old", "Gestionnaires")
             st.markdown("</div>", unsafe_allow_html=True)
 
     if t4:
@@ -2065,9 +2065,9 @@ def page_integration_admin():
         with t8:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.warning("👥 Assigne le gestionnaire sur TOUTES les fiches portant le même ID.")
-            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest")
+            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest_old")
             if f_gest:
-                _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest", "Gestionnaires")
+                _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest_old", "Gestionnaires")
             st.markdown("</div>", unsafe_allow_html=True)
 
 def _outil_gestion_agents():
