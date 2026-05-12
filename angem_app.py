@@ -2732,14 +2732,31 @@ def _generer_bطاقة_ar(dos) -> bytes:
     from reportlab.lib.colors import HexColor
     from reportlab.lib.units import cm
     import io as _io
+    import os as _os
 
-    FONT   = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    try:
-        pdfmetrics.registerFont(TTFont('Ar2', FONT))
-        pdfmetrics.registerFont(TTFont('ArB2', FONT_B))
-    except Exception:
-        pass
+    # ✅ Recherche robuste de la police sur plusieurs chemins
+    FONT_CANDIDATES = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    FONT_B_CANDIDATES = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]
+    FONT   = next((p for p in FONT_CANDIDATES if _os.path.exists(p)), None)
+    FONT_B = next((p for p in FONT_B_CANDIDATES if _os.path.exists(p)), None)
+    if not FONT or not FONT_B:
+        raise ValueError("Aucune police compatible trouvée sur ce serveur.")
+
+    # Enregistrement robuste (ignore si déjà enregistrée)
+    for name, path in [('ArPDF', FONT), ('ArBPDF', FONT_B)]:
+        try:
+            pdfmetrics.registerFont(TTFont(name, path))
+        except Exception as ex:
+            if 'already' not in str(ex).lower():
+                raise
 
     buf = _io.BytesIO()
     W, H = A4
@@ -2754,14 +2771,14 @@ def _generer_bطاقة_ar(dos) -> bytes:
         c.setFillColor(GBG)
         c.setStrokeColor(BDR)
         c.rect(ML, y-0.55*cm, W-ML-MR, 0.65*cm, fill=1, stroke=1)
-        c.setFont('ArB2', 12)
+        c.setFont('ArBPDF', 12)
         c.setFillColor(NAVY)
         c.drawCentredString(W/2, y-0.42*cm, _ar_text(title))
         return y - 0.72*cm
 
     def draw_field_ar(y, label, value):
         val = str(value) if value and str(value) not in ('nan','None','0','0.0','') else '...'
-        c.setFont('ArB2', 10)
+        c.setFont('ArBPDF', 10)
         c.setFillColor(NAVY)
         c.drawRightString(W-MR, y, _ar_text(f"{label} : {val}"))
         c.setStrokeColor(BDR)
@@ -2770,16 +2787,16 @@ def _generer_bطاقة_ar(dos) -> bytes:
         return y - 0.62*cm
 
     y = H - 2*cm
-    c.setFont('ArB2', 16); c.setFillColor(NAVY)
+    c.setFont('ArBPDF', 16); c.setFillColor(NAVY)
     c.drawCentredString(W/2, y, _ar_text("الوكالة الوطنية لتسيير القرض المصغر"))
     y -= 0.7*cm
-    c.setFont('ArB2', 10); c.setFillColor(BLUE)
+    c.setFont('ArBPDF', 10); c.setFillColor(BLUE)
     c.drawCentredString(W/2, y, "AGENCE NATIONALE DE GESTION DU MICRO CREDIT")
     y -= 0.5*cm
     c.setStrokeColor(NAVY); c.setLineWidth(1)
     c.line(ML, y, W-MR, y)
     y -= 0.7*cm
-    c.setFont('ArB2', 14); c.setFillColor(NAVY)
+    c.setFont('ArBPDF', 14); c.setFillColor(NAVY)
     c.drawCentredString(W/2, y, _ar_text("بطاقة تقنية"))
     y -= 0.6*cm
     c.setStrokeColor(BDR); c.setLineWidth(0.5)
@@ -2789,8 +2806,10 @@ def _generer_bطاقة_ar(dos) -> bytes:
     y = draw_section_ar(y, "هوية المقاول")
     c.setStrokeColor(NAVY); c.setLineWidth(0.8)
     c.rect(ML, y-3.5*cm, 2.5*cm, 3.5*cm, fill=0)
-    c.setFont('Ar2', 7); c.setFillColor(HexColor('#94a3b8'))
-    c.drawCentredString(ML+1.25*cm, y-1.9*cm, _ar_text("الصورة"))
+    c.setFont('ArPDF', 7); c.setFillColor(HexColor('#94a3b8'))
+    c.setFont('ArPDF', 7)
+    c.setFillColor(HexColor('#94a3b8'))
+    c.drawCentredString(ML+1.25*cm, y-1.9*cm, _ar_text('Photo'))
     y = draw_field_ar(y, "الاسم", dos.nom)
     y = draw_field_ar(y, "اللقب", dos.prenom)
     y = draw_field_ar(y, "العمر", dos.age)
@@ -2815,7 +2834,7 @@ def _generer_bطاقة_ar(dos) -> bytes:
     y = draw_field_ar(y, "البنك", dos.banque_nom)
     y = draw_field_ar(y, "تاريخ التمويل", dos.date_financement)
 
-    c.setFont('Ar2', 8); c.setFillColor(HexColor('#94a3b8'))
+    c.setFont('ArPDF', 8); c.setFillColor(HexColor('#94a3b8'))
     c.drawCentredString(W/2, 1.2*cm, _ar_text(f"تم الإنشاء بتاريخ {datetime.now().strftime('%d/%m/%Y')}"))
     c.showPage(); c.save()
     return buf.getvalue()
