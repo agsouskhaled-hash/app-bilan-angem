@@ -1589,6 +1589,41 @@ def page_gestion(mode="financement", vue_admin=False):
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # ✅ TRANSFERT GROUPÉ — sélection multiple (agents uniquement)
+    if role == 'agent' and not edited.empty:
+        ids_coches = edited[edited["Ouvrir 📂"] == True]['id'].tolist()
+        if len(ids_coches) > 0:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.markdown(f"**🔄 Demander le transfert de {len(ids_coches)} dossier(s) sélectionné(s)**")
+            try:
+                with get_session() as s2:
+                    agents_list = [a.nom for a in s2.query(UtilisateurAuth).filter_by(role='agent').all()
+                                   if a.nom != st.session_state.user['nom']]
+            except Exception:
+                agents_list = []
+            col_tr1, col_tr2, col_tr3 = st.columns([2, 2, 1])
+            with col_tr1:
+                agent_dest_g = st.selectbox("Transférer vers :", [""] + agents_list, key="tr_group_dest")
+            with col_tr2:
+                motif_g = st.text_input("Motif :", placeholder="Ex: Mutation, Charge excessive...", key="tr_group_motif")
+            with col_tr3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("📨 Envoyer à l'admin", type="primary", key="tr_group_send",
+                             disabled=not agent_dest_g):
+                    date_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+                    with get_session() as session:
+                        c_tr = 0
+                        for did in ids_coches:
+                            dos = session.get(Dossier, int(did))
+                            if dos and not dos.transfert_vers:
+                                dos.transfert_vers  = agent_dest_g
+                                dos.transfert_motif = motif_g
+                                dos.transfert_date  = date_str
+                                c_tr += 1
+                    st.success(f"✅ {c_tr} demande(s) envoyée(s) à l'admin.")
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
     sel = edited[edited["Ouvrir 📂"] == True]
     if not sel.empty:
         dos_id = int(sel.iloc[0]['id'])
