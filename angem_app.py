@@ -185,6 +185,11 @@ class Dossier(Base):
     in_finance           = Column(String, default="NON")
     in_recouvrement      = Column(String, default="NON")
     champs_dynamiques    = Column(Text, default="{}")
+    # ✅ Transfert avec accord admin
+    origine_dossier      = Column(String, default="")
+    transfert_vers       = Column(String, default="")
+    transfert_motif      = Column(String, default="")
+    transfert_date       = Column(String, default="")
 
 class UtilisateurAuth(Base):
     __tablename__ = 'utilisateurs_auth'
@@ -205,6 +210,10 @@ _MIGRATIONS = {
     'montant_total_credit': "ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS montant_total_credit FLOAT DEFAULT 0.0",
     'zone':                 "ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS zone VARCHAR DEFAULT ''",
     'secteur':              "ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS secteur VARCHAR DEFAULT ''",
+    'origine_dossier':      "ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS origine_dossier VARCHAR DEFAULT ''",
+    'transfert_vers':       "ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS transfert_vers VARCHAR DEFAULT ''",
+    'transfert_motif':      "ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS transfert_motif VARCHAR DEFAULT ''",
+    'transfert_date':       "ALTER TABLE dossiers ADD COLUMN IF NOT EXISTS transfert_date VARCHAR DEFAULT ''",
 }
 try:
     with engine.connect() as conn:
@@ -1037,6 +1046,25 @@ def sidebar_menu():
     </div>
     """, unsafe_allow_html=True)
 
+    # ✅ Badge transferts en attente pour admin
+    if role == 'admin':
+        try:
+            with get_session() as s:
+                nb_tr = s.query(Dossier).filter(
+                    Dossier.type_dispositif == env,
+                    Dossier.transfert_vers != ''
+                ).count()
+            if nb_tr > 0:
+                st.sidebar.markdown(f"""
+                <div style='background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px;
+                     padding:10px; text-align:center; margin-bottom:10px;'>
+                    <div style='font-size:20px;'>📨</div>
+                    <div style='font-weight:700; color:#1d4ed8; font-size:13px;'>{nb_tr} transfert(s) en attente</div>
+                </div>
+                """, unsafe_allow_html=True)
+        except Exception:
+            pass
+
     if role == 'agent':
         try:
             with get_session() as s:
@@ -1070,7 +1098,6 @@ def sidebar_menu():
 # ==========================================
 # PROFIL PROMOTEUR
 # ==========================================
-
 def afficher_profil_complet(dos_id):
     with get_session() as session:
         dos = session.get(Dossier, dos_id)
@@ -1098,7 +1125,7 @@ def afficher_profil_complet(dos_id):
                 </div>
             </div>
             <div style='text-align:right;'>
-        <div style='font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;'>Statut du dossier</div>
+                <div style='font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;'>Statut du dossier</div>
                 <div style='font-family:Outfit,sans-serif; font-weight:700; color:{theme_color}; font-size:18px; margin-top:4px;'>{dos.statut_dossier}</div>
                 <div style='margin-top:6px; font-size:12px; color:#64748b;'>👤 Agent : <b>{dos.gestionnaire or "Non assigné"}</b></div>
             </div>
@@ -1253,6 +1280,31 @@ def afficher_profil_complet(dos_id):
             hist = (dos.historique_visites or 'Aucun rapport enregistré').replace('\n', '<br>')
             st.markdown(f"<div style='background:#f8fafc; padding:15px; border-radius:8px; height:200px; overflow-y:auto;'>{hist}</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
+        # ✅ BOUTON DEMANDE DE TRANSFERT (agents uniquement)
+        if st.session_state.user['role'] == 'agent':
+            with st.expander("🔄 Demander un transfert de dossier", expanded=False):
+                if dos.transfert_vers and dos.transfert_vers.strip():
+                    st.warning(f"⏳ Demande en attente — vers : **{dos.transfert_vers}** | Motif : {dos.transfert_motif}")
+                    if st.button("❌ Annuler la demande", key=f"cancel_tr_{dos_id}"):
+                        dos.transfert_vers  = ''
+                        dos.transfert_motif = ''
+                        dos.transfert_date  = ''
+                        st.success("Demande annulée.")
+                        st.rerun()
+                else:
+                    with get_session() as s2:
+                        agents_list = [a.nom for a in s2.query(UtilisateurAuth).filter_by(role='agent').all()
+                                       if a.nom != st.session_state.user['nom']]
+                    agent_dest  = st.selectbox("Transférer vers :", [""] + agents_list, key=f"tr_dest_{dos_id}")
+                    motif_tr    = st.text_input("Motif du transfert :", key=f"tr_motif_{dos_id}")
+                    if st.button("📨 Envoyer la demande à l'admin", key=f"tr_send_{dos_id}",
+                                 type="primary", disabled=not agent_dest):
+                        dos.transfert_vers  = agent_dest
+                        dos.transfert_motif = motif_tr
+                        dos.transfert_date  = datetime.now().strftime('%d/%m/%Y %H:%M')
+                        st.success(f"✅ Demande envoyée à l'admin — en attente d'approbation.")
+                        st.rerun()
+
         with col_d:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("**📎 Documents**")
@@ -1875,20 +1927,30 @@ def page_integration_admin():
 
     if role == "finance":
         tabs = st.tabs(["💰 Import Finance"])
-        t1, t2, t3, t4, t5, t6, t7, t8 = tabs[0], None, None, None, None, None, None, None
+        t1, t2, t3, t4, t5, t6, t7, t8, t9 = tabs[0], None, None, None, None, None, None, None, None
     else:
-        t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs([
+        t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs([
             "💰 Import Finance", "📈 Import Recouvrement",
             "📊 MAJ Remboursement", "👤 MAJ Gestionnaire",
             "🧹 Maintenance", "🔐 Équipes", "🔄 Gestion Agents",
-            "👥 Gestionnaires anciens"
+            "👥 Gestionnaires anciens", "📨 Transferts en attente"
         ])
 
     with t1:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         f_fin = st.file_uploader("Fichier Finance", type=['xlsx','xls','csv'], key="ff")
         if f_fin:
-            _onglet_import_generique(f_fin, env, 'in_finance', "form_fin", "Finance")
+            # ✅ Mapping Finance ciblé aux 23 colonnes officielles
+            champs_finance = [
+                'nom', 'prenom', 'identifiant', 'date_naissance', 'genre',
+                'activite', 'secteur', 'code_activite',
+                'montant_total_credit', 'apport_personnel', 'credit_bancaire', 'montant_pnr',
+                'banque_nom', 'agence_bancaire', 'numero_compte', 'num_ordre_versement',
+                'gestionnaire', 'daira', 'niveau_instruction', 'age', 'observations',
+                'commune', 'telephone'
+            ]
+            _onglet_import_generique(f_fin, env, 'in_finance', "form_fin", "Finance",
+                                     targets_filtre=champs_finance)
         st.markdown("</div>", unsafe_allow_html=True)
 
     if t2:
@@ -2095,6 +2157,64 @@ def page_integration_admin():
             f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest_old")
             if f_gest:
                 _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest_old", "Gestionnaires")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    if t9:
+        with t9:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.markdown("### 📨 Demandes de transfert en attente")
+            try:
+                with engine.connect() as conn:
+                    df_tr = pd.read_sql_query(
+                        text("SELECT id, identifiant, nom, prenom, gestionnaire, transfert_vers, transfert_motif, transfert_date FROM dossiers WHERE type_dispositif=:env AND transfert_vers != '' ORDER BY transfert_date DESC"),
+                        conn, params={"env": env}
+                    ).fillna('')
+            except Exception:
+                df_tr = pd.DataFrame()
+
+            if df_tr.empty:
+                st.success("✅ Aucune demande de transfert en attente.")
+            else:
+                st.info(f"**{len(df_tr)}** demande(s) en attente")
+                for _, row in df_tr.iterrows():
+                    with st.container():
+                        c1, c2, c3 = st.columns([3, 1, 1])
+                        with c1:
+                            st.markdown(f"""
+                            **{row['nom']} {row['prenom']}** (ID: {row['identifiant']})
+                            De : **{row['gestionnaire']}** → Vers : **{row['transfert_vers']}**
+                            Motif : {row['transfert_motif'] or '—'} | Date : {row['transfert_date']}
+                            """)
+                        with c2:
+                            if st.button("✅ Approuver", key=f"app_{row['id']}", type="primary"):
+                                with get_session() as session:
+                                    dos = session.get(Dossier, int(row['id']))
+                                    if dos:
+                                        date_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+                                        note = f"🔄 **[Transfert approuvé {date_str}]** De {dos.gestionnaire} → {dos.transfert_vers} | Motif: {dos.transfert_motif}"
+                                        dos.historique_visites = note + "\n" + (dos.historique_visites or "")
+                                        dos.gestionnaire      = dos.transfert_vers.strip().upper()
+                                        dos.est_nouveau       = 'OUI'
+                                        dos.origine_dossier   = f'🔄 Passation depuis {row["gestionnaire"]}'
+                                        dos.transfert_vers    = ''
+                                        dos.transfert_motif   = ''
+                                        dos.transfert_date    = ''
+                                st.success("✅ Transfert approuvé !")
+                                st.rerun()
+                        with c3:
+                            if st.button("❌ Refuser", key=f"ref_{row['id']}"):
+                                with get_session() as session:
+                                    dos = session.get(Dossier, int(row['id']))
+                                    if dos:
+                                        date_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+                                        note = f"❌ **[Transfert refusé {date_str}]** Demande vers {dos.transfert_vers} refusée."
+                                        dos.historique_visites = note + "\n" + (dos.historique_visites or "")
+                                        dos.transfert_vers  = ''
+                                        dos.transfert_motif = ''
+                                        dos.transfert_date  = ''
+                                st.warning("Demande refusée.")
+                                st.rerun()
+                        st.divider()
             st.markdown("</div>", unsafe_allow_html=True)
 
 def _outil_gestion_agents():
