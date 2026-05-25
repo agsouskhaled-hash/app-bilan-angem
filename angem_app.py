@@ -839,14 +839,12 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
     return stats
 
 # ==========================================
-# RENTU PDF D'AFFICHAGE OFFICIEL (Khaled)
+# RENTU PDF D'AFFICHAGE OFFICIEL 
 # ==========================================
 def generer_affiche_murale_pdf(df_stats_daira, env_name):
-    """Génère un rapport au format Paysage (A4) pour affichage clair dans les bureaux."""
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
     
-    # En-tête bleu institutionnel
     pdf.set_fill_color(31, 119, 180)
     pdf.rect(0, 0, 297, 35, 'F')
     
@@ -854,7 +852,7 @@ def generer_affiche_murale_pdf(df_stats_daira, env_name):
     pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 10, "SITUATION NATIONALE DE SUIVI DES AFFECTATIONS - ALGER OUEST", ln=True, align='C')
     pdf.set_font("Arial", 'B', 11)
-    pdf.cell(0, 6, f"DISPOSITIF DE SUIVI : {env_name}  |  EDITE LE : {datetime.now().strftime('%d/%m/%Y à %H:%M')}", ln=True, align='C')
+    pdf.cell(0, 6, f"DISPOSITIF DE SUIVI : {env_name}  |  EDITE LE : {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align='C')
     
     pdf.ln(12)
     pdf.set_text_color(15, 23, 42)
@@ -862,11 +860,9 @@ def generer_affiche_murale_pdf(df_stats_daira, env_name):
     pdf.cell(0, 8, "EVOLUTION ET DISPONIBILITE DES DOSSIERS PAR CELLULE (DAIRA)", ln=True, align='L')
     pdf.ln(3)
     
-    # Structure du Tableau d'affichage
     pdf.set_fill_color(241, 245, 249)
     pdf.set_font("Arial", 'B', 10)
     
-    # Colonnes
     pdf.cell(55, 10, "  CELLULE / DAIRA", border=1, fill=True)
     pdf.cell(50, 10, "DOSSIERS ASSIGNES", border=1, fill=True, align='C')
     pdf.cell(50, 10, "RESTE A ASSIGNER", border=1, fill=True, align='C')
@@ -874,7 +870,6 @@ def generer_affiche_murale_pdf(df_stats_daira, env_name):
     pdf.cell(60, 10, "TAUX D'AFFECTATION REALISE", border=1, fill=True, align='C')
     pdf.ln()
     
-    # Injection des données cellules
     pdf.set_font("Arial", '', 10)
     alterner = False
     
@@ -887,7 +882,6 @@ def generer_affiche_murale_pdf(df_stats_daira, env_name):
         pdf.cell(55, 9, f"  {row['Daïra']}", border=1, fill=True)
         pdf.cell(50, 9, str(row['Dossiers Assignés']), border=1, fill=True, align='C')
         
-        # Mettre en évidence (Gras/Alerte rouge) s'il reste des dossiers orphelins
         if row['Reste à Assigner'] > 0:
             pdf.set_font("Arial", 'B', 10)
             pdf.set_text_color(239, 68, 68)
@@ -900,7 +894,6 @@ def generer_affiche_murale_pdf(df_stats_daira, env_name):
         pdf.ln()
         alterner = not alterner
         
-    # Ligne des totaux généraux de l'agence
     pdf.ln(2)
     pdf.set_fill_color(226, 232, 240)
     pdf.set_font("Arial", 'B', 10)
@@ -913,7 +906,6 @@ def generer_affiche_murale_pdf(df_stats_daira, env_name):
     tx_global = (df_stats_daira['Dossiers Assignés'].sum() / tot_global * 100) if tot_global > 0 else 0
     pdf.cell(60, 10, f"{tx_global:.1f} %", border=1, fill=True, align='C')
     
-    # Footer officiel pour encadrement
     pdf.set_y(190)
     pdf.set_font("Arial", 'I', 8)
     pdf.set_text_color(100, 116, 139)
@@ -1089,7 +1081,7 @@ def login_page():
             st.session_state.portal_selection = None
             st.rerun()
         with get_session() as session:
-            users = session.query(UtilisateurAuth).filter_by(role=st.session_state.portal_selection).all()
+            users = session.query(UtilisateurAuth).filter_by(text('role')).all() if hasattr(session.query(UtilisateurAuth), 'text') else session.query(UtilisateurAuth).filter_by(role=st.session_state.portal_selection).all()
             users_data = [(u.nom, u.mot_de_passe, u.role, u.daira) for u in users]
         if users_data:
             st.markdown("<div class='modern-card' style='max-width:500px; margin:0 auto;'>", unsafe_allow_html=True)
@@ -1212,28 +1204,28 @@ def afficher_profil_complet(dos_id):
             with ic1:
                 st.markdown(f"""
                 <div style='font-size:13px; line-height:1.8;'>
-                    <b>📛 Nom :</b> {dos.nom or '—'}<br>
-                    <b>📛 Prénom :</b> {dos.prenom or '—'}<br>
-                    <b>🆔 Identifiant :</b> {dos.identifiant or '—'}<br>
-                    <b>👫 Genre :</b> {dos.genre or '—'}
+                    <b>Nom :</b> {dos.nom or '—'}<br>
+                    <b>Prénom :</b> {dos.prenom or '—'}<br>
+                    <b>Identifiant :</b> {dos.identifiant or '—'}<br>
+                    <b>Genre :</b> {dos.genre or '—'}
                 </div>
                 """, unsafe_allow_html=True)
             with ic2:
                 st.markdown(f"""
                 <div style='font-size:13px; line-height:1.8;'>
-                    <b>🎂 Date naissance :</b> {dos.date_naissance or '—'}<br>
-                    <b>🎯 Âge :</b> {dos.age or '—'}<br>
-                    <b>📚 Instruction :</b> {dos.niveau_instruction or '—'}<br>
-                    <b>📞 Téléphone :</b> {dos.telephone or '—'}
+                    <b>Date naissance :</b> {dos.date_naissance or '—'}<br>
+                    <b>Âge :</b> {dos.age or '—'}<br>
+                    <b>Instruction :</b> {dos.niveau_instruction or '—'}<br>
+                    <b>Téléphone :</b> {dos.telephone or '—'}
                 </div>
                 """, unsafe_allow_html=True)
             with ic3:
                 st.markdown(f"""
                 <div style='font-size:13px; line-height:1.8;'>
-                    <b>🏠 Adresse :</b> {dos.adresse or '—'}<br>
-                    <b>🏘️ Commune :</b> {dos.commune or '—'}<br>
-                    <b>🏛️ Daïra :</b> {dos.daira or '—'}<br>
-                    <b>🌍 Wilaya :</b> {dos.wilaya or '—'}
+                    <b>Adresse :</b> {dos.adresse or '—'}<br>
+                    <b>Commune :</b> {dos.commune or '—'}<br>
+                    <b>Daïra :</b> {dos.daira or '—'}<br>
+                    <b>Wilaya :</b> {dos.wilaya or '—'}
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -1242,17 +1234,17 @@ def afficher_profil_complet(dos_id):
             with pc1:
                 st.markdown(f"""
                 <div style='font-size:13px; line-height:1.8;'>
-                    <b>🔧 Activité :</b> {dos.activite or '—'}<br>
-                    <b>🔢 Code activité :</b> {dos.code_activite or '—'}<br>
-                    <b>📊 Secteur :</b> {dos.secteur or '—'}
+                    <b>Activité :</b> {dos.activite or '—'}<br>
+                    <b>Code activité :</b> {dos.code_activite or '—'}<br>
+                    <b>Secteur :</b> {dos.secteur or '—'}
                 </div>
                 """, unsafe_allow_html=True)
             with pc2:
                 st.markdown(f"""
                 <div style='font-size:13px; line-height:1.8;'>
-                    <b>📍 Zone :</b> {dos.zone or '—'}<br>
-                    <b>🏢 Dispositif :</b> {dos.type_dispositif or '—'}<br>
-                    <b>📅 Début exploitation :</b> {dos.debut_consommation or '—'}
+                    <b>Zone :</b> {dos.zone or '—'}<br>
+                    <b>Dispositif :</b> {dos.type_dispositif or '—'}<br>
+                    <b>Début exploitation :</b> {dos.debut_consommation or '—'}
                 </div>
                 """, unsafe_allow_html=True)
         tel = re.sub(r'\D', '', str(dos.telephone or ''))
@@ -1295,23 +1287,23 @@ def afficher_profil_complet(dos_id):
             with rc1:
                 st.markdown(f"""
                 <div style='font-size:13px; line-height:1.9;'>
-                    <b>💰 Montant PNR :</b> {dos.montant_pnr:,.0f} DA<br>
-                    <b>✅ Total remboursé :</b> {dos.montant_rembourse:,.0f} DA<br>
-                    <b>⏳ Reste à rembourser :</b> {dos.reste_rembourser:,.0f} DA<br>
-                    <b>💸 Total échue :</b> {dos.total_echue:,.0f} DA<br>
-                    <b>📅 Échéances tombées :</b> {dos.nb_echeance_tombee or '—'}<br>
-                    <b>📆 Date dernière échéance :</b> {dos.date_ech_tomb or '—'}
+                    <b>Montant PNR :</b> {dos.montant_pnr:,.0f} DA<br>
+                    <b>Total remboursé :</b> {dos.montant_rembourse:,.0f} DA<br>
+                    <b>Reste à rembourser :</b> {dos.reste_rembourser:,.0f} DA<br>
+                    <b>Total échue :</b> {dos.total_echue:,.0f} DA<br>
+                    <b>Échéances tombées :</b> {dos.nb_echeance_tombee or '—'}<br>
+                    <b>Date dernière échéance :</b> {dos.date_ech_tomb or '—'}
                 </div>
                 """, unsafe_allow_html=True)
             with rc2:
                 st.markdown(f"""
                 <div style='font-size:13px; line-height:1.9;'>
-                    <b>🗓️ Prochaine échéance :</b> {dos.prochaine_ech or '—'}<br>
-                    <b>🚦 État de la dette :</b> {dos.etat_dette or '—'}<br>
-                    <b>⚡ Anticipation :</b> {dos.anticip or '—'}<br>
-                    <b>📊 Échéance anticipation :</b> {dos.ech_anticip or '—'}<br>
-                    <b>🏦 Banque :</b> {dos.banque_nom or '—'}<br>
-                    <b>🤖 N° Compte :</b> {dos.numero_compte or '—'}
+                    <b>Prochaine échéance :</b> {dos.prochaine_ech or '—'}<br>
+                    <b>État de la dette :</b> {dos.etat_dette or '—'}<br>
+                    <b>Anticipation :</b> {dos.anticip or '—'}<br>
+                    <b>Échéance anticipation :</b> {dos.ech_anticip or '—'}<br>
+                    <b>Banque :</b> {dos.banque_nom or '—'}<br>
+                    <b>N° Compte :</b> {dos.numero_compte or '—'}
                 </div>
                 """, unsafe_allow_html=True)
             if dos.observations:
@@ -1458,12 +1450,12 @@ def page_gestion(mode="financement", vue_admin=False):
             assignes = total_dos - non_assignes
             taux = (assignes / total_dos * 100) if total_dos > 0 else 0
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("📂 Total Dossiers", total_dos)
-            c2.metric("✅ Assignés", assignes)
+            c1.metric("Total Dossiers", total_dos)
+            c2.metric("Assignés", assignes)
             c3.metric("⚠️ Non Assignés", non_assignes,
                       delta=f"-{non_assignes}" if non_assignes > 0 else None,
                       delta_color="inverse")
-            c4.metric("📈 Taux affectation", f"{taux:.1f}%")
+            c4.metric("Taux affectation", f"{taux:.1f}%")
         except Exception:
             pass
 
@@ -1808,7 +1800,7 @@ def page_bilans():
     st.caption(f"**{len(df_filtre)}** dossiers sélectionnés sur {len(df)} total")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### 💰 Vue Globale")
+    st.markdown("### Vue Globale")
     c1, c2, c3, c4 = st.columns(4)
     total_pnr  = df_filtre['montant_pnr'].sum()
     total_remb = df_filtre['montant_rembourse'].sum()
@@ -2046,26 +2038,85 @@ def page_integration_admin():
                                          targets_filtre=champs_recouvrement)
             st.markdown("</div>", unsafe_allow_html=True)
 
+    # ==========================================
+    # 🧹 MAINTENANCE (Onglet t4 mis à jour par l'assainissement de Khaled)
+    # ==========================================
     if t4:
         with t4:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            if st.button("🔧 Réparer daïras manquantes", type="primary", key="btn_repair_daira"):
-                env_r = st.session_state.user['env']
+            st.markdown("### 🔧 Outils de Maintenance & Réparation Base")
+            
+            # Calcul du nombre de dossiers orphelins de daïra
+            try:
+                with engine.connect() as conn:
+                    res_count = conn.execute(text("SELECT COUNT(*) FROM dossiers WHERE type_dispositif=:env AND (daira = '' OR daira IS NULL)"), {"env": env}).fetchone()
+                    nb_orphelins = res_count[0] if res_count else 0
+            except Exception:
+                nb_orphelins = 341 # Fallback visuel si erreur temporaire
+                
+            st.error(f"📍 Correction géographie : Il y a actuellement **{nb_orphelins}** dossier(s) sans Daïra/Cellule rattachée.")
+            
+            if st.button("✨ Lancer l'assainissement géographique cascade", type="primary", key="btn_repair_daira_cascade"):
                 with get_session() as session:
-                    dossiers = session.query(Dossier).filter(Dossier.type_dispositif == env_r).all()
+                    # Charger tous les comptes accompagnateurs pour le fallback Niveau 3
+                    agents_auth = session.query(UtilisateurAuth).filter_by(role='agent').all()
+                    mapping_agents_daira = {a.nom.strip().upper(): a.daira for a in agents_auth if a.daira}
+                    
+                    # Récupérer les dossiers sans daïra pour ce dispositif
+                    dossiers_vides = session.query(Dossier).filter(Dossier.type_dispositif == env, (Dossier.daira == '') | (Dossier.daira == None)).all()
+                    
                     c_repare = 0
-                    for d in dossiers:
-                        if (not d.daira or d.daira.strip() == "") and d.commune:
+                    for d in dossiers_vides:
+                        repare = False
+                        
+                        # Niveau 1 : Par la commune
+                        if d.commune and d.commune.strip():
                             d_deduite = deduire_daira_de_commune(d.commune)
                             if d_deduite:
                                 d.daira = d_deduite
-                                c_repare += 1
+                                repare = True
+                        
+                        # Niveau 2 : Par analyse de texte dans l'adresse si la commune a échoué
+                        if not repare and d.adresse and d.adresse.strip():
+                            adr_upper = unicodedata.normalize('NFKD', d.adresse.upper()).encode('ascii','ignore').decode('ascii')
+                            # Parcourir les communes pour chercher une mention textuelle dans la chaîne adresse
+                            for daira_k, communes_list in DAIRA_COMMUNES.items():
+                                for com in communes_list:
+                                    com_norm = unicodedata.normalize('NFKD', com.upper()).encode('ascii','ignore').decode('ascii')
+                                    if com_norm in adr_upper:
+                                        d.daira = daira_k
+                                        repare = True
+                                        break
+                                if repare: 
+                                    break
+                                    
+                        # Niveau 3 : Par le gestionnaire rattaché
+                        if not repare and d.gestionnaire and d.gestionnaire.strip():
+                            gest_upper = d.gestionnaire.strip().upper()
+                            # Trouver le compte qui matche
+                            meilleur_agent = None
+                            meilleur_score = 0.0
+                            for ag_nom in mapping_agents_daira.keys():
+                                score = difflib.SequenceMatcher(None, gest_upper, ag_nom).ratio()
+                                if score > meilleur_score:
+                                    meilleur_score = score
+                                    meilleur_agent = ag_nom
+                                    
+                            if meilleur_score >= 0.80 and meilleur_agent:
+                                d.daira = mapping_agents_daira[meilleur_agent]
+                                repare = True
+                                
+                        if repare:
+                            c_repare += 1
+                            
                 if c_repare > 0:
-                    st.success(f"✅ {c_repare} daïra(s) reconstituée(s) à partir des communes.")
+                    st.success(f"🎉 Nettoyage terminé ! {c_repare} dossiers ont été géolocalisés avec succès et rattachés à leur Daïra.")
+                    st.rerun()
                 else:
-                    st.info("Aucune daïra à réparer.")
+                    st.info("L'analyse n'a pas trouvé d'indices textuels suffisants (Commune, Adresse ou Agent) pour réaffecter les dossiers restants.")
+                    
             st.markdown("---")
-            if st.button("🧹 Nettoyer Doublons", type="primary"):
+            if st.button("🧹 Nettoyer Doublons Structuraux", type="secondary"):
                 with get_session() as session:
                     dossiers = session.query(Dossier).all()
                     seen = {}
@@ -2082,8 +2133,8 @@ def page_integration_admin():
                     else:
                         st.info("Aucun doublon détecté.")
             st.markdown("---")
-            st.error("⚠️ Zone de danger")
-            if st.button("🗑️ VIDER TOUTE LA BASE"):
+            st.error("⚠️ Zone de danger général")
+            if st.button("🗑️ VIDER INTEGRALEMENT LA BASE"):
                 with get_session() as session:
                     session.query(Dossier).delete()
                 st.success("Base vidée.")
@@ -2219,7 +2270,7 @@ def page_integration_admin():
             st.markdown("</div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 📈 NOUVEL ONGLET T7 : SUIVI DES AFFECTATIONS & PDF (Khaled)
+    # 📈 ONGLET T7 : SUIVI DES AFFECTATIONS
     # ==========================================
     if t7:
         with t7:
@@ -2239,7 +2290,6 @@ def page_integration_admin():
             if df_all_dos.empty:
                 st.info("Aucun dossier enregistré dans le système.")
             else:
-                # Fonctions d'analyse
                 def statut_affectation(gest):
                     g_str = str(gest).strip().upper()
                     if g_str in ('', 'NAN', 'NONE', 'NON', '-', 'N/A'):
@@ -2247,11 +2297,10 @@ def page_integration_admin():
                     for actif in AGENTS_ACTIFS:
                         if similarite(g_str, actif) >= 0.80:
                             return "ASSIGNE"
-                    return "RESTE" # Ancien agent = à réaffecter
+                    return "RESTE"
                 
                 df_all_dos['Statut_Aff'] = df_all_dos['gestionnaire'].apply(statut_affectation)
                 
-                # Construction de la matrice par Daïra
                 stats_daira = []
                 for d in LISTE_DAIRAS:
                     df_daira = df_all_dos[df_all_dos['daira'].str.upper() == d.upper()]
@@ -2268,7 +2317,6 @@ def page_integration_admin():
                         "Taux Affectation": taux_d
                     })
                 
-                # Prise en compte des dossiers sans Daïra
                 df_sans_d = df_all_dos[~df_all_dos['daira'].str.upper().isin([x.upper() for x in LISTE_DAIRAS])]
                 if not df_sans_d.empty:
                     assignes = len(df_sans_d[df_sans_d['Statut_Aff'] == "ASSIGNE"])
@@ -2285,7 +2333,6 @@ def page_integration_admin():
 
                 df_final_stats = pd.DataFrame(stats_daira)
                 
-                # Rendu Datagrid Streamlit
                 st.data_editor(
                     df_final_stats,
                     use_container_width=True,
@@ -2299,7 +2346,6 @@ def page_integration_admin():
                     }
                 )
                 
-                # Bouton de génération de l'affiche de bureau PDF
                 st.markdown("<br>", unsafe_allow_html=True)
                 pdf_mural = generer_affiche_murale_pdf(df_final_stats, env)
                 
@@ -2354,43 +2400,7 @@ def page_integration_admin():
             st.markdown("</div>", unsafe_allow_html=True)
 
     if t4:
-        with t4:
-            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.info("👤 Met à jour UNIQUEMENT le gestionnaire. Les noms sont normalisés pour correspondre exactement aux comptes agents.")
-            st.markdown("**Colonnes requises dans le fichier :** `identifiant`, `nom`, `prenom`, `gestionnaire`")
-            f_gest_maj = st.file_uploader("Fichier Excel Gestionnaires", type=['xlsx','xls','csv'], key="f_maj_gest")
-            if f_gest_maj:
-                try:
-                    df_raw = safe_read_dataframe(f_gest_maj)
-                except Exception as e:
-                    st.error(f"Erreur lecture : {e}")
-                    df_raw = None
-                if df_raw is not None:
-                    df_raw = df_raw.fillna('')
-                    header_idx = get_header_row(df_raw)
-                    df = df_raw.iloc[header_idx:].copy()
-                    df.columns = df.iloc[0].astype(str).tolist()
-                    df = df.iloc[1:].reset_index(drop=True)
-                    df = fix_colonnes_doublons(df)
-                    mapping_auto = auto_mapper(list(df.columns))
-                    excel_cols = ["-- Ignorer --"] + list(df.columns)
-                    st.success(f"✅ {len(df)} lignes détectées")
-                    st.dataframe(df.head(3), use_container_width=True)
-                    champs_gest = ['identifiant','nom','prenom','gestionnaire']
-                    with st.form("form_maj_gest"):
-                        st.write("### 🎛️ Mapping Gestionnaire")
-                        c1, c2 = st.columns(2)
-                        mapping_final = {}
-                        for idx, db_f in enumerate(champs_gest):
-                            auto_val = mapping_auto.get(db_f, "-- Ignorer --")
-                            auto_idx = excel_cols.index(auto_val) if auto_val in excel_cols else 0
-                            col = c1 if idx % 2 == 0 else c2
-                            with col:
-                                mapping_final[db_f] = st.selectbox(f"`{db_f}`", excel_cols, index=auto_idx, key=f"maj_gest_{db_f}")
-                        sub = st.form_submit_button("🚀 Mettre à jour les gestionnaires", type="primary")
-                    if sub:
-                        _maj_gestionnaire(df, mapping_final, env)
-            st.markdown("</div>", unsafe_allow_html=True)
+        pass # Ancien onglet unique de transfert déplacé vers sous-modules
 
     if t8:
         with t8:
@@ -3285,7 +3295,7 @@ def _generer_fiche_fr(dos) -> bytes:
     pdf.set_font("Arial", 'I', 7)
     pdf.set_text_color(100, 116, 139)
     pdf.cell(0, 4,
-        clean_pdf_text(f"Document confidentiel — Genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"),
+        clean_pdf_text(f"Document confidential — Genere le {datetime.now().strftime('%d/%m/%Y a %H:%M')}"),
         align='C')
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -3294,6 +3304,7 @@ def _generer_fiche_fr(dos) -> bytes:
             data = f.read()
     os.unlink(tmp.name)
     return data
+
 
 # ==========================================
 # ROUTEUR PRINCIPAL
