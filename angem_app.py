@@ -50,6 +50,16 @@ DAIRA_COMMUNES = {
     "Birtouta":        ["Birtouta", "Ouled Chebel", "Tessala El Merdja"],
 }
 
+# ✅ LISTE DES ACCOMPAGNATEURS ACTIFS (Mise à jour du 24 Mai)
+AGENTS_ACTIFS = [
+    "BERRABEH DOUADI", "MILOUDI AMEL", "BERROUANE SAMIRA", "MEDJHOUM RAOUIA", 
+    "SAHNOUNE IMENE", "MEDJEDOUB AMEL", "MAASOUM SAIDA", "AIT OUAREB AMINA", 
+    "BEN AICHE MOUNIRA", "GUESSMIA ZAHIRA", "BENSAHNOUN LILA", "DJAOUDI SARAH", 
+    "MECHALIKHE FATMA", "BOULAHLIB REDOUANE", "MAHREZ MOHAMED", "BELAID FAZIA", 
+    "METMAR OMAR", "MERAKEB FAIZA", "KADRI SIHEM", "T-ALAMALI IMAD", 
+    "BOUCHAREB MOUNIA", "TOUAKNI SARAH", "SALMI HOUDA", "FELFOUL SAMIRA", "NASRI RYM"
+]
+
 def deduire_daira_de_commune(commune: str) -> str:
     """Retourne la daïra correspondante à une commune, sinon ''."""
     if not commune:
@@ -65,6 +75,7 @@ def deduire_daira_de_commune(commune: str) -> str:
 def communes_de_daira(daira: str) -> list:
     """Retourne la liste des communes d'une daïra."""
     return DAIRA_COMMUNES.get(daira, [])
+
 LISTE_STATUTS = [
     "Phase dépôt du dossier",
     "En attente de la commission",
@@ -185,7 +196,6 @@ class Dossier(Base):
     in_finance           = Column(String, default="NON")
     in_recouvrement      = Column(String, default="NON")
     champs_dynamiques    = Column(Text, default="{}")
-    # ✅ Transfert avec accord admin
     origine_dossier      = Column(String, default="")
     transfert_vers       = Column(String, default="")
     transfert_motif      = Column(String, default="")
@@ -573,7 +583,6 @@ def get_header_row(df_raw):
     return best_idx
 
 def safe_read_dataframe(file_obj):
-    # ✅ Patch openpyxl pour fichiers Excel avec attribut biltinId invalide
     try:
         import openpyxl.styles.named_styles as _ns
         _orig_init = _ns._NamedCellStyle.__init__
@@ -602,7 +611,6 @@ def safe_read_dataframe(file_obj):
     raise ValueError("Impossible de lire le fichier.")
 
 def fix_colonnes_doublons(df):
-    """✅ Renomme les colonnes en double pour éviter les erreurs Streamlit/PyArrow."""
     cols_vus = {}
     nouvelles_cols = []
     for col in df.columns:
@@ -648,7 +656,6 @@ def trouver_agent_par_zone(daira, commune, session):
     return ""
 
 def trouver_agent_intelligent(nom_excel: str, agents_db: list) -> str:
-    """✅ Matching par similarité 80% — tolère fautes de frappe et préfixes."""
     if not nom_excel or str(nom_excel).strip().upper() in ['', 'NAN', 'NONE']:
         return ""
     meilleur_score = 0.0
@@ -681,10 +688,9 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
     total = len(df)
     progress_bar = st.progress(0)
 
-    # ✅ CACHE TRIPLE : identifiant + nom + date_naissance
-    _cache_by_ident = {}     # {identifiant: dossier_id}
-    _cache_by_nom   = []     # [(id, nom_norm, prefixe, date_naiss)]
-    _cache_by_date  = {}     # {date_naiss: [(id, nom_norm)]}
+    _cache_by_ident = {}
+    _cache_by_nom   = []
+    _cache_by_date  = {}
     if badge == 'in_recouvrement':
         rows = session.query(
             Dossier.id, Dossier.identifiant, Dossier.nom, Dossier.prenom, Dossier.date_naissance
@@ -734,7 +740,6 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                 stats['ignores'] += 1
                 continue
 
-            # ✅ Auto-déduction daïra depuis commune si daïra vide
             if not data.get('daira') and data.get('commune'):
                 d_deduite = deduire_daira_de_commune(data['commune'])
                 if d_deduite:
@@ -749,14 +754,11 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                 else:
                     stats['non_assignes'] += 1
 
-            # ✅ MATCHING 3 NIVEAUX (recouvrement uniquement) : identifiant → nom → date_naissance+nom
             exist = verifier_doublon(session, ident, env, badge)
             if not exist and badge == 'in_recouvrement':
                 ident_norm = ident.strip().upper() if ident else ''
-                # Niveau 1 : par identifiant (instantané)
                 if ident_norm and ident_norm in _cache_by_ident:
                     exist = session.get(Dossier, _cache_by_ident[ident_norm])
-                # Niveau 2 : par nom + prénom (similarité 80%)
                 if not exist:
                     nom_imp = data.get('nom','')
                     prenom_imp = data.get('prenom','')
@@ -770,7 +772,6 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                             if score >= 0.80:
                                 exist = session.get(Dossier, cand_id)
                                 break
-                # Niveau 3 : par date de naissance + nom partiel
                 if not exist:
                     date_imp = data.get('date_naissance','').strip()
                     nom_imp_norm = normaliser_nom(data.get('nom',''))
@@ -780,22 +781,17 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                                 exist = session.get(Dossier, cand_id)
                                 break
 
-                # ✅ Si trouvé : MISE À JOUR CIBLÉE (3 champs + remplir vides)
                 if exist:
                     exist.in_recouvrement = 'OUI'
-                    # Champs recouvrement à mettre à jour
                     for champ in ['nb_echeance_tombee', 'montant_rembourse', 'reste_rembourser', 'total_echue', 'date_ech_tomb', 'prochaine_ech', 'etat_dette', 'anticip', 'ech_anticip', 'observations']:
                         if champ in data and data[champ] not in (None, '', 0, 0.0):
                             setattr(exist, champ, data[champ])
-                    # Remplir commune/daira UNIQUEMENT si vides
                     if (not exist.commune or exist.commune.strip() == '') and data.get('commune'):
                         exist.commune = data['commune']
                     if (not exist.daira or exist.daira.strip() == '') and data.get('daira'):
                         exist.daira = data['daira']
-                    # Remplir adresse si vide
                     if (not exist.adresse or exist.adresse.strip() == '') and data.get('adresse'):
                         exist.adresse = data['adresse']
-                    # Champs dynamiques
                     try:
                         cd_e = json.loads(exist.champs_dynamiques or '{}')
                     except Exception:
@@ -803,7 +799,7 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                     cd_e.update(champs_dyn)
                     exist.champs_dynamiques = json.dumps(cd_e, ensure_ascii=False)
                     stats['mis_a_jour'] += 1
-                    continue  # ⏭️ on saute le bloc de création standard
+                    continue
 
             if exist:
                 for k, v in data.items():
@@ -834,7 +830,6 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
         except Exception as e:
             stats['erreurs'].append(f"Ligne {idx}: {str(e)}")
 
-        # ✅ Commit périodique toutes les 100 lignes pour libérer la mémoire
         if (idx + 1) % 100 == 0:
             try:
                 session.commit()
@@ -940,7 +935,6 @@ def login_page():
         with c3:
             if st.button("👑\n\nDirection & Admin", use_container_width=True):
                 st.session_state.portal_selection = "admin"
-        # ✅ Bouton Communication
         _, c_com, _ = st.columns([1, 1, 1])
         with c_com:
             if st.button("📢\n\nService Communication", use_container_width=True):
@@ -1046,7 +1040,6 @@ def sidebar_menu():
     </div>
     """, unsafe_allow_html=True)
 
-    # ✅ Badge transferts en attente pour admin
     if role == 'admin':
         try:
             with get_session() as s:
@@ -1107,9 +1100,7 @@ def afficher_profil_complet(dos_id):
         if dos.est_nouveau == 'OUI' and similarite(dos.gestionnaire, st.session_state.user['nom']) >= 0.80:
             dos.est_nouveau = 'NON'
         taux = (dos.montant_rembourse / dos.montant_pnr) if dos.montant_pnr and dos.montant_pnr > 0 else 0
-        # ✅ Initiales pour avatar
         initiales = ''.join([p[0] for p in (dos.nom or 'XX').split()[:2] if p])[:2].upper() or "??"
-        # Couleur par genre
         couleur_avatar = "#3b82f6" if str(dos.genre).upper().startswith(('M','H')) else "#ec4899"
         st.markdown(f"""
         <div class='profil-header'>
@@ -1132,7 +1123,6 @@ def afficher_profil_complet(dos_id):
         </div>
         """, unsafe_allow_html=True)
 
-        # ✅ NOUVELLE SECTION : IDENTITÉ COMPLÈTE
         with st.expander("👤 Identité complète du promoteur", expanded=True):
             ic1, ic2, ic3 = st.columns(3)
             with ic1:
@@ -1163,7 +1153,6 @@ def afficher_profil_complet(dos_id):
                 </div>
                 """, unsafe_allow_html=True)
 
-        # ✅ SECTION PROJET
         with st.expander("🏭 Détails du projet", expanded=False):
             pc1, pc2 = st.columns(2)
             with pc1:
@@ -1217,7 +1206,6 @@ def afficher_profil_complet(dos_id):
             """, unsafe_allow_html=True)
         st.progress(min(taux, 1.0))
         st.caption(f"Progression remboursement : {taux*100:.1f}%")
-        # ✅ NOUVEAU : Bouton spécial "Tous les détails recouvrement"
         with st.expander("📊 Voir tous les détails du recouvrement", expanded=False):
             rc1, rc2 = st.columns(2)
             with rc1:
@@ -1239,7 +1227,7 @@ def afficher_profil_complet(dos_id):
                     <b>⚡ Anticipation :</b> {dos.anticip or '—'}<br>
                     <b>📊 Échéance anticipation :</b> {dos.ech_anticip or '—'}<br>
                     <b>🏦 Banque :</b> {dos.banque_nom or '—'}<br>
-                    <b>🔢 N° Compte :</b> {dos.numero_compte or '—'}
+                    <b>🤖 N° Compte :</b> {dos.numero_compte or '—'}
                 </div>
                 """, unsafe_allow_html=True)
             if dos.observations:
@@ -1271,7 +1259,7 @@ def afficher_profil_complet(dos_id):
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("**📝 Historique & Observations**")
             if dos.observations:
-                st.info(f"**Obs Excel :** {dos.observations}")
+                st.write(f"**Obs Excel :** {dos.observations}")
             note = st.text_area("Ajouter un compte-rendu :", key=f"n_{dos_id}")
             if st.button("Enregistrer", key=f"bn_{dos_id}"):
                 date_str = datetime.now().strftime('%d/%m/%Y %H:%M')
@@ -1280,7 +1268,6 @@ def afficher_profil_complet(dos_id):
             hist = (dos.historique_visites or 'Aucun rapport enregistré').replace('\n', '<br>')
             st.markdown(f"<div style='background:#f8fafc; padding:15px; border-radius:8px; height:200px; overflow-y:auto;'>{hist}</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
-        # ✅ BOUTON DEMANDE DE TRANSFERT (agents uniquement)
         if st.session_state.user['role'] == 'agent':
             with st.expander("🔄 Demander un transfert de dossier", expanded=False):
                 if dos.transfert_vers and dos.transfert_vers.strip():
@@ -1340,7 +1327,6 @@ def page_gestion(mode="financement", vue_admin=False):
     env       = st.session_state.user['env']
     role      = st.session_state.user['role']
     nom_agent = st.session_state.user['nom'].upper()
-    # ✅ Mode unifié : un dossier apparait s'il est dans Finance OU Recouvrement
     is_unifie = (mode == "unifie")
     if is_unifie:
         badge_filter = "(in_finance='OUI' OR in_recouvrement='OUI')"
@@ -1375,7 +1361,6 @@ def page_gestion(mode="financement", vue_admin=False):
         st.info("Base vide ou aucun dossier dans cette rubrique.")
         return
 
-    # ✅ MÉTRIQUES ADMIN — total dossiers + non assignés
     if role == 'admin':
         try:
             with engine.connect() as conn:
@@ -1403,7 +1388,6 @@ def page_gestion(mode="financement", vue_admin=False):
         if nvx > 0:
             st.markdown(f"<div class='alerte-nouveau'>🎉 {nvx} nouveau(x) dossier(s) vous ont été affectés !</div>", unsafe_allow_html=True)
 
-        # ✅ STATISTIQUES PERSONNELLES DE L'AGENT
         df_agent_stats = df[df['gestionnaire'].apply(lambda x: similarite(x, nom_agent) >= 0.80)]
         try:
             df_agent_stats['montant_pnr']        = pd.to_numeric(df_agent_stats['montant_pnr'], errors='coerce').fillna(0.0)
@@ -1432,8 +1416,6 @@ def page_gestion(mode="financement", vue_admin=False):
         st.progress(min(taux_perso/100, 1.0))
         st.markdown("</div>", unsafe_allow_html=True)
 
-
-
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([4, 1, 1])
     tmp_s = c1.text_input("🔍 Recherche rapide...", value=st.session_state.search_query, label_visibility="collapsed")
@@ -1449,26 +1431,21 @@ def page_gestion(mode="financement", vue_admin=False):
         q = st.session_state.search_query
         df = df[df.apply(lambda x: x.astype(str).str.contains(q, case=False).any(), axis=1)]
 
-    # ✅ FILTRE AGENT — matching renforcé (similarité + tokens)
     if not vue_admin and role == "agent":
         def match_agent_robuste(nom_db):
-            """Matching combiné : similarité 75% OU 2 tokens communs OU inclusion complète."""
             if not str(nom_db).strip() or str(nom_db).strip().upper() in ('NAN','NONE',''):
                 return False
             nom_db_norm    = normaliser_nom(str(nom_db))
             nom_agent_norm = normaliser_nom(nom_agent)
             if not nom_db_norm or not nom_agent_norm:
                 return False
-            # Critère 1 : similarité globale >= 75%
             if similarite(nom_db_norm, nom_agent_norm) >= 0.75:
                 return True
-            # Critère 2 : tous les tokens de l'agent présents dans le gestionnaire
             tokens_agent = set(re.split(r'[\s\-_\.]+', nom_agent_norm)) - {'', 'MME', 'MR', 'MLLE'}
             tokens_db    = set(re.split(r'[\s\-_\.]+', nom_db_norm))    - {'', 'MME', 'MR', 'MLLE'}
             tokens_agent = {t for t in tokens_agent if len(t) > 1}
             if tokens_agent and tokens_agent.issubset(tokens_db):
                 return True
-            # Critère 3 : au moins 2 tokens communs (nom + prénom)
             communs = tokens_agent & tokens_db
             if len(communs) >= min(2, len(tokens_agent)):
                 return True
@@ -1494,10 +1471,8 @@ def page_gestion(mode="financement", vue_admin=False):
     except Exception:
         liste_agents = [""]
 
-    # ✅ ADMIN : édition libre de TOUTES les colonnes
     is_admin = (role == 'admin')
 
-    # ✅ Indicateur visuel : 🟢 complet | 🟡 finance seule | 🔴 recouvrement seul
     def calc_statut_dos(row):
         f = str(row.get('in_finance','NON')).upper() == 'OUI'
         r = str(row.get('in_recouvrement','NON')).upper() == 'OUI'
@@ -1567,7 +1542,6 @@ def page_gestion(mode="financement", vue_admin=False):
                 dos = session.get(Dossier, int(r['id']))
                 if dos:
                     if is_admin:
-                        # Admin : sauve TOUTES les colonnes affichées
                         for col_name in edited.columns:
                             if col_name in ('Ouvrir 📂', 'id'):
                                 continue
@@ -1589,7 +1563,6 @@ def page_gestion(mode="financement", vue_admin=False):
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ✅ TRANSFERT GROUPÉ — sélection multiple (agents uniquement)
     if role == 'agent' and not edited.empty:
         ids_coches = edited[edited["Ouvrir 📂"] == True]['id'].tolist()
         if len(ids_coches) > 0:
@@ -1705,7 +1678,6 @@ def page_bilans():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
 
-    # Filtre date
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("### 📅 Filtres")
     col_f1, col_f2, col_f3 = st.columns(3)
@@ -1725,7 +1697,6 @@ def page_bilans():
         with col_f3:
             date_fin = st.date_input("Au", value=date.today())
 
-    # Appliquer filtre date sur date_financement
     df_filtre = df.copy()
     if periode != "Toute la base" and 'date_financement' in df_filtre.columns:
         today = date.today()
@@ -1744,7 +1715,6 @@ def page_bilans():
             df_filtre = df_filtre[df_filtre['_date'].apply(lambda d: d is not None and d.month == today.month and d.year == today.year)]
         elif periode == "Ce trimestre":
             q = (today.month - 1) // 3
-            mois_debut = q * 3 + 1
             df_filtre = df_filtre[df_filtre['_date'].apply(lambda d: d is not None and d.year == today.year and (d.month-1)//3 == q)]
         elif periode == "Cette année":
             df_filtre = df_filtre[df_filtre['_date'].apply(lambda d: d is not None and d.year == today.year)]
@@ -1754,7 +1724,6 @@ def page_bilans():
     st.caption(f"**{len(df_filtre)}** dossiers sélectionnés sur {len(df)} total")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Métriques globales
     st.markdown("### 💰 Vue Globale")
     c1, c2, c3, c4 = st.columns(4)
     total_pnr  = df_filtre['montant_pnr'].sum()
@@ -1768,10 +1737,8 @@ def page_bilans():
     st.progress(min(taux_global / 100, 1.0))
     st.caption(f"Taux de recouvrement global : **{taux_global:.1f}%**")
 
-    # Onglets bilans
     tabs = st.tabs(["👥 Par Agent", "🗺️ Par Zone", "🏭 Par Activité", "🏦 Par Banque", "👤 Par Promoteur", "⚠️ Contentieux"])
 
-    # --- PAR AGENT ---
     with tabs[0]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         if 'gestionnaire' in df_filtre.columns:
@@ -1796,7 +1763,6 @@ def page_bilans():
             st.download_button("📥 Export Excel", data=buf.getvalue(), file_name="bilan_agents.xlsx", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- PAR ZONE ---
     with tabs[1]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         zone_col = st.selectbox("Regrouper par", ["daira", "commune", "wilaya", "zone", "adresse"], key="zone_col")
@@ -1821,7 +1787,6 @@ def page_bilans():
             st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{zone_col}.xlsx", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- PAR ACTIVITÉ ---
     with tabs[2]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         act_col = st.selectbox("Regrouper par", ["secteur", "activite", "code_activite"], key="act_col")
@@ -1846,7 +1811,6 @@ def page_bilans():
             st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{act_col}.xlsx", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- PAR BANQUE ---
     with tabs[3]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         banque_col = st.selectbox("Regrouper par", ["banque_nom", "agence_bancaire"], key="banque_col")
@@ -1871,7 +1835,6 @@ def page_bilans():
             st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{banque_col}.xlsx", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- PAR PROMOTEUR ---
     with tabs[4]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         promo_col = st.selectbox("Regrouper par", ["genre", "niveau_instruction", "statut_dossier"], key="promo_col")
@@ -1892,7 +1855,6 @@ def page_bilans():
             st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{promo_col}.xlsx", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- CONTENTIEUX ---
     with tabs[5]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         df_cont = df_filtre[
@@ -1911,7 +1873,6 @@ def page_bilans():
                                file_name="Contentieux_ANGEM.pdf", mime="application/pdf", use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Export global
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("### 📤 Export Global")
     c1, c2 = st.columns(2)
@@ -1967,7 +1928,7 @@ def page_integration_admin():
         t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs([
             "💰 Import Finance", "📈 Import Recouvrement",
             "📊 MAJ Remboursement", "👤 MAJ Gestionnaire",
-            "🧹 Maintenance", "🔐 Équipes", "🔄 Gestion Agents",
+            "🧹 Maintenance", "🔐 Équipes", "🔍 Audit & Assainissement",
             "👥 Gestionnaires anciens", "📨 Transferts en attente"
         ])
 
@@ -1975,7 +1936,6 @@ def page_integration_admin():
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         f_fin = st.file_uploader("Fichier Finance", type=['xlsx','xls','csv'], key="ff")
         if f_fin:
-            # ✅ Mapping Finance ciblé aux 23 colonnes officielles
             champs_finance = [
                 'nom', 'prenom', 'identifiant', 'date_naissance', 'genre',
                 'activite', 'secteur', 'code_activite',
@@ -1993,7 +1953,6 @@ def page_integration_admin():
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             f_rec = st.file_uploader("Fichier Recouvrement", type=['xlsx','xls','csv'], key="fr")
             if f_rec:
-                # ✅ Mapping limité aux 12 champs du fichier recouvrement
                 champs_recouvrement = [
                     'identifiant', 'nom', 'prenom', 'date_naissance',
                     'telephone', 'commune', 'daira', 'type_dispositif',
@@ -2003,12 +1962,9 @@ def page_integration_admin():
                                          targets_filtre=champs_recouvrement)
             st.markdown("</div>", unsafe_allow_html=True)
 
-
-
     if t4:
         with t4:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            # ✅ Bouton réparation daïras
             if st.button("🔧 Réparer daïras manquantes", type="primary", key="btn_repair_daira"):
                 env_r = st.session_state.user['env']
                 with get_session() as session:
@@ -2081,7 +2037,6 @@ def page_integration_admin():
                 n_dai = c3.selectbox("Daïra", LISTE_DAIRAS)
                 if st.form_submit_button("Créer le compte") and n_id and n_nom:
                     with get_session() as session:
-                        # ✅ Anti-doublon par similarité 80%
                         agents_exist = session.query(UtilisateurAuth).filter_by(role='agent').all()
                         doublon = next((a for a in agents_exist if similarite(a.nom, n_nom) >= 0.80), None)
                         if doublon:
@@ -2095,11 +2050,99 @@ def page_integration_admin():
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
+    # ==========================================
+    # ✅ NOUVEL ONGLET T6 : AUDIT ET ASSAINISSEMENT DES GESTIONNAIRES (Demande de Khaled)
+    # ==========================================
     if t6:
         with t6:
-            pass  # ancien onglet gestionnaires — déplacé
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.markdown("### 🧹 Audit & Assainissement Réseau de Gestion")
+            
+            try:
+                with engine.connect() as conn:
+                    df_audit = pd.read_sql_query(
+                        text("SELECT id, identifiant, nom, prenom, gestionnaire, daira FROM dossiers WHERE type_dispositif=:env"),
+                        conn, params={"env": env}
+                    ).fillna('')
+            except Exception:
+                df_audit = pd.DataFrame()
 
-    # ✅ ONGLET MAJ REMBOURSEMENT
+            if df_audit.empty:
+                st.info("La base de données est vide.")
+            else:
+                c_non_assigne, c_anciens = st.columns(2)
+
+                # --- BLOC 1 : NON ASSIGNÉS PAR DAÏRA ---
+                def est_non_assigne(val):
+                    return str(val).strip().upper() in ('', 'NAN', 'NONE', 'NON', '-', 'N/A')
+                
+                df_na = df_audit[df_audit['gestionnaire'].apply(est_non_assigne)]
+                
+                with c_non_assigne:
+                    st.markdown("#### ⚠️ Dossiers non assignés restants")
+                    if df_na.empty:
+                        st.success("✅ Aucun dossier non assigné dans la base !")
+                    else:
+                        st.metric("Total non assignés", len(df_na))
+                        df_na_group = df_na.groupby('daira').size().reset_index(name='Nombre de dossiers')
+                        df_na_group['daira'] = df_na_group['daira'].replace('', 'Non précisée')
+                        st.dataframe(df_na_group.sort_values('Nombre de dossiers', ascending=False), use_container_width=True, hide_index=True)
+
+                # --- BLOC 2 : ANCIENS GESTIONNAIRES HORS LISTE ACTIVE ---
+                def est_ancien_gestionnaire(gest):
+                    gest_str = str(gest).strip().upper()
+                    if gest_str in ('', 'NAN', 'NONE', 'NON', '-', 'N/A'): 
+                        return False
+                    
+                    for actif in AGENTS_ACTIFS:
+                        if similarite(gest_str, actif) >= 0.80:
+                            return False
+                    return True
+
+                df_anciens = df_audit[df_audit['gestionnaire'].apply(est_ancien_gestionnaire)]
+
+                with c_anciens:
+                    st.markdown("#### 🚪 Dossiers des anciens gestionnaires")
+                    if df_anciens.empty:
+                        st.success("✅ Tous les dossiers attribués appartiennent à des agents en activité.")
+                    else:
+                        st.metric("Dossiers en souffrance (Anciens)", len(df_anciens))
+                        df_anciens_group = df_anciens.groupby(['daira', 'gestionnaire']).size().reset_index(name='Dossiers')
+                        df_anciens_group['daira'] = df_anciens_group['daira'].replace('', 'Non précisée')
+                        st.dataframe(df_anciens_group.sort_values('Dossiers', ascending=False), use_container_width=True, hide_index=True)
+
+                # --- MODULE DIRECT D'ASSAINISSEMENT PAR LA LABIEL/PASSATION MASSIVE ---
+                if not df_anciens.empty:
+                    st.markdown("---")
+                    st.markdown("#### 📦 Outil d'assainissement rapide")
+                    st.info("Transférez en bloc l'ensemble des dossiers d'un ancien agent vers un accompagnateur actif.")
+                    
+                    anciens_noms = sorted(df_anciens['gestionnaire'].unique().tolist())
+                    
+                    col_re1, col_re2, col_re3 = st.columns([2, 2, 1])
+                    with col_re1:
+                        ancien_a_remplacer = st.selectbox("Sélectionner l'ancien nom détecté :", anciens_noms)
+                    with col_re2:
+                        nouvel_agent = st.selectbox("Attribuer à l'accompagnateur actif :", AGENTS_ACTIFS)
+                    with col_re3:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("🔄 Lancer la passation", type="primary", use_container_width=True):
+                            ids_a_transferer = df_anciens[df_anciens['gestionnaire'] == ancien_a_remplacer]['id'].tolist()
+                            
+                            date_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+                            note_assainissement = f"🔄 **[Assainissement {date_str}]** Transfert de masse automatique depuis l'ancien agent {ancien_a_remplacer} vers l'agent actif {nouvel_agent}\n"
+                            
+                            with get_session() as session:
+                                dossiers_db = session.query(Dossier).filter(Dossier.id.in_(ids_a_transferer)).all()
+                                for d in dossiers_db:
+                                    d.gestionnaire = nouvel_agent
+                                    d.historique_visites = note_assainissement + (d.historique_visites or "")
+                            
+                            st.success(f"✅ Assainissement réussi ! {len(ids_a_transferer)} dossiers rattachés à {nouvel_agent}.")
+                            st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
     if t3:
         with t3:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -2141,7 +2184,6 @@ def page_integration_admin():
                         _maj_remboursement(df, mapping_final, env)
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # ✅ ONGLET MAJ GESTIONNAIRE
     if t4:
         with t4:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
@@ -2253,14 +2295,9 @@ def page_integration_admin():
             st.markdown("</div>", unsafe_allow_html=True)
 
 def _outil_gestion_agents():
-    """3 outils : fusion doublons, passation, réécriture noms."""
     st.markdown("### 🔄 Gestion des Agents & Dossiers")
-
     sous_tabs = st.tabs(["🔁 Fusion Doublons", "📦 Passation de Dossiers", "✏️ Réécriture des Noms"])
 
-    # ==========================================
-    # OUTIL 1 — FUSION DOUBLONS AGENTS
-    # ==========================================
     with sous_tabs[0]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.info("Détecte automatiquement les comptes similaires et les fusionne en un seul.")
@@ -2269,7 +2306,6 @@ def _outil_gestion_agents():
             agents = session.query(UtilisateurAuth).filter_by(role='agent').all()
             agents_data = [(a.id, a.nom, a.daira, a.mot_de_passe) for a in agents]
 
-        # Détecter les groupes similaires
         groupes = []
         traites = set()
         for i, (id1, nom1, d1, pwd1) in enumerate(agents_data):
@@ -2305,7 +2341,6 @@ def _outil_gestion_agents():
                     noms_suppr = [n[1] for n in groupe if n[0] != id_garde]
 
                     with get_session() as session:
-                        # Réaffecter tous les dossiers des comptes supprimés vers le compte gardé
                         c_reaffect = 0
                         for nom_s in noms_suppr:
                             dossiers = session.query(Dossier).filter(
@@ -2315,7 +2350,6 @@ def _outil_gestion_agents():
                                 if similarite(d.gestionnaire, nom_s) >= 0.75:
                                     d.gestionnaire = choix
                                     c_reaffect += 1
-                        # Supprimer les comptes doublons
                         for id_s in ids_suppr:
                             u = session.get(UtilisateurAuth, id_s)
                             if u:
@@ -2325,9 +2359,6 @@ def _outil_gestion_agents():
                     st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ==========================================
-    # OUTIL 2 — PASSATION DE DOSSIERS
-    # ==========================================
     with sous_tabs[1]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.info("Transfère tous les dossiers d'un agent vers un autre (changement de poste, départ, etc.)")
@@ -2347,7 +2378,6 @@ def _outil_gestion_agents():
 
             env_pass = st.session_state.user['env']
 
-            # Récupérer toutes les communes existantes
             try:
                 with engine.connect() as conn:
                     df_temp = pd.read_sql_query(
@@ -2372,7 +2402,6 @@ def _outil_gestion_agents():
 
             motif = st.text_input("Motif de la passation (optionnel)", placeholder="Ex: Mutation vers Chéraga")
 
-            # Aperçu
             try:
                 with engine.connect() as conn:
                     df_pass = pd.read_sql_query(
@@ -2381,14 +2410,13 @@ def _outil_gestion_agents():
                     ).fillna('')
                 mask = df_pass['gestionnaire'].apply(lambda x: similarite(x, agent_source) >= 0.80)
                 if daira_choisie:
-                    # ✅ Filtre intelligent : daïra OU communes de la daïra
-                    communes_daira = communes_de_daira(daira_choisie)
+                    communes_delta = communes_de_daira(daira_choisie)
                     def match_zone(row):
                         d = str(row.get('daira','')).strip().upper()
                         c = str(row.get('commune','')).strip().upper()
                         if daira_choisie.upper() in d:
                             return True
-                        for com in communes_daira:
+                        for com in communes_delta:
                             com_n = unicodedata.normalize('NFKD', com.upper()).encode('ascii','ignore').decode('ascii')
                             if com_n in unicodedata.normalize('NFKD', c).encode('ascii','ignore').decode('ascii'):
                                 return True
@@ -2421,9 +2449,6 @@ def _outil_gestion_agents():
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ==========================================
-    # OUTIL 3 — RÉÉCRITURE DES NOMS
-    # ==========================================
     with sous_tabs[2]:
         st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
         st.info("Scanne toute la base et corrige les noms de gestionnaires mal écrits pour les aligner sur les comptes officiels.")
@@ -2486,7 +2511,6 @@ def _onglet_import_generique(file_obj, env, badge, form_key, label, targets_filt
     st.dataframe(df.head(3), use_container_width=True)
     with st.form(form_key):
         st.write(f"### 🎛️ Mapping — {label}")
-        # ✅ Si targets_filtre fourni, on ne montre QUE ces champs
         if targets_filtre:
             targets = targets_filtre
             st.info(f"📋 Mapping limité aux {len(targets)} champs nécessaires pour {label}.")
@@ -2517,12 +2541,10 @@ def _onglet_import_generique(file_obj, env, badge, form_key, label, targets_filt
                         st.code(e)
 
 def _maj_remboursement(df, mapping, env):
-    """✅ MAJ ciblée : uniquement les champs de remboursement."""
     champs_remb = ['montant_rembourse','reste_rembourser','total_echue',
                    'nb_echeance_tombee','date_ech_tomb','prochaine_ech',
                    'etat_dette','anticip','ech_anticip','observations']
     with get_session() as session:
-        # Cache identifiants Finance
         rows = session.query(Dossier.id, Dossier.identifiant, Dossier.nom, Dossier.prenom,
                              Dossier.date_naissance).filter(
             Dossier.type_dispositif == env).all()
@@ -2535,14 +2557,12 @@ def _maj_remboursement(df, mapping, env):
         total = len(df)
         for idx, row in df.iterrows():
             progress_bar.progress(min(1.0, (idx+1)/max(total,1)))
-            # Identifier le dossier
             xl_id = mapping.get('identifiant','-- Ignorer --')
             ident = clean_identifiant(row.get(xl_id,'')) if xl_id != '-- Ignorer --' else ''
             dos_id = None
             if ident and ident.upper() in cache_ident:
                 dos_id = cache_ident[ident.upper()]
             else:
-                # Fallback nom+prenom
                 xl_nom = mapping.get('nom','-- Ignorer --')
                 xl_pre = mapping.get('prenom','-- Ignorer --')
                 nom_imp = row.get(xl_nom,'') if xl_nom != '-- Ignorer --' else ''
@@ -2561,7 +2581,6 @@ def _maj_remboursement(df, mapping, env):
             dos = session.get(Dossier, dos_id)
             if not dos:
                 continue
-            # MAJ uniquement les champs remboursement
             for champ in champs_remb:
                 xl_col = mapping.get(champ,'-- Ignorer --')
                 if xl_col == '-- Ignorer --':
@@ -2581,11 +2600,8 @@ def _maj_remboursement(df, mapping, env):
     st.success(f"✅ {c_maj} dossiers mis à jour avec les données de remboursement.")
 
 def _maj_gestionnaire(df, mapping, env):
-    """✅ MAJ ciblée : UNIQUEMENT le champ gestionnaire, normalisé sur le nom officiel."""
     with get_session() as session:
-        # Charger les agents officiels
         agents_officiels = [a.nom for a in session.query(UtilisateurAuth).filter_by(role='agent').all()]
-        # Cache identifiants
         rows = session.query(Dossier.id, Dossier.identifiant, Dossier.nom,
                              Dossier.prenom).filter(Dossier.type_dispositif == env).all()
         cache_ident = {(r[1] or '').strip().upper(): r[0] for r in rows if r[1]}
@@ -2603,10 +2619,8 @@ def _maj_gestionnaire(df, mapping, env):
             gest_brut = row.get(xl_gest,'')
             if pd.isna(gest_brut) or str(gest_brut).strip() in ('','NAN','None'):
                 continue
-            # ✅ Normaliser le nom du gestionnaire vers le nom officiel
             gest_officiel = trouver_agent_intelligent(str(gest_brut), agents_officiels)
 
-            # Trouver le dossier
             ident = clean_identifiant(row.get(xl_id,'')) if xl_id != '-- Ignorer --' else ''
             dos_id = None
             if ident and ident.upper() in cache_ident:
@@ -2630,7 +2644,6 @@ def _maj_gestionnaire(df, mapping, env):
             dos = session.get(Dossier, dos_id)
             if not dos:
                 continue
-            # ✅ MAJ UNIQUEMENT le gestionnaire avec le nom officiel normalisé
             dos.gestionnaire = gest_officiel.strip().upper()
             c_maj += 1
             if (idx+1) % 100 == 0:
@@ -2689,7 +2702,6 @@ def page_corbeille():
         return
 
     if daira:
-        # ✅ Détection intelligente : daïra → communes → adresse
         ma_daira = daira.strip()
         ma_daira_norm = unicodedata.normalize('NFKD', ma_daira.upper()).encode('ascii','ignore').decode('ascii')
         communes_ma_daira = communes_de_daira(ma_daira)
@@ -2701,20 +2713,16 @@ def page_corbeille():
             d_n = unicodedata.normalize('NFKD', d).encode('ascii','ignore').decode('ascii')
             c_n = unicodedata.normalize('NFKD', c).encode('ascii','ignore').decode('ascii')
             a_n = unicodedata.normalize('NFKD', a).encode('ascii','ignore').decode('ascii')
-            # 1. Daïra match
             if ma_daira_norm in d_n:
                 return True
-            # 2. Commune match
             for com_n in communes_norm:
                 if com_n and com_n in c_n:
                     return True
-            # 3. Adresse match
             for com_n in communes_norm:
                 if com_n and com_n in a_n:
                     return True
             if ma_daira_norm in a_n:
                 return True
-            # 4. Aucune zone définie → visible pour tous
             if not d_n and not c_n and not a_n:
                 return True
             return False
@@ -2772,11 +2780,9 @@ def page_corbeille():
 # ==========================================
 
 def page_communication():
-    """Page réservée au Service Communication — recherche + fiche synthèse uniquement."""
     st.title("📢 Service Communication — Recherche Promoteurs")
     env = st.session_state.user['env']
 
-    # Barre de recherche
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("**🔍 Rechercher un promoteur**")
     rech = st.text_input("Tapez un nom, prénom, identifiant, activité ou commune...",
@@ -2800,7 +2806,6 @@ def page_communication():
         st.warning("La base est vide.")
         return
 
-    # Filtrage
     df_res = df[df.apply(
         lambda x: x.astype(str).str.contains(rech.strip(), case=False, na=False).any(), axis=1
     )]
@@ -2811,7 +2816,6 @@ def page_communication():
         st.info("Aucun promoteur trouvé.")
         return
 
-    # Affichage résultats (colonnes non sensibles uniquement)
     cols_com = [c for c in [
         "identifiant","nom","prenom","telephone","activite",
         "secteur","commune","daira","gestionnaire","statut_dossier","id"
@@ -2833,7 +2837,6 @@ def page_communication():
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ✅ 2 boutons : Fiche Arabe + Fiche Française
     sel = edited[edited["Fiche 📄"] == True]
     if not sel.empty:
         dos_id = int(sel.iloc[0]['id'])
@@ -2868,7 +2871,6 @@ def page_communication():
                         st.error(f"Erreur PDF Français: {e}")
 
 def _ar_text(text):
-    """Prépare texte arabe pour reportlab."""
     try:
         import arabic_reshaper
         from bidi.algorithm import get_display
@@ -2879,7 +2881,6 @@ def _ar_text(text):
         return str(text)
 
 def _get_arabic_fonts():
-    """Retourne les chemins des polices arabes disponibles."""
     import os
     FONT_CANDIDATES = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -2896,12 +2897,11 @@ def _get_arabic_fonts():
     return f, fb
 
 def _register_arabic_fonts():
-    """Enregistre les polices arabes (idempotent)."""
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
     f, fb = _get_arabic_fonts()
     if not f or not fb:
-        raise ValueError("Aucune police compatible trouvée sur ce serveur. Ajoutez 'fonts-dejavu-core' dans packages.txt")
+        raise ValueError("Aucune police compatible trouvée sur ce serveur.")
     for name, path in [('BtR', f), ('BtB', fb)]:
         try:
             pdfmetrics.registerFont(TTFont(name, path))
@@ -2910,7 +2910,6 @@ def _register_arabic_fonts():
                 raise
 
 def _generer_bطاقة_ar(dos) -> bytes:
-    """✅ البطاقة التقنية الرسمية — reportlab + arabic_reshaper."""
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.colors import HexColor, white
@@ -2965,17 +2964,14 @@ def _generer_bطاقة_ar(dos) -> bytes:
         txt_ar(label, x+w-NUM_W-0.1*cm,        y-h+0.13*cm, 'BtB', 8, NAVY)
         txt_ar(str(value)[:70], x+w-NUM_W-LABEL_W-0.1*cm, y-h+0.13*cm, 'BtR', 8, HexColor('#1e293b'))
 
-    # ======================
-    # EN-TÊTE
-    # ======================
     y = H - 0.8*cm
     draw_rect_fill(ML, y-3.0*cm, TW, 3.0*cm, HexColor('#f0f4f8'), BORDER)
     txt_ar("الجمهورية الجزائرية الديمقراطية الشعبية",
-           ML+TW/2, y-0.55*cm, 'BtB', 10, NAVY, 'center')
+            ML+TW/2, y-0.55*cm, 'BtB', 10, NAVY, 'center')
     txt_ar("وزارة اقتصاد المعرفة والمؤسسات الناشئة والمؤسسات المصغرة",
-           ML+TW/2, y-1.1*cm, 'BtB', 9, NAVY, 'center')
+            ML+TW/2, y-1.1*cm, 'BtB', 9, NAVY, 'center')
     txt_ar("الوكالة الوطنية لتسيير القرض المصغر",
-           ML+TW/2, y-1.65*cm, 'BtB', 11, ORANGE, 'center')
+            ML+TW/2, y-1.65*cm, 'BtB', 11, ORANGE, 'center')
     wilaya = getattr(dos, 'wilaya', '') or ''
     daira  = getattr(dos, 'daira',  '') or ''
     txt_ar(f"الفرع الجهوي: {wilaya}",        ML+TW-0.2*cm, y-2.1*cm,  'BtB', 9, NAVY)
@@ -2983,21 +2979,15 @@ def _generer_bطاقة_ar(dos) -> bytes:
     txt_ar(f"خلية المرافقة: {daira}",        ML+TW-0.2*cm, y-2.9*cm,  'BtB', 9, NAVY)
     y -= 3.2*cm
 
-    # Titre principal
     draw_rect_fill(ML, y-0.75*cm, TW, 0.75*cm, ORANGE)
     txt_ar("البطاقة التقنية للمقاول", ML+TW/2, y-0.53*cm, 'BtB', 14, WHITE, 'center')
     y -= 0.9*cm
 
-    # ======================
-    # SECTION 1
-    # ======================
     y = section_header(y, "التعريف بالمقاول")
-
     ROW_H   = 0.55*cm
     PHOTO_W = 2.8*cm
     PHOTO_H = 3.5*cm
 
-    # Case photo
     c.setStrokeColor(NAVY)
     c.setLineWidth(0.8)
     c.rect(ML+0.2*cm, y-PHOTO_H-0.1*cm, PHOTO_W, PHOTO_H, fill=0)
@@ -3027,14 +3017,9 @@ def _generer_bطاقة_ar(dos) -> bytes:
 
     y = min(y_r, y - PHOTO_H - 0.2*cm) - 0.4*cm
 
-    # ======================
-    # SECTION 2
-    # ======================
     y = section_header(y, "التعريف بالمشروع")
-
     try: pnr_s = f"{float(getattr(dos,'montant_pnr',0)):,.0f} دج"
     except: pnr_s = str(getattr(dos,'montant_pnr',''))
-
     commune = getattr(dos,'commune','') or ''
     adresse = getattr(dos,'adresse','') or ''
 
@@ -3053,16 +3038,12 @@ def _generer_bطاقة_ar(dos) -> bytes:
         h = ROW_H * 1.8 if num in ("07","08") else ROW_H
         draw_row(ML, y, TW, h, num, label, val, i%2==0)
         if num == "08":
-            txt_ar("إناث : 01    منها", ML+TW/2, y-h+0.15*cm, 'BtR', 8, NAVY, 'center')
+            txt_ar("إناث : 01   منها", ML+TW/2, y-h+0.15*cm, 'BtR', 8, NAVY, 'center')
         y -= h
 
     y -= 0.4*cm
 
-    # ======================
-    # SECTION 3
-    # ======================
     y = section_header(y, "تسديد مبلغ القرض")
-
     try: remb_s = f"{float(getattr(dos,'montant_rembourse',0)):,.2f} دج"
     except: remb_s = "00.00 دج"
 
@@ -3076,7 +3057,6 @@ def _generer_bطاقة_ar(dos) -> bytes:
         draw_row(ML, y, TW, ROW_H*1.5, num, label, val, i%2==0)
         y -= ROW_H * 1.5
 
-    # Pied de page
     y -= 0.3*cm
     c.setFont('BtR', 7)
     c.setFillColor(HexColor('#94a3b8'))
@@ -3088,7 +3068,6 @@ def _generer_bطاقة_ar(dos) -> bytes:
     return buf.getvalue()
 
 def _generer_fiche_fr(dos) -> bytes:
-    """✅ Fiche technique en FRANÇAIS — FPDF avec clean_pdf_text sur tout."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_fill_color(29, 78, 216)
@@ -3156,7 +3135,6 @@ def _generer_fiche_fr(dos) -> bytes:
     os.unlink(tmp.name)
     return data
 
-
 # ==========================================
 # ROUTEUR PRINCIPAL
 # ==========================================
@@ -3164,7 +3142,7 @@ if st.session_state.user is None:
     login_page()
 else:
     page = sidebar_menu()
-    if "Administration" in page or "Import" in page:
+    if "Administration" in page or "Import" in page or "Audit" in page:
         page_integration_admin()
     elif "Bilans" in page:
         page_bilans()
