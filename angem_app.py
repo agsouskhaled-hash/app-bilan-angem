@@ -38,7 +38,7 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==========================================
 # CONSTANTES
 # ==========================================
-LISTE_DAIRAS = ["", "Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
+LISTE_DAIRAS = ["Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
 # ✅ Mapping Daïra → Communes (Wilaya d'Alger)
 DAIRA_COMMUNES = {
@@ -839,8 +839,92 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
     return stats
 
 # ==========================================
-# PDF
+# RENTU PDF D'AFFICHAGE OFFICIEL (Khaled)
 # ==========================================
+def generer_affiche_murale_pdf(df_stats_daira, env_name):
+    """Génère un rapport au format Paysage (A4) pour affichage clair dans les bureaux."""
+    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf.add_page()
+    
+    # En-tête bleu institutionnel
+    pdf.set_fill_color(31, 119, 180)
+    pdf.rect(0, 0, 297, 35, 'F')
+    
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 10, "SITUATION NATIONALE DE SUIVI DES AFFECTATIONS - ALGER OUEST", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(0, 6, f"DISPOSITIF DE SUIVI : {env_name}  |  EDITE LE : {datetime.now().strftime('%d/%m/%Y à %H:%M')}", ln=True, align='C')
+    
+    pdf.ln(12)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 8, "EVOLUTION ET DISPONIBILITE DES DOSSIERS PAR CELLULE (DAIRA)", ln=True, align='L')
+    pdf.ln(3)
+    
+    # Structure du Tableau d'affichage
+    pdf.set_fill_color(241, 245, 249)
+    pdf.set_font("Arial", 'B', 10)
+    
+    # Colonnes
+    pdf.cell(55, 10, "  CELLULE / DAIRA", border=1, fill=True)
+    pdf.cell(50, 10, "DOSSIERS ASSIGNES", border=1, fill=True, align='C')
+    pdf.cell(50, 10, "RESTE A ASSIGNER", border=1, fill=True, align='C')
+    pdf.cell(50, 10, "TOTAL CHARGE", border=1, fill=True, align='C')
+    pdf.cell(60, 10, "TAUX D'AFFECTATION REALISE", border=1, fill=True, align='C')
+    pdf.ln()
+    
+    # Injection des données cellules
+    pdf.set_font("Arial", '', 10)
+    alterner = False
+    
+    for _, row in df_stats_daira.iterrows():
+        if alterner:
+            pdf.set_fill_color(248, 250, 252)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+            
+        pdf.cell(55, 9, f"  {row['Daïra']}", border=1, fill=True)
+        pdf.cell(50, 9, str(row['Dossiers Assignés']), border=1, fill=True, align='C')
+        
+        # Mettre en évidence (Gras/Alerte rouge) s'il reste des dossiers orphelins
+        if row['Reste à Assigner'] > 0:
+            pdf.set_font("Arial", 'B', 10)
+            pdf.set_text_color(239, 68, 68)
+        pdf.cell(50, 9, str(row['Reste à Assigner']), border=1, fill=True, align='C')
+        pdf.set_font("Arial", '', 10)
+        pdf.set_text_color(15, 23, 42)
+        
+        pdf.cell(50, 9, str(row['Total dossiers']), border=1, fill=True, align='C')
+        pdf.cell(60, 9, f"{row['Taux Affectation']:.1f} %", border=1, fill=True, align='C')
+        pdf.ln()
+        alterner = not alterner
+        
+    # Ligne des totaux généraux de l'agence
+    pdf.ln(2)
+    pdf.set_fill_color(226, 232, 240)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(55, 10, "  TOTAL CUMULE", border=1, fill=True)
+    pdf.cell(50, 10, str(df_stats_daira['Dossiers Assignés'].sum()), border=1, fill=True, align='C')
+    pdf.cell(50, 10, str(df_stats_daira['Reste à Assigner'].sum()), border=1, fill=True, align='C')
+    pdf.cell(50, 10, str(df_stats_daira['Total dossiers'].sum()), border=1, fill=True, align='C')
+    
+    tot_global = df_stats_daira['Total dossiers'].sum()
+    tx_global = (df_stats_daira['Dossiers Assignés'].sum() / tot_global * 100) if tot_global > 0 else 0
+    pdf.cell(60, 10, f"{tx_global:.1f} %", border=1, fill=True, align='C')
+    
+    # Footer officiel pour encadrement
+    pdf.set_y(190)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 5, "ANGEM Workspace v2.6 Alger Ouest - Document officiel destine a l affichage interne de performance des cellules d accompagnement", align='C')
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        with open(tmp.name, "rb") as f:
+            data = f.read()
+    os.unlink(tmp.name)
+    return data
 
 def generer_fiche_promoteur_pdf(dos):
     pdf = FPDF()
@@ -1929,7 +2013,7 @@ def page_integration_admin():
             "💰 Import Finance", "📈 Import Recouvrement",
             "📊 MAJ Remboursement", "👤 MAJ Gestionnaire",
             "🧹 Maintenance", "🔐 Équipes", "🔍 Audit & Assainissement",
-            "👥 Gestionnaires anciens", "📨 Transferts en attente"
+            "📈 Suivi des Affectations", "📨 Transferts en attente"
         ])
 
     with t1:
@@ -2051,7 +2135,7 @@ def page_integration_admin():
             st.markdown("</div>", unsafe_allow_html=True)
 
     # ==========================================
-    # ✅ NOUVEL ONGLET T6 : AUDIT ET ASSAINISSEMENT DES GESTIONNAIRES (Demande de Khaled)
+    # 🔍 ONGLET T6 : AUDIT ET ASSAINISSEMENT
     # ==========================================
     if t6:
         with t6:
@@ -2072,7 +2156,6 @@ def page_integration_admin():
             else:
                 c_non_assigne, c_anciens = st.columns(2)
 
-                # --- BLOC 1 : NON ASSIGNÉS PAR DAÏRA ---
                 def est_non_assigne(val):
                     return str(val).strip().upper() in ('', 'NAN', 'NONE', 'NON', '-', 'N/A')
                 
@@ -2088,12 +2171,10 @@ def page_integration_admin():
                         df_na_group['daira'] = df_na_group['daira'].replace('', 'Non précisée')
                         st.dataframe(df_na_group.sort_values('Nombre de dossiers', ascending=False), use_container_width=True, hide_index=True)
 
-                # --- BLOC 2 : ANCIENS GESTIONNAIRES HORS LISTE ACTIVE ---
                 def est_ancien_gestionnaire(gest):
                     gest_str = str(gest).strip().upper()
                     if gest_str in ('', 'NAN', 'NONE', 'NON', '-', 'N/A'): 
                         return False
-                    
                     for actif in AGENTS_ACTIFS:
                         if similarite(gest_str, actif) >= 0.80:
                             return False
@@ -2111,14 +2192,11 @@ def page_integration_admin():
                         df_anciens_group['daira'] = df_anciens_group['daira'].replace('', 'Non précisée')
                         st.dataframe(df_anciens_group.sort_values('Dossiers', ascending=False), use_container_width=True, hide_index=True)
 
-                # --- MODULE DIRECT D'ASSAINISSEMENT PAR LA LABIEL/PASSATION MASSIVE ---
                 if not df_anciens.empty:
                     st.markdown("---")
                     st.markdown("#### 📦 Outil d'assainissement rapide")
-                    st.info("Transférez en bloc l'ensemble des dossiers d'un ancien agent vers un accompagnateur actif.")
                     
                     anciens_noms = sorted(df_anciens['gestionnaire'].unique().tolist())
-                    
                     col_re1, col_re2, col_re3 = st.columns([2, 2, 1])
                     with col_re1:
                         ancien_a_remplacer = st.selectbox("Sélectionner l'ancien nom détecté :", anciens_noms)
@@ -2128,19 +2206,110 @@ def page_integration_admin():
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.button("🔄 Lancer la passation", type="primary", use_container_width=True):
                             ids_a_transferer = df_anciens[df_anciens['gestionnaire'] == ancien_a_remplacer]['id'].tolist()
-                            
                             date_str = datetime.now().strftime('%d/%m/%Y %H:%M')
-                            note_assainissement = f"🔄 **[Assainissement {date_str}]** Transfert de masse automatique depuis l'ancien agent {ancien_a_remplacer} vers l'agent actif {nouvel_agent}\n"
+                            note_assainissement = f"🔄 **[Assainissement {date_str}]** Transfert automatique depuis l'ancien agent {ancien_a_remplacer} vers l'agent actif {nouvel_agent}\n"
                             
                             with get_session() as session:
                                 dossiers_db = session.query(Dossier).filter(Dossier.id.in_(ids_a_transferer)).all()
                                 for d in dossiers_db:
                                     d.gestionnaire = nouvel_agent
                                     d.historique_visites = note_assainissement + (d.historique_visites or "")
-                            
                             st.success(f"✅ Assainissement réussi ! {len(ids_a_transferer)} dossiers rattachés à {nouvel_agent}.")
                             st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
+    # ==========================================
+    # 📈 NOUVEL ONGLET T7 : SUIVI DES AFFECTATIONS & PDF (Khaled)
+    # ==========================================
+    if t7:
+        with t7:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.markdown("### 📊 Évolution des Affectations par Cellule (Daïra)")
+            st.caption("Suivi précis des dossiers attribués aux agents en activité vs dossiers restants (non assignés ou anciens agents).")
+            
+            try:
+                with engine.connect() as conn:
+                    df_all_dos = pd.read_sql_query(
+                        text("SELECT id, gestionnaire, daira FROM dossiers WHERE type_dispositif=:env"),
+                        conn, params={"env": env}
+                    ).fillna('')
+            except Exception:
+                df_all_dos = pd.DataFrame()
+
+            if df_all_dos.empty:
+                st.info("Aucun dossier enregistré dans le système.")
+            else:
+                # Fonctions d'analyse
+                def statut_affectation(gest):
+                    g_str = str(gest).strip().upper()
+                    if g_str in ('', 'NAN', 'NONE', 'NON', '-', 'N/A'):
+                        return "RESTE"
+                    for actif in AGENTS_ACTIFS:
+                        if similarite(g_str, actif) >= 0.80:
+                            return "ASSIGNE"
+                    return "RESTE" # Ancien agent = à réaffecter
+                
+                df_all_dos['Statut_Aff'] = df_all_dos['gestionnaire'].apply(statut_affectation)
+                
+                # Construction de la matrice par Daïra
+                stats_daira = []
+                for d in LISTE_DAIRAS:
+                    df_daira = df_all_dos[df_all_dos['daira'].str.upper() == d.upper()]
+                    assignes = len(df_daira[df_daira['Statut_Aff'] == "ASSIGNE"])
+                    restants = len(df_daira[df_daira['Statut_Aff'] == "RESTE"])
+                    total_d  = assignes + restants
+                    taux_d   = (assignes / total_d * 100) if total_d > 0 else 100.0
+                    
+                    stats_daira.append({
+                        "Daïra": d,
+                        "Dossiers Assignés": assignes,
+                        "Reste à Assigner": restants,
+                        "Total dossiers": total_d,
+                        "Taux Affectation": taux_d
+                    })
+                
+                # Prise en compte des dossiers sans Daïra
+                df_sans_d = df_all_dos[~df_all_dos['daira'].str.upper().isin([x.upper() for x in LISTE_DAIRAS])]
+                if not df_sans_d.empty:
+                    assignes = len(df_sans_d[df_sans_d['Statut_Aff'] == "ASSIGNE"])
+                    restants = len(df_sans_d[df_sans_d['Statut_Aff'] == "RESTE"])
+                    total_d  = assignes + restants
+                    taux_d   = (assignes / total_d * 100) if total_d > 0 else 100.0
+                    stats_daira.append({
+                        "Daïra": "Non précisée",
+                        "Dossiers Assignés": assignes,
+                        "Reste à Assigner": restants,
+                        "Total dossiers": total_d,
+                        "Taux Affectation": taux_d
+                    })
+
+                df_final_stats = pd.DataFrame(stats_daira)
+                
+                # Rendu Datagrid Streamlit
+                st.data_editor(
+                    df_final_stats,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Daïra": st.column_config.TextColumn("Cellule / Daïra", disabled=True),
+                        "Dossiers Assignés": st.column_config.NumberColumn("Dossiers Assignés (Actifs)", format="%d"),
+                        "Reste à Assigner": st.column_config.NumberColumn("Reste à Affecter", format="%d"),
+                        "Total dossiers": st.column_config.NumberColumn("Total Charge Daïra", format="%d"),
+                        "Taux Affectation": st.column_config.ProgressColumn("Taux d'Affectation Realisé", min_value=0, max_value=100, format="%.1f%%")
+                    }
+                )
+                
+                # Bouton de génération de l'affiche de bureau PDF
+                st.markdown("<br>", unsafe_allow_html=True)
+                pdf_mural = generer_affiche_murale_pdf(df_final_stats, env)
+                
+                st.download_button(
+                    label="🖨️ Télécharger l'Affiche de Bureau pour Impression (PDF)",
+                    data=pdf_mural,
+                    file_name=f"AFFICHAGE_BUREAU_AFFECTATIONS_{env}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
             st.markdown("</div>", unsafe_allow_html=True)
 
     if t3:
@@ -2223,18 +2392,9 @@ def page_integration_admin():
                         _maj_gestionnaire(df, mapping_final, env)
             st.markdown("</div>", unsafe_allow_html=True)
 
-    if t7:
-        with t7:
-            _outil_gestion_agents()
-
     if t8:
         with t8:
-            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-            st.warning("👥 Assigne le gestionnaire sur TOUTES les fiches portant le même ID.")
-            f_gest = st.file_uploader("Fichier Gestionnaires", type=['xlsx','xls','csv'], key="fgest_old")
-            if f_gest:
-                _onglet_import_generique(f_gest, env, 'gestionnaire_only', "form_gest_old", "Gestionnaires")
-            st.markdown("</div>", unsafe_allow_html=True)
+            _outil_gestion_agents()
 
     if t9:
         with t9:
@@ -3142,7 +3302,7 @@ if st.session_state.user is None:
     login_page()
 else:
     page = sidebar_menu()
-    if "Administration" in page or "Import" in page or "Audit" in page:
+    if "Administration" in page or "Import" in page or "Suivi" in page or "Audit" in page:
         page_integration_admin()
     elif "Bilans" in page:
         page_bilans()
