@@ -40,6 +40,16 @@ supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==========================================
 LISTE_DAIRAS = ["Zéralda", "Chéraga", "Draria", "Bir Mourad Rais", "Bouzareah", "Birtouta"]
 
+# ✅ Liste officielle des 25 accompagnateurs en activité ANGEM Alger Ouest
+ACCOMPAGNATEURS_ACTIFS = [
+    "BERRABEH DOUADI","MILOUDI AMEL","BERROUANE SAMIRA","MEDJHOUM RAOUIA",
+    "SAHNOUNE IMENE","MEDJEDOUB AMEL","MAASOUM SAIDA","AIT OUAREB AMINA",
+    "BEN AICHE MOUNIRA","GUESSMIA ZAHIRA","BENSAHNOUN LILA","DJAOUDI SARAH",
+    "MECHALIKHE FATMA","BOULAHLIB REDOUANE","MAHREZ MOHAMED","BELAID FAZIA",
+    "METMAR OMAR","MERAKEB FAIZA","KADRI SIHEM T","ALAMALI IMAD",
+    "BOUCHAREB MOUNIA","TOUAKNI SARAH","SALMI HOUDA","FELFOUL SAMIRA","NASRI RYM"
+]
+
 # ✅ Mapping Daïra → Communes (Wilaya d'Alger)
 DAIRA_COMMUNES = {
     "Zéralda":         ["Zéralda", "Mahelma", "Rahmania", "Souidania", "Staoueli"],
