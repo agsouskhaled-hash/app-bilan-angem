@@ -2182,10 +2182,10 @@ def page_integration_admin():
             st.markdown("</div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 🧹 MAINTENANCE (Onglet t4 mis à jour par l'assainissement de Khaled)
+    # 🧹 MAINTENANCE (Onglet t5)
     # ==========================================
-    if t4:
-        with t4:
+    if t5:
+        with t5:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("### 🔧 Outils de Maintenance & Réparation Base")
             
@@ -2342,8 +2342,8 @@ def page_integration_admin():
                 st.info("🔒 Seul l'administrateur peut vider la base.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    if t5:
-        with t5:
+    if t6:
+        with t6:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             try:
                 with engine.connect() as conn:
@@ -2389,8 +2389,8 @@ def page_integration_admin():
     # ==========================================
     # 🔍 ONGLET T6 : AUDIT ET ASSAINISSEMENT
     # ==========================================
-    if t6:
-        with t6:
+    if t7:
+        with t7:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("### 🧹 Audit & Assainissement Réseau de Gestion")
             
@@ -2471,10 +2471,10 @@ def page_integration_admin():
             st.markdown("</div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 📈 ONGLET T7 : SUIVI DES AFFECTATIONS
+    # 📈 ONGLET T8 : SUIVI DES AFFECTATIONS
     # ==========================================
-    if t7:
-        with t7:
+    if t8:
+        with t8:
             st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
             st.markdown("### 📊 Évolution des Affectations par Cellule (Daïra)")
             st.caption("Suivi précis des dossiers attribués aux agents en activité vs dossiers restants (non assignés ou anciens agents).")
@@ -2600,11 +2600,53 @@ def page_integration_admin():
                         _maj_remboursement(df, mapping_final, env)
             st.markdown("</div>", unsafe_allow_html=True)
 
+    # ==========================================
+    # 👤 ONGLET T4 : MAJ GESTIONNAIRE (affectation des accompagnateurs)
+    # ==========================================
     if t4:
-        pass # Ancien onglet unique de transfert déplacé vers sous-modules
+        with t4:
+            st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+            st.info("👤 Met à jour UNIQUEMENT le gestionnaire/accompagnateur. Les noms sont normalisés pour correspondre aux comptes agents.")
+            st.markdown("**Colonnes utiles dans le fichier :** `identifiant`, `nom`, `prenom`, `gestionnaire`")
+            f_gest_maj = st.file_uploader("📁 Fichier Excel Gestionnaires / Accompagnateurs", type=['xlsx','xls','csv'], key="f_maj_gest")
+            if f_gest_maj:
+                try:
+                    df_raw = safe_read_dataframe(f_gest_maj)
+                except Exception as e:
+                    st.error(f"Erreur lecture : {e}")
+                    df_raw = None
+                if df_raw is not None:
+                    df_raw = df_raw.fillna('')
+                    header_idx = get_header_row(df_raw)
+                    df = df_raw.iloc[header_idx:].copy()
+                    df.columns = df.iloc[0].astype(str).tolist()
+                    df = df.iloc[1:].reset_index(drop=True)
+                    df = fix_colonnes_doublons(df)
+                    mapping_auto = auto_mapper(list(df.columns))
+                    excel_cols = ["-- Ignorer --"] + list(df.columns)
+                    st.success(f"✅ {len(df)} lignes détectées")
+                    st.dataframe(df.head(3), use_container_width=True)
+                    champs_gest = ['identifiant','nom','prenom','gestionnaire']
+                    with st.form("form_maj_gest"):
+                        st.write("### 🎛️ Mapping Gestionnaire")
+                        c1, c2 = st.columns(2)
+                        mapping_final = {}
+                        for idx, db_f in enumerate(champs_gest):
+                            auto_val = mapping_auto.get(db_f, "-- Ignorer --")
+                            auto_idx = excel_cols.index(auto_val) if auto_val in excel_cols else 0
+                            col = c1 if idx % 2 == 0 else c2
+                            with col:
+                                mapping_final[db_f] = st.selectbox(f"`{db_f}`", excel_cols, index=auto_idx, key=f"maj_gest_{db_f}")
+                        sub = st.form_submit_button("🚀 Mettre à jour les gestionnaires", type="primary")
+                    if sub:
+                        _maj_gestionnaire(df, mapping_final, env)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    if t8:
-        with t8:
+    # ==========================================
+    # 🔍 ONGLET T7 (suite) : outils fusion / passation / réécriture
+    # ==========================================
+    if t7:
+        with t7:
             _outil_gestion_agents()
 
     if t9:
