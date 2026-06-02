@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 import difflib
 from sqlalchemy import create_engine, Column, Integer, String, Float, Text, text
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -1951,175 +1952,347 @@ def page_bilans():
     st.caption(f"**{len(df_filtre)}** dossiers sélectionnés sur {len(df)} total")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### Vue Globale")
-    c1, c2, c3, c4 = st.columns(4)
+    # ============================================================
+    # PRÉPARATION DES DONNÉES
+    # ============================================================
+    def _na(v):
+        return str(v).strip().upper() in ('','NAN','NONE','NON','-','N/A')
+
+    total_dossiers = len(df_filtre)
     total_pnr  = df_filtre['montant_pnr'].sum()
     total_remb = df_filtre['montant_rembourse'].sum()
     total_rest = df_filtre['reste_rembourser'].sum()
     taux_global = (total_remb / total_pnr * 100) if total_pnr > 0 else 0
-    c1.metric("Total Dossiers", len(df_filtre))
-    c2.metric("PNR Engagé", f"{total_pnr:,.0f} DA")
-    c3.metric("Total Recouvré", f"{total_remb:,.0f} DA")
-    c4.metric("Reste", f"{total_rest:,.0f} DA")
-    st.progress(min(taux_global / 100, 1.0))
-    st.caption(f"Taux de recouvrement global : **{taux_global:.1f}%**")
+    nb_assignes = int((~df_filtre['gestionnaire'].apply(_na)).sum())
+    taux_affect = (nb_assignes / total_dossiers * 100) if total_dossiers > 0 else 0
 
-    tabs = st.tabs(["👥 Par Agent", "🗺️ Par Zone", "🏭 Par Activité", "🏦 Par Banque", "👤 Par Promoteur", "⚠️ Contentieux"])
+    PALETTE = ['#2563eb','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#14b8a6']
 
+    tabs = st.tabs([
+        "📈 Tableau de Bord", "👥 Par Agent", "🗺️ Par Daïra",
+        "🏭 Par Activité", "🏦 Par Banque", "👤 Profil Social",
+        "⚠️ Contentieux", "📤 Exports"
+    ])
+
+    # ============================================================
+    # ONGLET 0 — TABLEAU DE BORD EXÉCUTIF
+    # ============================================================
     with tabs[0]:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        if 'gestionnaire' in df_filtre.columns:
-            df_agent = df_filtre.groupby('gestionnaire').agg(
-                Dossiers=('id','count'),
-                PNR=('montant_pnr','sum'),
-                Recouvre=('montant_rembourse','sum'),
-                Reste=('reste_rembourser','sum')
-            ).reset_index()
-            df_agent = df_agent[df_agent['gestionnaire'].str.strip() != ""]
-            df_agent['Taux %'] = (df_agent['Recouvre'] / df_agent['PNR'] * 100).fillna(0).round(1)
-            df_agent = df_agent.sort_values('Dossiers', ascending=False)
-            st.dataframe(df_agent, use_container_width=True, hide_index=True,
-                column_config={
-                    "PNR": st.column_config.NumberColumn(format="%d DA"),
-                    "Recouvre": st.column_config.NumberColumn(format="%d DA"),
-                    "Reste": st.column_config.NumberColumn(format="%d DA"),
-                    "Taux %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
-                })
-            buf = io.BytesIO()
-            df_agent.to_excel(buf, index=False)
-            st.download_button("📥 Export Excel", data=buf.getvalue(), file_name="bilan_agents.xlsx", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("### 💰 Indicateurs clés")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("📂 Total Dossiers", f"{total_dossiers:,}".replace(',', ' '))
+        k2.metric("💵 PNR Engagé", f"{total_pnr/1_000_000:.1f} M DA")
+        k3.metric("✅ Recouvré", f"{total_remb/1_000_000:.1f} M DA", f"{taux_global:.1f}%")
+        k4.metric("⏳ Reste à recouvrer", f"{total_rest/1_000_000:.1f} M DA")
 
+        k5, k6, k7, k8 = st.columns(4)
+        k5.metric("👤 Dossiers assignés", f"{nb_assignes:,}".replace(',', ' '), f"{taux_affect:.0f}%")
+        k6.metric("🚫 Non assignés", f"{total_dossiers - nb_assignes:,}".replace(',', ' '))
+        nb_contentieux = len(df_filtre[df_filtre['etat_dette'].astype(str).str.upper().str.contains('CONTENTIEUX|RETARD', na=False)])
+        k7.metric("⚠️ Contentieux", f"{nb_contentieux:,}".replace(',', ' '))
+        nb_daira_actives = df_filtre[df_filtre['daira'].astype(str).str.strip() != '']['daira'].nunique()
+        k8.metric("🗺️ Daïras actives", nb_daira_actives)
+
+        st.markdown("---")
+        cg1, cg2 = st.columns(2)
+
+        # Camembert : répartition des dossiers par daïra
+        with cg1:
+            st.markdown("#### 🗺️ Répartition des dossiers par daïra")
+            dd = df_filtre[df_filtre['daira'].astype(str).str.strip() != ''].groupby('daira').size().reset_index(name='Dossiers')
+            if not dd.empty:
+                pie = alt.Chart(dd).mark_arc(innerRadius=60).encode(
+                    theta=alt.Theta('Dossiers:Q'),
+                    color=alt.Color('daira:N', scale=alt.Scale(range=PALETTE), legend=alt.Legend(title="Daïra")),
+                    tooltip=['daira:N', 'Dossiers:Q']
+                ).properties(height=300)
+                st.altair_chart(pie, use_container_width=True)
+            else:
+                st.info("Aucune donnée de daïra.")
+
+        # Barres : PNR vs Recouvré par daïra
+        with cg2:
+            st.markdown("#### 💰 PNR vs Recouvré par daïra")
+            dm = df_filtre[df_filtre['daira'].astype(str).str.strip() != ''].groupby('daira').agg(
+                PNR=('montant_pnr','sum'), Recouvré=('montant_rembourse','sum')).reset_index()
+            if not dm.empty:
+                dm_long = dm.melt('daira', var_name='Type', value_name='Montant')
+                bars = alt.Chart(dm_long).mark_bar().encode(
+                    x=alt.X('daira:N', title=None, axis=alt.Axis(labelAngle=-40)),
+                    y=alt.Y('Montant:Q', title='Montant (DA)'),
+                    color=alt.Color('Type:N', scale=alt.Scale(range=['#2563eb','#10b981'])),
+                    xOffset='Type:N',
+                    tooltip=['daira:N','Type:N','Montant:Q']
+                ).properties(height=300)
+                st.altair_chart(bars, use_container_width=True)
+            else:
+                st.info("Aucune donnée.")
+
+        # Jauge de recouvrement global
+        st.markdown("#### 📊 Taux de recouvrement global")
+        st.progress(min(taux_global/100, 1.0))
+        st.caption(f"**{taux_global:.1f}%** du montant PNR engagé a été recouvré ({total_remb/1_000_000:.1f}M / {total_pnr/1_000_000:.1f}M DA)")
+
+    # ============================================================
+    # ONGLET 1 — PAR AGENT (performance)
+    # ============================================================
     with tabs[1]:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        zone_col = st.selectbox("Regrouper par", ["daira", "commune", "wilaya", "zone", "adresse"], key="zone_col")
-        if zone_col in df_filtre.columns:
-            df_zone = df_filtre.groupby(zone_col).agg(
-                Dossiers=('id','count'),
-                PNR=('montant_pnr','sum'),
-                Recouvre=('montant_rembourse','sum'),
-                Reste=('reste_rembourser','sum')
-            ).reset_index()
-            df_zone = df_zone[df_zone[zone_col].str.strip() != ""].sort_values('Dossiers', ascending=False)
-            df_zone['Taux %'] = (df_zone['Recouvre'] / df_zone['PNR'] * 100).fillna(0).round(1)
-            st.dataframe(df_zone, use_container_width=True, hide_index=True,
-                column_config={
+        st.markdown("### 👥 Performance des accompagnateurs")
+        if 'gestionnaire' in df_filtre.columns:
+            da = df_filtre[~df_filtre['gestionnaire'].apply(_na)].groupby('gestionnaire').agg(
+                Dossiers=('id','count'), PNR=('montant_pnr','sum'),
+                Recouvré=('montant_rembourse','sum'), Reste=('reste_rembourser','sum')).reset_index()
+            if not da.empty:
+                da['Taux %'] = (da['Recouvré'] / da['PNR'] * 100).fillna(0).round(1)
+                da = da.sort_values('Dossiers', ascending=False)
+
+                st.markdown("#### 📊 Charge de travail (nombre de dossiers)")
+                chart_charge = alt.Chart(da).mark_bar(color='#2563eb').encode(
+                    x=alt.X('Dossiers:Q', title='Nombre de dossiers'),
+                    y=alt.Y('gestionnaire:N', sort='-x', title=None),
+                    tooltip=['gestionnaire:N','Dossiers:Q','PNR:Q','Taux %:Q']
+                ).properties(height=max(300, len(da)*28))
+                st.altair_chart(chart_charge, use_container_width=True)
+
+                st.markdown("#### 🏆 Classement par taux de recouvrement")
+                st.dataframe(da, use_container_width=True, hide_index=True, column_config={
                     "PNR": st.column_config.NumberColumn(format="%d DA"),
-                    "Recouvre": st.column_config.NumberColumn(format="%d DA"),
+                    "Recouvré": st.column_config.NumberColumn(format="%d DA"),
                     "Reste": st.column_config.NumberColumn(format="%d DA"),
                     "Taux %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
                 })
-            buf = io.BytesIO()
-            df_zone.to_excel(buf, index=False)
-            st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{zone_col}.xlsx", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+                buf = io.BytesIO(); da.to_excel(buf, index=False)
+                st.download_button("📥 Export Excel — Agents", data=buf.getvalue(), file_name="bilan_agents.xlsx", use_container_width=True)
+            else:
+                st.info("Aucun dossier assigné.")
 
+    # ============================================================
+    # ONGLET 2 — PAR DAÏRA
+    # ============================================================
     with tabs[2]:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        act_col = st.selectbox("Regrouper par", ["secteur", "activite", "code_activite"], key="act_col")
-        if act_col in df_filtre.columns:
-            df_act = df_filtre.groupby(act_col).agg(
-                Dossiers=('id','count'),
-                PNR=('montant_pnr','sum'),
-                Recouvre=('montant_rembourse','sum'),
-                Reste=('reste_rembourser','sum')
-            ).reset_index()
-            df_act = df_act[df_act[act_col].str.strip() != ""].sort_values('Dossiers', ascending=False)
-            df_act['Taux %'] = (df_act['Recouvre'] / df_act['PNR'] * 100).fillna(0).round(1)
-            st.dataframe(df_act, use_container_width=True, hide_index=True,
-                column_config={
-                    "PNR": st.column_config.NumberColumn(format="%d DA"),
-                    "Recouvre": st.column_config.NumberColumn(format="%d DA"),
-                    "Reste": st.column_config.NumberColumn(format="%d DA"),
-                    "Taux %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
-                })
-            buf = io.BytesIO()
-            df_act.to_excel(buf, index=False)
-            st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{act_col}.xlsx", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("### 🗺️ Analyse par daïra")
+        dz = df_filtre[df_filtre['daira'].astype(str).str.strip() != ''].groupby('daira').agg(
+            Dossiers=('id','count'), PNR=('montant_pnr','sum'),
+            Recouvré=('montant_rembourse','sum'), Reste=('reste_rembourser','sum')).reset_index()
+        if not dz.empty:
+            dz['Taux %'] = (dz['Recouvré'] / dz['PNR'] * 100).fillna(0).round(1)
+            dz = dz.sort_values('Dossiers', ascending=False)
 
+            st.markdown("#### 📊 Taux de recouvrement par daïra")
+            chart_taux = alt.Chart(dz).mark_bar().encode(
+                x=alt.X('Taux %:Q', title='Taux de recouvrement (%)', scale=alt.Scale(domain=[0,100])),
+                y=alt.Y('daira:N', sort='-x', title=None),
+                color=alt.condition(alt.datum['Taux %'] >= 50, alt.value('#10b981'), alt.value('#ef4444')),
+                tooltip=['daira:N','Dossiers:Q','Taux %:Q']
+            ).properties(height=max(250, len(dz)*40))
+            st.altair_chart(chart_taux, use_container_width=True)
+
+            st.dataframe(dz, use_container_width=True, hide_index=True, column_config={
+                "PNR": st.column_config.NumberColumn(format="%d DA"),
+                "Recouvré": st.column_config.NumberColumn(format="%d DA"),
+                "Reste": st.column_config.NumberColumn(format="%d DA"),
+                "Taux %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
+            })
+            buf = io.BytesIO(); dz.to_excel(buf, index=False)
+            st.download_button("📥 Export Excel — Daïras", data=buf.getvalue(), file_name="bilan_dairas.xlsx", use_container_width=True)
+        else:
+            st.info("Aucune donnée de daïra.")
+
+    # ============================================================
+    # ONGLET 3 — PAR ACTIVITÉ / SECTEUR
+    # ============================================================
     with tabs[3]:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        banque_col = st.selectbox("Regrouper par", ["banque_nom", "agence_bancaire"], key="banque_col")
-        if banque_col in df_filtre.columns:
-            df_banque = df_filtre.groupby(banque_col).agg(
-                Dossiers=('id','count'),
-                PNR=('montant_pnr','sum'),
-                Recouvre=('montant_rembourse','sum'),
-                Reste=('reste_rembourser','sum')
-            ).reset_index()
-            df_banque = df_banque[df_banque[banque_col].str.strip() != ""].sort_values('PNR', ascending=False)
-            df_banque['Taux %'] = (df_banque['Recouvre'] / df_banque['PNR'] * 100).fillna(0).round(1)
-            st.dataframe(df_banque, use_container_width=True, hide_index=True,
-                column_config={
+        st.markdown("### 🏭 Analyse par activité")
+        col_choix = st.selectbox("Regrouper par", ["secteur", "activite", "code_activite"], key="bil_act")
+        if col_choix in df_filtre.columns:
+            dac = df_filtre[df_filtre[col_choix].astype(str).str.strip() != ''].groupby(col_choix).agg(
+                Dossiers=('id','count'), PNR=('montant_pnr','sum'),
+                Recouvré=('montant_rembourse','sum')).reset_index()
+            if not dac.empty:
+                dac['Taux %'] = (dac['Recouvré'] / dac['PNR'] * 100).fillna(0).round(1)
+                dac = dac.sort_values('Dossiers', ascending=False).head(15)
+
+                st.markdown(f"#### 📊 Top 15 — {col_choix}")
+                chart_act = alt.Chart(dac).mark_bar(color='#8b5cf6').encode(
+                    x=alt.X('Dossiers:Q', title='Nombre de dossiers'),
+                    y=alt.Y(f'{col_choix}:N', sort='-x', title=None),
+                    tooltip=[f'{col_choix}:N','Dossiers:Q','PNR:Q','Taux %:Q']
+                ).properties(height=max(300, len(dac)*28))
+                st.altair_chart(chart_act, use_container_width=True)
+
+                st.dataframe(dac, use_container_width=True, hide_index=True, column_config={
                     "PNR": st.column_config.NumberColumn(format="%d DA"),
-                    "Recouvre": st.column_config.NumberColumn(format="%d DA"),
+                    "Recouvré": st.column_config.NumberColumn(format="%d DA"),
+                    "Taux %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
+                })
+                buf = io.BytesIO(); dac.to_excel(buf, index=False)
+                st.download_button("📥 Export Excel — Activités", data=buf.getvalue(), file_name=f"bilan_{col_choix}.xlsx", use_container_width=True)
+            else:
+                st.info("Aucune donnée.")
+
+    # ============================================================
+    # ONGLET 4 — PAR BANQUE
+    # ============================================================
+    with tabs[4]:
+        st.markdown("### 🏦 Analyse par banque")
+        col_b = st.selectbox("Regrouper par", ["banque_nom", "agence_bancaire"], key="bil_banque")
+        if col_b in df_filtre.columns:
+            db = df_filtre[df_filtre[col_b].astype(str).str.strip() != ''].groupby(col_b).agg(
+                Dossiers=('id','count'), PNR=('montant_pnr','sum'),
+                Recouvré=('montant_rembourse','sum'), Reste=('reste_rembourser','sum')).reset_index()
+            if not db.empty:
+                db['Taux %'] = (db['Recouvré'] / db['PNR'] * 100).fillna(0).round(1)
+                db = db.sort_values('PNR', ascending=False)
+
+                st.markdown("#### 📊 PNR engagé par banque")
+                chart_b = alt.Chart(db).mark_bar(color='#06b6d4').encode(
+                    x=alt.X('PNR:Q', title='PNR engagé (DA)'),
+                    y=alt.Y(f'{col_b}:N', sort='-x', title=None),
+                    tooltip=[f'{col_b}:N','Dossiers:Q','PNR:Q','Taux %:Q']
+                ).properties(height=max(250, len(db)*30))
+                st.altair_chart(chart_b, use_container_width=True)
+
+                st.dataframe(db, use_container_width=True, hide_index=True, column_config={
+                    "PNR": st.column_config.NumberColumn(format="%d DA"),
+                    "Recouvré": st.column_config.NumberColumn(format="%d DA"),
                     "Reste": st.column_config.NumberColumn(format="%d DA"),
                     "Taux %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
                 })
-            buf = io.BytesIO()
-            df_banque.to_excel(buf, index=False)
-            st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{banque_col}.xlsx", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+                buf = io.BytesIO(); db.to_excel(buf, index=False)
+                st.download_button("📥 Export Excel — Banques", data=buf.getvalue(), file_name=f"bilan_{col_b}.xlsx", use_container_width=True)
+            else:
+                st.info("Aucune donnée.")
 
-    with tabs[4]:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-        promo_col = st.selectbox("Regrouper par", ["genre", "niveau_instruction", "statut_dossier"], key="promo_col")
-        if promo_col in df_filtre.columns:
-            df_promo = df_filtre.groupby(promo_col).agg(
-                Dossiers=('id','count'),
-                PNR=('montant_pnr','sum'),
-                Recouvre=('montant_rembourse','sum'),
-            ).reset_index()
-            df_promo = df_promo[df_promo[promo_col].str.strip() != ""].sort_values('Dossiers', ascending=False)
-            st.dataframe(df_promo, use_container_width=True, hide_index=True,
-                column_config={
-                    "PNR": st.column_config.NumberColumn(format="%d DA"),
-                    "Recouvre": st.column_config.NumberColumn(format="%d DA"),
-                })
-            buf = io.BytesIO()
-            df_promo.to_excel(buf, index=False)
-            st.download_button("📥 Export Excel", data=buf.getvalue(), file_name=f"bilan_{promo_col}.xlsx", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
+    # ============================================================
+    # ONGLET 5 — PROFIL SOCIAL (genre, âge, instruction)
+    # ============================================================
     with tabs[5]:
-        st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
+        st.markdown("### 👤 Profil social des bénéficiaires")
+        st.caption("Utile pour les rapports d'impact social au ministère.")
+        ps1, ps2 = st.columns(2)
+
+        with ps1:
+            st.markdown("#### 👫 Répartition par genre")
+            if 'genre' in df_filtre.columns:
+                dg = df_filtre[df_filtre['genre'].astype(str).str.strip() != ''].groupby('genre').size().reset_index(name='Nombre')
+                if not dg.empty:
+                    pie_g = alt.Chart(dg).mark_arc(innerRadius=50).encode(
+                        theta='Nombre:Q',
+                        color=alt.Color('genre:N', scale=alt.Scale(range=['#2563eb','#ec4899','#f59e0b'])),
+                        tooltip=['genre:N','Nombre:Q']
+                    ).properties(height=280)
+                    st.altair_chart(pie_g, use_container_width=True)
+                else:
+                    st.info("Pas de données genre.")
+
+        with ps2:
+            st.markdown("#### 🎓 Répartition par niveau d'instruction")
+            if 'niveau_instruction' in df_filtre.columns:
+                di = df_filtre[df_filtre['niveau_instruction'].astype(str).str.strip() != ''].groupby('niveau_instruction').size().reset_index(name='Nombre')
+                if not di.empty:
+                    di = di.sort_values('Nombre', ascending=False)
+                    chart_i = alt.Chart(di).mark_bar(color='#14b8a6').encode(
+                        x=alt.X('Nombre:Q', title='Nombre'),
+                        y=alt.Y('niveau_instruction:N', sort='-x', title=None),
+                        tooltip=['niveau_instruction:N','Nombre:Q']
+                    ).properties(height=280)
+                    st.altair_chart(chart_i, use_container_width=True)
+                else:
+                    st.info("Pas de données instruction.")
+
+        st.markdown("#### 🎂 Répartition par tranche d'âge")
+        if 'age' in df_filtre.columns:
+            def tranche_age(a):
+                try:
+                    n = int(float(str(a).strip()))
+                    if n < 25: return "18-24 ans"
+                    if n < 35: return "25-34 ans"
+                    if n < 45: return "35-44 ans"
+                    if n < 55: return "45-54 ans"
+                    return "55 ans et +"
+                except Exception:
+                    return ""
+            dft = df_filtre.copy()
+            dft['_tranche'] = dft['age'].apply(tranche_age)
+            dt = dft[dft['_tranche'] != ''].groupby('_tranche').size().reset_index(name='Nombre')
+            if not dt.empty:
+                chart_age = alt.Chart(dt).mark_bar(color='#f59e0b').encode(
+                    x=alt.X('_tranche:N', title=None, sort=["18-24 ans","25-34 ans","35-44 ans","45-54 ans","55 ans et +"]),
+                    y=alt.Y('Nombre:Q', title='Nombre de bénéficiaires'),
+                    tooltip=['_tranche:N','Nombre:Q']
+                ).properties(height=300)
+                st.altair_chart(chart_age, use_container_width=True)
+            else:
+                st.info("Pas de données d'âge exploitables.")
+
+    # ============================================================
+    # ONGLET 6 — CONTENTIEUX & RISQUE
+    # ============================================================
+    with tabs[6]:
+        st.markdown("### ⚠️ Contentieux & dossiers à risque")
         df_cont = df_filtre[
-            (df_filtre['etat_dette'].str.upper().str.contains('CONTENTIEUX|RETARD', na=False)) |
+            (df_filtre['etat_dette'].astype(str).str.upper().str.contains('CONTENTIEUX|RETARD', na=False)) |
             (df_filtre['statut_dossier'] == 'Contentieux / Retard')
         ].copy()
-        st.metric("Dossiers en contentieux", len(df_cont))
-        if not df_cont.empty:
-            st.metric("Montant en souffrance", f"{df_cont['reste_rembourser'].sum():,.0f} DA")
-            cols_aff = [c for c in ["identifiant","nom","prenom","gestionnaire","daira","commune","montant_pnr","reste_rembourser","etat_dette","nb_echeance_tombee"] if c in df_cont.columns]
-            st.dataframe(df_cont[cols_aff], use_container_width=True, hide_index=True)
-            buf = io.BytesIO()
-            df_cont[cols_aff].to_excel(buf, index=False)
-            st.download_button("📥 Export Contentieux Excel", data=buf.getvalue(), file_name="contentieux.xlsx", use_container_width=True)
-            st.download_button("📄 Export Contentieux PDF", data=_generer_contentieux_pdf(df_cont),
-                               file_name="Contentieux_ANGEM.pdf", mime="application/pdf", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
-    st.markdown("### 📤 Export Global")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.download_button("📊 Bilan Global PDF", data=generer_rapport_global_pdf(df_filtre),
-                           file_name="Bilan_ANGEM.pdf", mime="application/pdf", use_container_width=True)
-    with c2:
-        buf = io.BytesIO()
-        df_exp = df_filtre.copy()
-        try:
-            dyn = df_exp['champs_dynamiques'].apply(lambda x: json.loads(x) if x and x != '{}' else {})
-            df_exp = pd.concat([df_exp.drop(columns=['champs_dynamiques']), pd.json_normalize(dyn)], axis=1)
-        except Exception:
-            pass
-        df_exp.to_excel(buf, index=False)
-        st.download_button("🟢 Export Excel Complet", data=buf.getvalue(),
-                           file_name="Backup_ANGEM.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                           use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        rc1, rc2, rc3 = st.columns(3)
+        rc1.metric("Dossiers en contentieux", len(df_cont))
+        rc2.metric("Montant en souffrance", f"{df_cont['reste_rembourser'].sum()/1_000_000:.1f} M DA")
+        part = (len(df_cont)/total_dossiers*100) if total_dossiers > 0 else 0
+        rc3.metric("Part du portefeuille", f"{part:.1f}%")
+
+        if not df_cont.empty:
+            st.markdown("#### 🗺️ Contentieux par daïra")
+            dcd = df_cont[df_cont['daira'].astype(str).str.strip() != ''].groupby('daira').agg(
+                Dossiers=('id','count'), Montant=('reste_rembourser','sum')).reset_index().sort_values('Montant', ascending=False)
+            if not dcd.empty:
+                chart_c = alt.Chart(dcd).mark_bar(color='#ef4444').encode(
+                    x=alt.X('Montant:Q', title='Montant en souffrance (DA)'),
+                    y=alt.Y('daira:N', sort='-x', title=None),
+                    tooltip=['daira:N','Dossiers:Q','Montant:Q']
+                ).properties(height=max(200, len(dcd)*35))
+                st.altair_chart(chart_c, use_container_width=True)
+
+            st.markdown("#### 🔴 Top dossiers à risque (plus gros montants)")
+            cols_aff = [c for c in ["identifiant","nom","prenom","gestionnaire","daira","commune","montant_pnr","reste_rembourser","etat_dette","nb_echeance_tombee"] if c in df_cont.columns]
+            df_top = df_cont.sort_values('reste_rembourser', ascending=False)[cols_aff]
+            st.dataframe(df_top, use_container_width=True, hide_index=True, column_config={
+                "montant_pnr": st.column_config.NumberColumn("PNR", format="%d DA"),
+                "reste_rembourser": st.column_config.NumberColumn("Reste", format="%d DA"),
+            })
+            cb1, cb2 = st.columns(2)
+            with cb1:
+                buf = io.BytesIO(); df_top.to_excel(buf, index=False)
+                st.download_button("📥 Export Excel — Contentieux", data=buf.getvalue(), file_name="contentieux.xlsx", use_container_width=True)
+            with cb2:
+                st.download_button("📄 Export PDF — Contentieux", data=_generer_contentieux_pdf(df_cont),
+                                   file_name="Contentieux_ANGEM.pdf", mime="application/pdf", use_container_width=True)
+        else:
+            st.success("✅ Aucun dossier en contentieux. Portefeuille sain !")
+
+    # ============================================================
+    # ONGLET 7 — EXPORTS
+    # ============================================================
+    with tabs[7]:
+        st.markdown("### 📤 Centre d'export")
+        st.caption("Exporte l'ensemble des données filtrées en un clic.")
+        e1, e2 = st.columns(2)
+        with e1:
+            st.download_button("📊 Bilan Global PDF", data=generer_rapport_global_pdf(df_filtre),
+                               file_name="Bilan_ANGEM.pdf", mime="application/pdf", use_container_width=True)
+        with e2:
+            buf = io.BytesIO()
+            df_exp = df_filtre.copy()
+            try:
+                dyn = df_exp['champs_dynamiques'].apply(lambda x: json.loads(x) if x and x != '{}' else {})
+                df_exp = pd.concat([df_exp.drop(columns=['champs_dynamiques']), pd.json_normalize(dyn)], axis=1)
+            except Exception:
+                pass
+            df_exp.to_excel(buf, index=False)
+            st.download_button("🟢 Export Excel Complet (Backup)", data=buf.getvalue(),
+                               file_name="Backup_ANGEM.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               use_container_width=True)
 
 def _generer_contentieux_pdf(df):
     pdf = FPDF()
