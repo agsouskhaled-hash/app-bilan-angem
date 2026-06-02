@@ -70,21 +70,55 @@ AGENTS_ACTIFS = [
     "BOUCHAREB MOUNIA", "TOUAKNI SARAH", "SALMI HOUDA", "FELFOUL SAMIRA", "NASRI RYM"
 ]
 
-def deduire_daira_de_commune(commune: str) -> str:
-    """Retourne la daïra correspondante à une commune, sinon ''."""
-    if not commune:
-        return ""
-    c_norm = unicodedata.normalize('NFKD', str(commune).strip().upper()).encode('ascii','ignore').decode('ascii')
-    for daira, communes in DAIRA_COMMUNES.items():
-        for com in communes:
-            com_norm = unicodedata.normalize('NFKD', com.upper()).encode('ascii','ignore').decode('ascii')
-            if com_norm == c_norm or com_norm in c_norm or c_norm in com_norm:
-                return daira
-    return ""
-
 def communes_de_daira(daira: str) -> list:
     """Retourne la liste des communes d'une daïra."""
     return DAIRA_COMMUNES.get(daira, [])
+
+def _norm_txt(s: str) -> str:
+    """Normalise un texte pour comparaison (majuscules, sans accents)."""
+    return unicodedata.normalize('NFKD', str(s).strip().upper()).encode('ascii','ignore').decode('ascii')
+
+def deduire_daira_intelligente(daira='', commune='', adresse='', wilaya='') -> str:
+    """✅ Déduit la daïra en utilisant TOUS les indices disponibles :
+    1. Le champ daïra lui-même (s'il correspond à une des 6 daïras)
+    2. La commune (correspondance dans DAIRA_COMMUNES)
+    3. L'adresse (recherche de nom de commune OU de daïra dedans)
+    Retourne '' si rien trouvé."""
+    daira_n   = _norm_txt(daira)
+    commune_n = _norm_txt(commune)
+    adresse_n = _norm_txt(adresse)
+
+    # --- INDICE 1 : le champ daïra correspond directement à une des 6 daïras ---
+    if daira_n:
+        for d in DAIRA_COMMUNES.keys():
+            if _norm_txt(d) == daira_n or _norm_txt(d) in daira_n or daira_n in _norm_txt(d):
+                return d
+
+    # --- INDICE 2 : la commune correspond à une commune connue ---
+    if commune_n:
+        for d, communes in DAIRA_COMMUNES.items():
+            for com in communes:
+                com_n = _norm_txt(com)
+                if com_n == commune_n or com_n in commune_n or commune_n in com_n:
+                    return d
+
+    # --- INDICE 3 : chercher dans l'adresse (commune OU daïra) ---
+    if adresse_n:
+        for d, communes in DAIRA_COMMUNES.items():
+            for com in communes:
+                com_n = _norm_txt(com)
+                if com_n and com_n in adresse_n:
+                    return d
+        for d in DAIRA_COMMUNES.keys():
+            d_n = _norm_txt(d)
+            if d_n and d_n in adresse_n:
+                return d
+
+    return ""
+
+def deduire_daira_de_commune(commune: str) -> str:
+    """(Compatibilité) — déduit depuis la commune seule."""
+    return deduire_daira_intelligente(commune=commune)
 
 LISTE_STATUTS = [
     "Phase dépôt du dossier",
@@ -779,8 +813,13 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                 stats['ignores'] += 1
                 continue
 
-            if not data.get('daira') and data.get('commune'):
-                d_deduite = deduire_daira_de_commune(data['commune'])
+            if not data.get('daira'):
+                d_deduite = deduire_daira_intelligente(
+                    daira=data.get('daira',''),
+                    commune=data.get('commune',''),
+                    adresse=data.get('adresse',''),
+                    wilaya=data.get('wilaya','')
+                )
                 if d_deduite:
                     data['daira'] = d_deduite
 
@@ -2171,15 +2210,17 @@ def page_integration_admin():
                     
                     c_repare = 0
                     for d in dossiers_vides:
-                        repare = False
-                        
-                        # Niveau 1 : Par la commune
-                        if d.commune and d.commune.strip():
-                            d_deduite = deduire_daira_de_commune(d.commune)
-                            if d_deduite:
-                                d.daira = d_deduite
-                                repare = True
-                        
+                        d_deduite = deduire_daira_intelligente(
+                            daira=d.daira or '',
+                            commune=d.commune or '',
+                            adresse=d.adresse or '',
+                            wilaya=getattr(d, 'wilaya', '') or ''
+                        )
+                        if d_deduite:
+                            d.daira = d_deduite
+                            c_repare += 1
+                        repare = bool(d_deduite)
+
                         # Niveau 2 : Par analyse de texte dans l'adresse si la commune a échoué
                         if not repare and d.adresse and d.adresse.strip():
                             adr_upper = unicodedata.normalize('NFKD', d.adresse.upper()).encode('ascii','ignore').decode('ascii')
