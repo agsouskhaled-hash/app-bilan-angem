@@ -624,15 +624,44 @@ def fix_colonnes_doublons(df):
     return df
 
 def auto_mapper(df_cols):
+    """✅ Mapping intelligent avec score de confiance — reconnaît la majorité des colonnes automatiquement."""
     mapping = {}
     cols_clean = {clean_header(c): c for c in df_cols}
+    scores = {}  # {db_field: (col_orig, score)}
     for db_field, keywords in MAPPING_CONFIG_KEYWORDS.items():
-        for kw in keywords:
-            for col_clean, col_orig in cols_clean.items():
-                if kw in col_clean or col_clean in kw:
-                    if db_field not in mapping:
-                        mapping[db_field] = col_orig
-                    break
+        meilleur_col = None
+        meilleur_score = 0
+        for col_clean, col_orig in cols_clean.items():
+            if not col_clean:
+                continue
+            score_col = 0
+            for kw in keywords:
+                if col_clean == kw:
+                    score_col = max(score_col, 100)
+                elif col_clean.startswith(kw):
+                    score_col = max(score_col, 90)
+                elif kw in col_clean:
+                    score_col = max(score_col, 80)
+                elif col_clean in kw and len(col_clean) >= 3:
+                    score_col = max(score_col, 70)
+                else:
+                    ratio = difflib.SequenceMatcher(None, col_clean, kw).ratio()
+                    if ratio >= 0.85:
+                        score_col = max(score_col, int(ratio * 65))
+            if score_col > meilleur_score:
+                meilleur_score = score_col
+                meilleur_col = col_orig
+        if meilleur_col and meilleur_score >= 65:
+            deja_pris = [f for f, (c, s) in scores.items() if c == meilleur_col]
+            if deja_pris:
+                ancien = deja_pris[0]
+                if scores[ancien][1] < meilleur_score:
+                    del scores[ancien]
+                    scores[db_field] = (meilleur_col, meilleur_score)
+            else:
+                scores[db_field] = (meilleur_col, meilleur_score)
+    for db_field, (col_orig, score) in scores.items():
+        mapping[db_field] = col_orig
     return mapping
 
 def extraire_champs_dynamiques(row, colonnes_mappees, all_cols):
@@ -802,8 +831,15 @@ def moteur_import(df, mapping, env, badge, session, agents_db, affectation_auto=
                     continue
 
             if exist:
+                # ✅ PROTECTION : dossier déjà existant → on COMPLÈTE seulement les champs vides
+                # (on n'écrase JAMAIS une donnée déjà saisie lors d'un ré-import Finance)
                 for k, v in data.items():
-                    if v is not None and v != '':
+                    if v is None or v == '' or v == 0 or v == 0.0:
+                        continue
+                    ancienne = getattr(exist, k, None)
+                    vide = ancienne in (None, '', 0, 0.0) or str(ancienne).strip().upper() in ('','NAN','NONE','-')
+                    # On remplit si le champ était vide. Les champs argent/identité ne sont jamais écrasés s'ils ont déjà une valeur.
+                    if vide:
                         setattr(exist, k, v)
                 try:
                     cd_exist = json.loads(exist.champs_dynamiques or '{}')
@@ -1344,6 +1380,19 @@ def afficher_profil_complet(dos_id):
             hist = (dos.historique_visites or 'Aucun rapport enregistré').replace('\n', '<br>')
             st.markdown(f"<div style='background:#f8fafc; padding:15px; border-radius:8px; height:200px; overflow-y:auto;'>{hist}</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
+            # ✅ SUPPRESSION INDIVIDUELLE — admin uniquement avec confirmation
+            if st.session_state.user['role'] == 'admin':
+                with st.expander("🗑️ Supprimer ce dossier (admin)", expanded=False):
+                    st.warning("⚠️ Suppression définitive d'un dossier. Action réservée à l'administrateur.")
+                    conf_sup = st.checkbox("Je confirme vouloir supprimer ce dossier", key=f"conf_sup_{dos_id}")
+                    if st.button("🗑️ Supprimer définitivement", key=f"del_dos_{dos_id}",
+                                 disabled=not conf_sup):
+                        with get_session() as s_del:
+                            d_del = s_del.get(Dossier, dos_id)
+                            if d_del:
+                                s_del.delete(d_del)
+                        st.success("Dossier supprimé.")
+                        st.rerun()
         if st.session_state.user['role'] == 'agent':
             with st.expander("🔄 Demander un transfert de dossier", expanded=False):
                 if dos.transfert_vers and dos.transfert_vers.strip():
@@ -1456,6 +1505,51 @@ def page_gestion(mode="financement", vue_admin=False):
                       delta=f"-{non_assignes}" if non_assignes > 0 else None,
                       delta_color="inverse")
             c4.metric("Taux affectation", f"{taux:.1f}%")
+
+            # ✅ COMPTEUR PAR DAÏRA — dossiers non assignés par zone
+            try:
+                with engine.connect() as conn:
+                    df_daira = pd.read_sql_query(
+                        text("SELECT gestionnaire, daira FROM dossiers WHERE type_dispositif=:env"),
+                        conn, params={"env": env}
+                    ).fillna('')
+                df_daira['_na'] = df_daira['gestionnaire'].apply(
+                    lambda x: str(x).strip().upper() in ('','NAN','NONE','NON','-','N/A'))
+                stats_d = df_daira.groupby('daira').agg(
+                    total=('_na','count'), non_assignes=('_na','sum')).reset_index()
+                stats_d['assignes'] = stats_d['total'] - stats_d['non_assignes']
+                stats_d['taux_pct'] = (stats_d['assignes'] / stats_d['total'] * 100).round(1)
+                stats_d = stats_d[stats_d['daira'].astype(str).str.strip() != ''].sort_values('non_assignes', ascending=False)
+                with st.expander(f"📊 Compteur par daïra — {int(stats_d['non_assignes'].sum())} non assigné(s) au total", expanded=False):
+                    if not stats_d.empty:
+                        for deb in range(0, len(stats_d), 3):
+                            cc_ = st.columns(3)
+                            for i, (_, r_d) in enumerate(stats_d.iloc[deb:deb+3].iterrows()):
+                                with cc_[i]:
+                                    if r_d['non_assignes'] == 0:
+                                        coul, emo = "#10b981", "🟢"
+                                    elif r_d['taux_pct'] >= 50:
+                                        coul, emo = "#f59e0b", "🟡"
+                                    else:
+                                        coul, emo = "#ef4444", "🔴"
+                                    st.markdown(f"""
+                                    <div style='background:white; border:1px solid #e2e8f0; border-left:4px solid {coul};
+                                         border-radius:10px; padding:14px; margin-bottom:10px;'>
+                                        <div style='font-weight:700; color:#0f172a; font-size:14px;'>{emo} {r_d['daira']}</div>
+                                        <div style='display:flex; justify-content:space-between; margin-top:8px;'>
+                                            <div><div style='font-size:11px; color:#64748b;'>Total</div>
+                                                <div style='font-size:18px; font-weight:800; color:#0f172a;'>{int(r_d['total'])}</div></div>
+                                            <div><div style='font-size:11px; color:#64748b;'>Non assignés</div>
+                                                <div style='font-size:18px; font-weight:800; color:{coul};'>{int(r_d['non_assignes'])}</div></div>
+                                            <div><div style='font-size:11px; color:#64748b;'>Taux</div>
+                                                <div style='font-size:18px; font-weight:800; color:#0f172a;'>{r_d['taux_pct']:.0f}%</div></div>
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                    else:
+                        st.success("✅ Aucune daïra avec dossiers non assignés.")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -2133,12 +2227,68 @@ def page_integration_admin():
                     else:
                         st.info("Aucun doublon détecté.")
             st.markdown("---")
-            st.error("⚠️ Zone de danger général")
-            if st.button("🗑️ VIDER INTEGRALEMENT LA BASE"):
-                with get_session() as session:
-                    session.query(Dossier).delete()
-                st.success("Base vidée.")
-                st.rerun()
+            # ✅ NETTOYAGE GESTIONNAIRES OBSOLÈTES (anciens accompagnateurs partis)
+            st.markdown("### 🧹 Nettoyer les gestionnaires obsolètes")
+            st.caption("Compare les gestionnaires à la liste officielle des 25 accompagnateurs en activité. Les anciens (qui ont quitté) sont retirés → dossiers en corbeille pour les nouveaux.")
+            with st.expander(f"🔍 Voir la liste officielle ({len(ACCOMPAGNATEURS_ACTIFS)} accompagnateurs)"):
+                st.write(ACCOMPAGNATEURS_ACTIFS)
+            if st.button("🔎 Analyser les gestionnaires obsolètes", key="btn_obs_analyse"):
+                try:
+                    with engine.connect() as conn:
+                        df_c = pd.read_sql_query(
+                            text("SELECT id, gestionnaire, daira FROM dossiers WHERE type_dispositif=:env"),
+                            conn, params={"env": env}
+                        ).fillna('')
+                    obs = []
+                    for _, r in df_c.iterrows():
+                        g = str(r['gestionnaire']).strip()
+                        if not g or g.upper() in ('NAN','NONE','-','N/A'):
+                            continue
+                        if not any(similarite(g, a) >= 0.80 for a in ACCOMPAGNATEURS_ACTIFS):
+                            obs.append((int(r['id']), g, str(r['daira'])))
+                    if not obs:
+                        st.success("✅ Aucun gestionnaire obsolète détecté.")
+                    else:
+                        noms_obs = sorted(set([g for _, g, _ in obs]))
+                        st.warning(f"⚠️ **{len(obs)} dossier(s)** avec ancien gestionnaire ({len(noms_obs)} noms distincts) :")
+                        st.write(noms_obs)
+                        df_res = pd.DataFrame(obs, columns=['id','ancien_gestionnaire','daira'])
+                        rpd = df_res.groupby('daira').size().reset_index(name='nb_dossiers').sort_values('nb_dossiers', ascending=False)
+                        st.markdown("**Répartition par daïra :**")
+                        st.dataframe(rpd, hide_index=True, use_container_width=True)
+                        st.session_state['obs_ids'] = [i for i, _, _ in obs]
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+            if st.session_state.get('obs_ids'):
+                st.warning(f"📋 **{len(st.session_state['obs_ids'])} dossier(s)** prêts à être libérés.")
+                if st.button("🧹 Confirmer — Retirer les anciens gestionnaires", type="primary", key="btn_obs_clean"):
+                    with get_session() as session:
+                        c_ok = 0
+                        for did in st.session_state['obs_ids']:
+                            d = session.get(Dossier, did)
+                            if d:
+                                d.gestionnaire = ''
+                                d.est_nouveau = 'OUI'
+                                if hasattr(d, 'origine_dossier'):
+                                    d.origine_dossier = '🧹 Ancien gestionnaire retiré'
+                                c_ok += 1
+                    st.success(f"✅ {c_ok} dossier(s) libéré(s) — disponibles dans la corbeille.")
+                    st.session_state['obs_ids'] = []
+                    st.rerun()
+            st.markdown("---")
+            # ✅ SUPPRESSION SÉCURISÉE — admin uniquement + double confirmation
+            st.error("⚠️ Zone de danger général — réservée à l'administrateur")
+            if role == 'admin':
+                st.caption("La suppression de la base est IRRÉVERSIBLE. Double confirmation obligatoire.")
+                conf1 = st.checkbox("Je comprends que cette action supprimera TOUS les dossiers", key="conf_vider_1")
+                conf2 = st.text_input("Pour confirmer, tapez exactement : SUPPRIMER", key="conf_vider_2")
+                if st.button("🗑️ VIDER INTEGRALEMENT LA BASE", disabled=not (conf1 and conf2.strip() == "SUPPRIMER")):
+                    with get_session() as session:
+                        session.query(Dossier).delete()
+                    st.success("Base vidée.")
+                    st.rerun()
+            else:
+                st.info("🔒 Seul l'administrateur peut vider la base.")
             st.markdown("</div>", unsafe_allow_html=True)
 
     if t5:
@@ -2723,6 +2873,7 @@ def _maj_remboursement(df, mapping, env):
                         (r[4] or '').strip()) for r in rows]
 
         c_maj = 0
+        c_cree = 0
         progress_bar = st.progress(0)
         total = len(df)
         for idx, row in df.iterrows():
@@ -2747,6 +2898,28 @@ def _maj_remboursement(df, mapping, env):
                             dos_id = cand_id
                             break
             if not dos_id:
+                # ✅ PROTECTION : le dossier n'existe pas → on le CRÉE (jamais de perte de données)
+                data_new = {}
+                for champ_db, xl_c in mapping.items():
+                    if xl_c == '-- Ignorer --':
+                        continue
+                    v = row.get(xl_c, '')
+                    if pd.isna(v) or str(v).strip() in ('','NAN','None','nan'):
+                        continue
+                    if champ_db in COLONNES_ARGENT:
+                        data_new[champ_db] = clean_money(v)
+                    elif champ_db == 'identifiant':
+                        data_new[champ_db] = clean_identifiant(v)
+                    else:
+                        data_new[champ_db] = str(v).strip().upper()
+                if data_new.get('identifiant') or data_new.get('nom'):
+                    data_new['type_dispositif'] = env
+                    data_new['in_recouvrement'] = 'OUI'
+                    data_new['in_finance']      = 'NON'
+                    data_new['est_nouveau']     = 'OUI'
+                    data_new['origine_dossier'] = '📈 Créé via MAJ Remboursement'
+                    session.add(Dossier(**data_new))
+                    c_cree += 1
                 continue
             dos = session.get(Dossier, dos_id)
             if not dos:
@@ -2767,7 +2940,10 @@ def _maj_remboursement(df, mapping, env):
             if (idx+1) % 100 == 0:
                 session.commit()
 
-    st.success(f"✅ {c_maj} dossiers mis à jour avec les données de remboursement.")
+    msg = f"✅ {c_maj} dossiers mis à jour avec les données de remboursement."
+    if c_cree > 0:
+        msg += f" 🆕 {c_cree} nouveau(x) dossier(s) créé(s) (non trouvés dans la base)."
+    st.success(msg)
 
 def _maj_gestionnaire(df, mapping, env):
     with get_session() as session:
