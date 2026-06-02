@@ -2121,8 +2121,8 @@ def page_integration_admin():
                 'activite', 'secteur', 'code_activite',
                 'montant_total_credit', 'apport_personnel', 'credit_bancaire', 'montant_pnr',
                 'banque_nom', 'agence_bancaire', 'numero_compte', 'num_ordre_versement',
-                'gestionnaire', 'daira', 'niveau_instruction', 'age', 'observations',
-                'commune', 'telephone'
+                'gestionnaire', 'daira', 'commune', 'adresse', 'wilaya',
+                'niveau_instruction', 'age', 'observations', 'telephone'
             ]
             _onglet_import_generique(f_fin, env, 'in_finance', "form_fin", "Finance",
                                      targets_filtre=champs_finance)
